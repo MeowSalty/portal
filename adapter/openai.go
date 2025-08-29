@@ -164,19 +164,6 @@ func (a *OpenAIAdapter) ChatCompletionStream(
 		err = client.Do(req, resp)
 		if err != nil {
 			logger.Error("发送 HTTP 请求失败", slog.Any("error", err))
-			select {
-			case stream <- &coreTypes.Response{
-				Choices: []coreTypes.Choice{
-					{
-						Error: &coreTypes.ErrorResponse{
-							Code:    fasthttp.StatusInternalServerError,
-							Message: fmt.Sprintf("发送 HTTP 请求失败：%s", err.Error()),
-						},
-					},
-				},
-			}:
-			case <-ctx.Done():
-			}
 			return
 		}
 
@@ -185,40 +172,13 @@ func (a *OpenAIAdapter) ChatCompletionStream(
 			logger.Error("API 返回错误状态码",
 				slog.Int("status_code", resp.StatusCode()),
 				slog.String("response_body", string(body)))
-			select {
-			case stream <- &coreTypes.Response{
-				Choices: []coreTypes.Choice{
-					{
-						Error: &coreTypes.ErrorResponse{
-							Code:    resp.StatusCode(),
-							Message: fmt.Sprintf("API 返回错误状态码: %d, 响应内容: %s", resp.StatusCode(), string(body)),
-						},
-					},
-				},
-			}:
-			case <-ctx.Done():
-			}
 			return
 		}
 
 		// 获取响应体的 Reader
 		bodyReader := resp.BodyStream()
 		if bodyReader == nil {
-			err := fmt.Errorf("响应体流为空")
 			logger.Error("响应体流为空")
-			select {
-			case stream <- &coreTypes.Response{
-				Choices: []coreTypes.Choice{
-					{
-						Error: &coreTypes.ErrorResponse{
-							Code:    fasthttp.StatusInternalServerError,
-							Message: err.Error(),
-						},
-					},
-				},
-			}:
-			case <-ctx.Done():
-			}
 			return
 		}
 
@@ -381,30 +341,30 @@ func (a *OpenAIAdapter) sendRequest(ctx context.Context, channel *coreTypes.Chan
 	}
 
 	url := channel.Platform.BaseURL + path
-	
+
 	// 创建 fasthttp 请求
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
-	
+
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	
+
 	// 设置请求参数
 	req.SetRequestURI(url)
 	req.Header.SetMethod("POST")
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+channel.APIKey.Value)
 	req.SetBody(jsonData)
-	
+
 	// 创建客户端
 	client := &fasthttp.Client{}
-	
+
 	// 设置超时
 	if deadline, ok := ctx.Deadline(); ok {
 		client.ReadTimeout = time.Until(deadline)
 		client.WriteTimeout = time.Until(deadline)
 	}
-	
+
 	// 发送请求
 	err = client.Do(req, resp)
 	if err != nil {
