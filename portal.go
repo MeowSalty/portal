@@ -8,6 +8,7 @@ import (
 
 	"github.com/MeowSalty/portal/adapter"
 	"github.com/MeowSalty/portal/health"
+	"github.com/MeowSalty/portal/stats"
 	"github.com/MeowSalty/portal/types"
 )
 
@@ -20,6 +21,7 @@ type GatewayManager struct {
 	selector      types.ChannelSelector
 	adapters      map[string]types.Adapter // Key: Platform.Format
 	logger        *slog.Logger
+	statsManager  *stats.Manager
 }
 
 // NewGatewayManager 从配置创建并初始化一个新的 GatewayManager
@@ -36,12 +38,16 @@ func NewGatewayManager(cfg *Config) *GatewayManager {
 	// 使用 adapter 包中的注册机制初始化适配器
 	adapters := adapter.CreateAdapters(adapterLogger, cfg.AdapterTypes)
 
+	// 初始化统计管理器
+	statsManager := stats.NewManager(cfg.Repo, logger)
+
 	return &GatewayManager{
 		repo:          cfg.Repo,
 		healthManager: cfg.HealthManager,
 		selector:      cfg.Selector,
 		adapters:      adapters,
 		logger:        logger,
+		statsManager:  statsManager,
 	}
 }
 
@@ -49,14 +55,26 @@ func NewGatewayManager(cfg *Config) *GatewayManager {
 //
 // 该方法会根据请求的模型名称查找匹配的模型，选择可用通道，并执行聊天完成请求
 func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Request) (*types.Response, error) {
-	processor := &requestProcessor{
-		manager: m,
-		ctx:     ctx,
-		model:   request.Model,
-		logger:  m.logger,
+	processor := NewRequestProcessor(m, ctx, request.Model, "non-stream")
+
+	response, err := processor.processChatCompletion(request)
+
+	// 如果 processor 内部没有记录统计信息，则在这里记录
+	if err != nil {
+		// 记录统计信息
+		duration := time.Since(processor.startTime)
+		success := err == nil
+		processor.recordStat(&stats.RecordOptions{
+			Timestamp:   processor.startTime,
+			RequestType: processor.requestType,
+			ModelName:   request.Model,
+			Duration:    duration,
+			Success:     success,
+			ErrorMsg:    getErrorMsgFromError(err),
+		})
 	}
 
-	return processor.processChatCompletion(request)
+	return response, err
 }
 
 // Completion 处理文本补全请求
@@ -78,13 +96,44 @@ func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Requ
 // 该方法会根据请求的模型名称查找匹配的模型，选择可用通道，并执行流式聊天完成请求
 func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
 	processor := &requestProcessor{
-		manager: m,
-		ctx:     ctx,
-		model:   request.Model,
-		logger:  m.logger,
+		manager:     m,
+		ctx:         ctx,
+		model:       request.Model,
+		logger:      m.logger,
+		requestType: "stream",
+		startTime:   time.Now(),
 	}
 
-	return processor.processChatCompletionStream(request)
+	stream, err := processor.processChatCompletionStream(request)
+
+	// 只有在启动时出错才记录统计信息，否则由 processor 内部处理
+	if err != nil {
+		// 如果启动流式传输失败，记录统计信息
+		duration := time.Since(processor.startTime)
+		success := err == nil
+		processor.recordStat(&stats.RecordOptions{
+			Timestamp:   processor.startTime,
+			RequestType: processor.requestType,
+			ModelName:   request.Model,
+			Duration:    duration,
+			Success:     success,
+			ErrorMsg:    getErrorMsgFromError(err),
+		})
+		return nil, err
+	}
+
+	// 对于成功的流式请求，我们包装通道以记录统计信息
+	wrappedStream := make(chan *types.Response)
+
+	go func() {
+		defer close(wrappedStream)
+		for response := range stream {
+			// 转发响应
+			wrappedStream <- response
+		}
+	}()
+
+	return wrappedStream, nil
 }
 
 // CompletionStream 处理流式文本补全请求
@@ -101,6 +150,37 @@ func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *type
 // 	return processor.processCompletionStream(request)
 // }
 
+// QueryStats 查询请求统计列表
+func (m *GatewayManager) QueryStats(ctx context.Context, params *types.StatsQueryParams) ([]*types.RequestStat, error) {
+	return m.statsManager.QueryStats(ctx, params)
+}
+
+// CountStats 统计请求计数
+func (m *GatewayManager) CountStats(ctx context.Context, params *types.StatsQueryParams) (*types.StatsSummary, error) {
+	return m.statsManager.CountStats(ctx, params)
+}
+
+// recordStat 记录请求统计信息
+func (p *requestProcessor) recordStat(opts *stats.RecordOptions) {
+	// 在后台记录统计信息，避免阻塞主请求处理流程
+	go func() {
+		// 使用一个新上下文，避免因为主上下文取消而无法记录统计信息
+		bgCtx := context.Background()
+		if err := p.manager.statsManager.RecordRequestStat(bgCtx, opts); err != nil {
+			p.logger.Error("failed to record request stat", "error", err)
+		}
+	}()
+}
+
+// getErrorMsgFromError 从错误中提取错误信息
+func getErrorMsgFromError(err error) *string {
+	if err != nil {
+		msg := err.Error()
+		return &msg
+	}
+	return nil
+}
+
 // GetHealthStatus 获取特定资源的健康状态
 //
 // 该方法根据资源类型和资源 ID 返回对应的健康状态信息
@@ -116,6 +196,23 @@ type requestProcessor struct {
 	ctx     context.Context
 	model   string
 	logger  *slog.Logger
+	// 添加统计相关字段
+	requestType  string
+	startTime    time.Time
+	statsManager *stats.Manager
+}
+
+// NewRequestProcessor 创建一个新的请求处理器
+func NewRequestProcessor(manager *GatewayManager, ctx context.Context, model, requestType string) *requestProcessor {
+	return &requestProcessor{
+		manager:      manager,
+		ctx:          ctx,
+		model:        model,
+		logger:       manager.logger,
+		requestType:  requestType,
+		startTime:    time.Now(),
+		statsManager: manager.statsManager,
+	}
 }
 
 // processChatCompletion 处理聊天完成请求
@@ -182,7 +279,7 @@ func (p *requestProcessor) processChatCompletion(request *types.Request) (*types
 
 			// 如果没有剩余通道，返回错误
 			if len(allChannels) == 0 {
-				return nil, fmt.Errorf("适配器未找到: %s", selectedChannel.Platform.Format)
+				return nil, fmt.Errorf("适配器未找到：%s", selectedChannel.Platform.Format)
 			}
 
 			// 更新时间戳并继续尝试其他通道
@@ -195,12 +292,32 @@ func (p *requestProcessor) processChatCompletion(request *types.Request) (*types
 			// 6a. 成功时更新健康状态并返回
 			p.logger.Info("聊天完成请求成功")
 			p.manager.healthManager.UpdateStatusOnSuccess(selectedChannel)
+
+			// 记录统计信息
+			p.recordStat(&stats.RecordOptions{
+				Timestamp:   p.startTime,
+				RequestType: p.requestType,
+				ModelName:   request.Model,
+				Duration:    time.Since(p.startTime),
+				Success:     true,
+			})
+
 			return response, nil
 		}
 
 		// 6b. 失败时更新健康状态并准备重试
 		p.logger.Warn("聊天完成请求失败，将尝试其他可用通道", slog.String("错误", err.Error()))
 		p.manager.healthManager.UpdateStatusOnFailure(selectedChannel, err)
+
+		// 记录统计信息
+		p.recordStat(&stats.RecordOptions{
+			Timestamp:   p.startTime,
+			RequestType: p.requestType,
+			ModelName:   request.Model,
+			Duration:    time.Since(p.startTime),
+			Success:     false,
+			ErrorMsg:    getErrorMsgFromError(err),
+		})
 
 		// 从通道列表中移除失败的通道
 		allChannels = removeChannel(allChannels, selectedChannel)
@@ -391,7 +508,41 @@ func (p *requestProcessor) processChatCompletionStream(request *types.Request) (
 			// 6a. 成功时更新健康状态并返回
 			p.logger.Info("流式聊天完成请求成功")
 			p.manager.healthManager.UpdateStatusOnSuccess(selectedChannel)
-			return stream, nil
+
+			// 记录统计信息
+			var firstByteTime *time.Duration
+			firstByte := true
+
+			// 包装流以记录首字节时间和最终统计
+			wrappedStream := make(chan *types.Response)
+			go func() {
+				defer close(wrappedStream)
+				defer func() {
+					// 流结束时记录统计信息
+					p.recordStat(&stats.RecordOptions{
+						Timestamp:     p.startTime,
+						RequestType:   p.requestType,
+						ModelName:     request.Model,
+						Duration:      time.Since(p.startTime),
+						FirstByteTime: firstByteTime,
+						Success:       true,
+					})
+				}()
+
+				for response := range stream {
+					// 记录首字时间
+					if firstByte && response != nil {
+						duration := time.Since(p.startTime)
+						firstByteTime = &duration
+						firstByte = false
+					}
+
+					// 转发响应
+					wrappedStream <- response
+				}
+			}()
+
+			return wrappedStream, nil
 		}
 
 		// 6b. 失败时更新健康状态并准备重试
@@ -404,6 +555,16 @@ func (p *requestProcessor) processChatCompletionStream(request *types.Request) (
 		// 如果没有剩余通道，返回错误
 		if len(allChannels) == 0 {
 			p.logger.Error("所有可用通道都未能处理请求")
+			// 记录统计信息
+			duration := time.Since(p.startTime)
+			p.recordStat(&stats.RecordOptions{
+				Timestamp:   p.startTime,
+				RequestType: p.requestType,
+				ModelName:   request.Model,
+				Duration:    duration,
+				Success:     false,
+				ErrorMsg:    getErrorMsgFromError(err),
+			})
 			return nil, fmt.Errorf("没有可用的通道")
 		}
 

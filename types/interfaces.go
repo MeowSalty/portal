@@ -11,6 +11,11 @@ type DataRepository interface {
 	GetAllAPIKeys(ctx context.Context, platformID uint) ([]*APIKey, error)
 	GetAllHealthStatus(ctx context.Context) ([]*Health, error)
 	BatchUpdateHealthStatus(ctx context.Context, statuses []*Health) error
+
+	// 统计相关方法
+	SaveRequestStat(ctx context.Context, stat *RequestStat) error
+	QueryRequestStats(ctx context.Context, params *StatsQueryParams) ([]*RequestStat, error)
+	CountRequestStats(ctx context.Context, params *StatsQueryParams) (*StatsSummary, error)
 }
 
 // ChannelSelector 定义了从可用通道中选择一个通道的策略
