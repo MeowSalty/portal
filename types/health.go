@@ -3,27 +3,28 @@ package types
 import "time"
 
 // HealthStatus 健康状态枚举
-type HealthStatus string
+type HealthStatus int8
 
 const (
-	HealthStatusUnknown     HealthStatus = "unknown"     // 未知
-	HealthStatusAvailable   HealthStatus = "available"   // 可用
-	HealthStatusWarning     HealthStatus = "warning"     // 警告（使用退避策略）
-	HealthStatusUnavailable HealthStatus = "unavailable" // 不可用
+	HealthStatusUnknown     HealthStatus = iota // 未知
+	HealthStatusAvailable                       // 可用
+	HealthStatusWarning                         // 警告（使用退避策略）
+	HealthStatusUnavailable                     // 不可用
 )
 
 // ResourceType 资源类型枚举
-type ResourceType string
+type ResourceType int8
 
 const (
-	ResourceTypePlatform ResourceType = "platform" // 平台级
-	ResourceTypeAPIKey   ResourceType = "api_key"  // 密钥级
-	ResourceTypeModel    ResourceType = "model"    // 模型级
+	ResourceTypePlatform ResourceType = iota + 1 // 平台级
+	ResourceTypeAPIKey                           // 密钥级
+	ResourceTypeModel                            // 模型级
 )
 
 // Health 健康状态表 (health_status)
 type Health struct {
-	ID           uint
+	ID uint
+
 	ResourceType ResourceType // 资源类型
 	ResourceID   uint         // 资源 ID
 
