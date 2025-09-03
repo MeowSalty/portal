@@ -22,7 +22,7 @@ type Manager struct {
 	dirty        sync.Map             // 脏数据缓存，key: string, value: *types.Health
 }
 
-// NewManager 创建一个新的健康状态管理器
+// New 创建一个新的健康状态管理器
 //
 // 它从仓库加载初始数据并启动后台同步进程
 //
@@ -35,7 +35,7 @@ type Manager struct {
 // 返回值：
 //   - *Manager: 健康状态管理器实例
 //   - error: 错误信息
-func NewManager(
+func New(
 	ctx context.Context,
 	repo types.DataRepository,
 	logger *slog.Logger,
@@ -439,7 +439,7 @@ func (m *Manager) getOrCreateStatus(key string, resourceType types.ResourceType,
 // 返回值：
 //   - string: 生成的键
 func (m *Manager) generateKey(resourceType types.ResourceType, resourceID uint) string {
-	return fmt.Sprintf("%s-%d", resourceType, resourceID)
+	return fmt.Sprintf("%d-%d", resourceType, resourceID)
 }
 
 // syncDirtyToDB 将缓存中的脏数据同步到数据库
