@@ -2,8 +2,11 @@ package portal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/MeowSalty/portal/adapter"
@@ -19,6 +22,11 @@ type SelectorStrategy string
 const (
 	RandomSelectorStrategy SelectorStrategy = "random"
 	LRUSelectorStrategy    SelectorStrategy = "lru"
+)
+
+var (
+	ErrServerShuttingDown = errors.New("服务正在停机，请稍后重试")
+	ErrShutdownTimeout    = errors.New("等待会话完成超时")
 )
 
 // Option 定义用于配置 GatewayManager 的选项函数类型
@@ -55,12 +63,16 @@ func WithLogger(logger *slog.Logger) Option {
 //
 // 它负责管理模型、平台和 API 密钥，处理请求路由、负载均衡和健康检查
 type GatewayManager struct {
-	repo          types.DataRepository
-	healthManager *health.Manager
-	selector      types.ChannelSelector
-	adapters      map[string]types.Adapter // Key: Platform.Format
-	logger        *slog.Logger
-	statsManager  *stats.Manager
+	repo           types.DataRepository
+	healthManager  *health.Manager
+	selector       types.ChannelSelector
+	adapters       map[string]types.Adapter // Key: Platform.Format
+	logger         *slog.Logger
+	statsManager   *stats.Manager
+	isShuttingDown atomic.Bool
+	activeSessions sync.WaitGroup
+	shutdownCtx    context.Context
+	shutdownCancel context.CancelFunc
 }
 
 // New 从配置创建并初始化一个新的 GatewayManager
@@ -105,14 +117,63 @@ func New(ctx context.Context, logger *slog.Logger, repo types.DataRepository, op
 	// 初始化统计管理器
 	statsManager := stats.NewManager(repo, logger)
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	return &GatewayManager{
-		repo:          repo,
-		healthManager: healthManager,
-		selector:      sel,
-		adapters:      adapters,
-		logger:        logger,
-		statsManager:  statsManager,
+		repo:           repo,
+		healthManager:  healthManager,
+		selector:       sel,
+		adapters:       adapters,
+		logger:         logger,
+		statsManager:   statsManager,
+		shutdownCtx:    shutdownCtx,
+		shutdownCancel: shutdownCancel,
 	}
+}
+
+// Shutdown 优雅地关闭 GatewayManager
+//
+// 它会等待所有正在进行的会话完成，然后关闭健康管理器。
+// 可以通过可选的 timeout 参数设置最长等待时间。
+// 如果等待超时，所有正在进行的会话将被中断。
+func (m *GatewayManager) Shutdown(timeout time.Duration) error {
+	// 1. 标记服务正在停机，拒绝新请求
+	m.isShuttingDown.Store(true)
+	m.logger.Info("服务开始停机，不再接受新请求")
+
+	// 2. 等待所有活动会话完成
+	done := make(chan struct{})
+	go func() {
+		m.activeSessions.Wait()
+		close(done)
+	}()
+
+	var err error
+	if timeout > 0 {
+		select {
+		case <-done:
+			m.logger.Info("所有活动会话已正常完成")
+		case <-time.After(timeout):
+			m.logger.Warn("停机等待超时，正在中断所有剩余会话...")
+			m.shutdownCancel() // 触发所有关联上下文的取消
+			<-done             // 等待被中断的会话完成清理
+			m.logger.Info("所有被中断的会话已结束")
+			err = ErrShutdownTimeout
+		}
+	} else {
+		// No timeout, wait indefinitely
+		<-done
+		m.logger.Info("所有活动会话已正常完成")
+	}
+
+	// 3. 关闭健康管理器
+	if m.healthManager != nil {
+		m.logger.Info("正在关闭健康管理器")
+		m.healthManager.Shutdown()
+	}
+
+	m.logger.Info("服务已成功停机")
+	return err
 }
 
 // FindModelsByName 根据名称查找模型
@@ -175,7 +236,24 @@ func (m *GatewayManager) buildChannels(ctx context.Context, models []*types.Mode
 //
 // 该方法会根据请求的模型名称查找匹配的模型，选择可用通道，并执行聊天完成请求
 func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Request) (*types.Response, error) {
-	processor := NewRequestProcessor(m, ctx, request.Model, "non-stream")
+	if m.isShuttingDown.Load() {
+		return nil, ErrServerShuttingDown
+	}
+	m.activeSessions.Add(1)
+	defer m.activeSessions.Done()
+
+	// 创建一个与 shutdown 信号关联的新上下文
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	defer reqCancel()
+	go func() {
+		select {
+		case <-m.shutdownCtx.Done():
+			reqCancel()
+		case <-reqCtx.Done():
+		}
+	}()
+
+	processor := NewRequestProcessor(m, reqCtx, request.Model, "non-stream")
 
 	response, err := processor.processChatCompletion(request)
 
@@ -215,9 +293,24 @@ func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Requ
 //
 // 该方法会根据请求的模型名称查找匹配的模型，选择可用通道，并执行流式聊天完成请求
 func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
+	if m.isShuttingDown.Load() {
+		return nil, ErrServerShuttingDown
+	}
+	m.activeSessions.Add(1)
+
+	// 创建一个与 shutdown 信号关联的新上下文
+	reqCtx, reqCancel := context.WithCancel(ctx)
+	go func() {
+		select {
+		case <-m.shutdownCtx.Done():
+			reqCancel()
+		case <-reqCtx.Done():
+		}
+	}()
+
 	processor := &requestProcessor{
 		manager:     m,
-		ctx:         ctx,
+		ctx:         reqCtx, // 使用新的关联上下文
 		model:       request.Model,
 		logger:      m.logger,
 		requestType: "stream",
@@ -228,6 +321,8 @@ func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *type
 
 	// 只有在启动时出错才记录统计信息，否则由 processor 内部处理
 	if err != nil {
+		reqCancel()             // 清理上下文 goroutine
+		m.activeSessions.Done() // 如果启动失败，需要在这里减少计数
 		// 如果启动流式传输失败，记录统计信息
 		duration := time.Since(processor.startTime)
 		success := err == nil
@@ -247,6 +342,8 @@ func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *type
 
 	go func() {
 		defer close(wrappedStream)
+		defer reqCancel()             // 清理上下文 goroutine
+		defer m.activeSessions.Done() // 在流结束后减少计数
 		for response := range stream {
 			// 转发响应
 			wrappedStream <- response
@@ -425,6 +522,13 @@ func (p *requestProcessor) processChatCompletion(request *types.Request) (*types
 			return response, nil
 		}
 
+		// 检查是否因为上下文取消而失败
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			p.logger.Warn("请求因上下文取消而中断", "error", err)
+			// 不再尝试其他通道，直接返回错误
+			return nil, err
+		}
+
 		// 6b. 失败时更新健康状态并准备重试
 		p.logger.Warn("聊天完成请求失败，将尝试其他可用通道", slog.String("错误", err.Error()))
 		p.manager.healthManager.UpdateStatusOnFailure(selectedChannel, err)
@@ -565,6 +669,13 @@ func (p *requestProcessor) processChatCompletionStream(request *types.Request) (
 			}()
 
 			return wrappedStream, nil
+		}
+
+		// 检查是否因为上下文取消而失败
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			p.logger.Warn("流式请求因上下文取消而中断", "error", err)
+			// 不再尝试其他通道，直接返回错误
+			return nil, err
 		}
 
 		// 6b. 失败时更新健康状态并准备重试
