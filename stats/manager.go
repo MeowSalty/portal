@@ -40,7 +40,7 @@ func (m *Manager) RecordRequestStat(ctx context.Context, opts *RecordOptions) er
 	}
 
 	if err := m.repo.SaveRequestStat(ctx, stat); err != nil {
-		m.logger.Error("failed to save request stat", "error", err)
+		m.logger.Error("保存请求统计信息失败", "error", err)
 		return err
 	}
 
@@ -51,7 +51,7 @@ func (m *Manager) RecordRequestStat(ctx context.Context, opts *RecordOptions) er
 func (m *Manager) QueryStats(ctx context.Context, params *types.StatsQueryParams) ([]*types.RequestStat, error) {
 	stats, err := m.repo.QueryRequestStats(ctx, params)
 	if err != nil {
-		m.logger.Error("failed to query request stats", "error", err)
+		m.logger.Error("查询请求统计信息失败", "error", err)
 		return nil, err
 	}
 
@@ -62,7 +62,7 @@ func (m *Manager) QueryStats(ctx context.Context, params *types.StatsQueryParams
 func (m *Manager) CountStats(ctx context.Context, params *types.StatsQueryParams) (*types.StatsSummary, error) {
 	summary, err := m.repo.CountRequestStats(ctx, params)
 	if err != nil {
-		m.logger.Error("failed to count request stats", "error", err)
+		m.logger.Error("统计请求计数失败", "error", err)
 		return nil, err
 	}
 
