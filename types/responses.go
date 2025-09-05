@@ -75,11 +75,11 @@ type FunctionCall struct {
 // MarshalJSON 实现 Choice 的自定义 JSON 序列化
 func (c Choice) MarshalJSON() ([]byte, error) {
 	type Alias Choice
-	aux := &struct {
-		*Alias
-	}{
-		Alias: (*Alias)(&c),
-	}
+	// aux := &struct {
+	// 	*Alias
+	// }{
+	// 	Alias: (*Alias)(&c),
+	// }
 
 	// 根据内容类型确定如何序列化
 	if c.Text != nil {
@@ -119,9 +119,26 @@ func (c Choice) MarshalJSON() ([]byte, error) {
 			Delta:              c.Delta,
 			Error:              c.Error,
 		})
+	} else {
+		// 默认序列化
+		return json.Marshal(struct {
+			FinishReason       *string          `json:"finish_reason,omitempty"`
+			NativeFinishReason *string          `json:"native_finish_reason,omitempty"`
+			Text               *string          `json:"text,omitempty"`
+			Message            *ResponseMessage `json:"message,omitempty"`
+			Delta              *Delta           `json:"delta,omitempty"`
+			Error              *ErrorResponse   `json:"error,omitempty"`
+		}{
+			FinishReason:       c.FinishReason,
+			NativeFinishReason: c.NativeFinishReason,
+			Text:               c.Text,
+			Message:            c.Message,
+			Delta:              c.Delta,
+			Error:              c.Error,
+		})
 	}
 
-	return json.Marshal(aux)
+	// return json.Marshal(aux)
 }
 
 // UnmarshalJSON 实现 Choice 的自定义 JSON 反序列化

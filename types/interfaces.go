@@ -27,6 +27,4 @@ type ChannelSelector interface {
 type Adapter interface {
 	ChatCompletion(ctx context.Context, request *Request, channel *Channel) (*Response, error)
 	ChatCompletionStream(ctx context.Context, request *Request, channel *Channel) (<-chan *Response, error)
-	// Completion(ctx context.Context, request *CompletionRequest, channel *Channel) (*CompletionResponse, error)
-	// CompletionStream(ctx context.Context, request *CompletionRequest, channel *Channel) (<-chan *CompletionStreamResponse, error)
 }
