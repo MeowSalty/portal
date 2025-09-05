@@ -100,396 +100,258 @@ func (m *Manager) run() {
 				m.logger.Error("执行定期健康同步失败", slog.Any("error", err))
 			}
 		case <-m.closeChan:
-			m.logger.Info("正在关闭健康状态管理器后台进程")
-			// 在关闭时执行最终同步
-			if err := m.syncAllToDB(context.Background()); err != nil {
-				m.logger.Error("执行最终健康同步失败", slog.Any("error", err))
+			// 收到关闭信号，执行最终同步
+			m.logger.Info("健康状态管理器正在关闭，执行最终同步...")
+			if err := m.syncDirtyToDB(context.Background()); err != nil {
+				m.logger.Error("关闭时健康同步失败", slog.Any("error", err))
 			}
 			return
 		}
 	}
 }
 
-// Shutdown 优雅地停止后台同步进程
+// Shutdown 关闭健康状态管理器
+//
+// 此方法会停止后台同步进程并等待所有操作完成
 func (m *Manager) Shutdown() {
 	close(m.closeChan)
 	m.wg.Wait()
-	m.logger.Info("健康状态管理器已成功关闭")
+	m.logger.Info("健康状态管理器已关闭")
 }
 
-// GetStatus 获取特定资源的健康状态
+// GetStatus 获取指定资源的健康状态
 //
-// 如果未找到，则返回默认的'Unknown'状态
+// 如果缓存中不存在该资源的健康状态，则会创建一个新的健康状态对象
 //
 // 参数：
 //   - resourceType: 资源类型
 //   - resourceID: 资源 ID
 //
 // 返回值：
-//   - *types.Health: 健康状态
+//   - *types.Health: 健康状态对象
 func (m *Manager) GetStatus(resourceType types.ResourceType, resourceID uint) *types.Health {
 	key := m.generateKey(resourceType, resourceID)
-	if value, ok := m.cache.Load(key); ok {
-		// 类型断言并返回存储的健康状态
-		if status, ok := value.(*types.Health); ok {
-			return status
-		}
+
+	if status, ok := m.cache.Load(key); ok {
+		return status.(*types.Health)
 	}
 
-	// 如果缓存中没有，则返回默认的未知状态
-	return &types.Health{
+	// 如果缓存中不存在，创建一个新的健康状态对象
+	status := &types.Health{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
 		Status:       types.HealthStatusUnknown,
 		LastCheckAt:  time.Now(),
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
 	}
+
+	// 存储到缓存和脏数据中
+	m.cache.Store(key, status)
+	m.dirty.Store(key, status)
+
+	return status
 }
 
-// UpdateStatusOnSuccess 在 API 调用成功后更新健康状态
-//
-// 此方法会更新所有相关资源的健康状态：APIKey、Model 和 Platform
+// UpdateStatus 更新指定资源的健康状态
 //
 // 参数：
-//   - channel: 通道信息
-func (m *Manager) UpdateStatusOnSuccess(channel *types.Channel) {
+//   - resourceType: 资源类型
+//   - resourceID: 资源 ID
+//   - success: 是否成功
+//   - errorMessage: 错误信息（如果失败）
+//   - errorCode: 错误代码（如果失败）
+func (m *Manager) UpdateStatus(
+	resourceType types.ResourceType,
+	resourceID uint,
+	success bool,
+	errorMessage string,
+	errorCode int,
+) {
+	key := m.generateKey(resourceType, resourceID)
 	now := time.Now()
 
-	// 更新 API Key 的健康状态
-	if channel.APIKey != nil {
-		key := m.generateKey(types.ResourceTypeAPIKey, channel.APIKey.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypeAPIKey, channel.APIKey.ID)
-
-		// 设置关联资源 ID
-		if channel.Model != nil {
-			status.RelatedAPIKeyID = &channel.APIKey.ID
+	var status *types.Health
+	if cachedStatus, ok := m.cache.Load(key); ok {
+		status = cachedStatus.(*types.Health)
+	} else {
+		// 如果缓存中不存在，创建一个新的健康状态对象
+		status = &types.Health{
+			ResourceType: resourceType,
+			ResourceID:   resourceID,
+			Status:       types.HealthStatusUnknown,
+			LastCheckAt:  now,
+			CreatedAt:    now,
 		}
-		if channel.Platform != nil {
-			status.RelatedPlatformID = &channel.Platform.ID
-		}
-
-		status.Status = types.HealthStatusAvailable
-		status.LastSuccessAt = &now
-		status.LastCheckAt = now
-		status.SuccessCount++
-		status.RetryCount = 0 // 成功时重置重试计数
-		status.BackoffDuration = 0
-		status.NextAvailableAt = nil
-
 		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Debug("API Key 健康状态已更新为可用", slog.String("key", key))
 	}
 
-	// 更新 Model 的健康状态
-	if channel.Model != nil {
-		key := m.generateKey(types.ResourceTypeModel, channel.Model.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypeModel, channel.Model.ID)
+	// 更新状态
+	status.LastCheckAt = now
+	status.UpdatedAt = now
 
-		// 设置关联资源 ID
-		if channel.Platform != nil {
-			status.RelatedPlatformID = &channel.Platform.ID
-		}
-		if channel.APIKey != nil {
-			status.RelatedAPIKeyID = &channel.APIKey.ID
-		}
-
-		status.Status = types.HealthStatusAvailable
-		status.LastSuccessAt = &now
-		status.LastCheckAt = now
+	if success {
+		// 成功情况
 		status.SuccessCount++
+		status.LastSuccessAt = &now
+		status.LastError = ""
+		status.LastErrorCode = 0
+
+		// 重置错误计数和退避状态
+		status.ErrorCount = 0
 		status.RetryCount = 0
-		status.BackoffDuration = 0
 		status.NextAvailableAt = nil
+		status.BackoffDuration = 0
 
-		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Debug("Model 健康状态已更新为可用", slog.String("key", key))
-	}
-
-	// 更新 Platform 的健康状态
-	if channel.Platform != nil {
-		key := m.generateKey(types.ResourceTypePlatform, channel.Platform.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypePlatform, channel.Platform.ID)
-
-		// 设置关联资源 ID
-		if channel.Model != nil {
-			status.RelatedAPIKeyID = &channel.Model.ID
-		}
-		if channel.APIKey != nil {
-			status.RelatedAPIKeyID = &channel.APIKey.ID
-		}
-
+		// 更新状态为可用
 		status.Status = types.HealthStatusAvailable
-		status.LastSuccessAt = &now
-		status.LastCheckAt = now
-		status.SuccessCount++
-		status.RetryCount = 0
-		status.BackoffDuration = 0
-		status.NextAvailableAt = nil
+	} else {
+		// 失败情况
+		status.ErrorCount++
+		status.LastError = errorMessage
+		status.LastErrorCode = errorCode
 
-		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Debug("Platform 健康状态已更新为可用", slog.String("key", key))
+		// 应用指数退避策略
+		m.applyBackoff(status)
 	}
+
+	// 标记为脏数据以便后续同步
+	m.dirty.Store(key, status)
 }
 
-// UpdateStatusOnFailure 在 API 调用失败后更新健康状态
-//
-// 此方法会更新所有相关资源的健康状态：APIKey、Model 和 Platform
+// applyBackoff 应用指数退避策略
 //
 // 参数：
-//   - channel: 通道信息
-//   - err: 错误信息
-func (m *Manager) UpdateStatusOnFailure(channel *types.Channel, err error) {
-	now := time.Now()
+//   - status: 健康状态对象
+func (m *Manager) applyBackoff(status *types.Health) {
+	// 增加重试次数
+	status.RetryCount++
 
-	// 更新 API Key 的健康状态
-	if channel.APIKey != nil {
-		key := m.generateKey(types.ResourceTypeAPIKey, channel.APIKey.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypeAPIKey, channel.APIKey.ID)
+	// 计算退避时长（以秒为单位）
+	// 初始退避时长为 1 秒，每次重试翻倍（指数退避）
+	backoffSeconds := int64(1 << uint(status.RetryCount-1)) // 1, 2, 4, 8, 16, ...
 
-		// 设置关联资源 ID
-		if channel.Model != nil {
-			status.RelatedAPIKeyID = &channel.Model.ID
-		}
-		if channel.Platform != nil {
-			status.RelatedPlatformID = &channel.Platform.ID
-		}
-
-		status.Status = types.HealthStatusWarning
-		status.LastError = err.Error()
-		status.LastCheckAt = now
-		status.ErrorCount++
-		status.RetryCount++
-
-		// 实现指数退避
-		// 示例：base_duration * 2^(retry_count-1)
-		baseDuration := int64(60) // 1 分钟基础时间
-		backoff := baseDuration * (1 << (status.RetryCount - 1))
-		if backoff > 3600 { // 最多 1 小时
-			backoff = 3600
-		}
-		status.BackoffDuration = backoff
-		nextAvailable := now.Add(time.Duration(backoff) * time.Second)
-		status.NextAvailableAt = &nextAvailable
-
-		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Warn("API Key 健康状态已更新为警告",
-			slog.String("key", key),
-			slog.String("error", err.Error()),
-			slog.Int64("backoff_seconds", backoff))
+	// 设置最大退避时长（例如 5 分钟）
+	if backoffSeconds > 300 {
+		backoffSeconds = 300
 	}
 
-	// 更新 Model 的健康状态
-	if channel.Model != nil {
-		key := m.generateKey(types.ResourceTypeModel, channel.Model.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypeModel, channel.Model.ID)
+	status.BackoffDuration = backoffSeconds
 
-		// 设置关联资源 ID
-		if channel.Platform != nil {
-			status.RelatedPlatformID = &channel.Platform.ID
-		}
-		if channel.APIKey != nil {
-			status.RelatedAPIKeyID = &channel.APIKey.ID
-		}
+	// 计算下次可用时间
+	nextAvailable := time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+	status.NextAvailableAt = &nextAvailable
 
-		status.Status = types.HealthStatusWarning
-		status.LastError = err.Error()
-		status.LastCheckAt = now
-		status.ErrorCount++
-		status.RetryCount++
-
-		// 实现指数退避
-		baseDuration := int64(60) // 1 分钟基础时间
-		backoff := baseDuration * (1 << (status.RetryCount - 1))
-		if backoff > 3600 { // 最多 1 小时
-			backoff = 3600
-		}
-		status.BackoffDuration = backoff
-		nextAvailable := now.Add(time.Duration(backoff) * time.Second)
-		status.NextAvailableAt = &nextAvailable
-
-		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Warn("Model 健康状态已更新为警告",
-			slog.String("key", key),
-			slog.String("error", err.Error()),
-			slog.Int64("backoff_seconds", backoff))
-	}
-
-	// 更新 Platform 的健康状态
-	if channel.Platform != nil {
-		key := m.generateKey(types.ResourceTypePlatform, channel.Platform.ID)
-		status := m.getOrCreateStatus(key, types.ResourceTypePlatform, channel.Platform.ID)
-
-		// 设置关联资源 ID
-		if channel.Model != nil {
-			status.RelatedAPIKeyID = &channel.Model.ID
-		}
-		if channel.APIKey != nil {
-			status.RelatedAPIKeyID = &channel.APIKey.ID
-		}
-
-		status.Status = types.HealthStatusWarning
-		status.LastError = err.Error()
-		status.LastCheckAt = now
-		status.ErrorCount++
-		status.RetryCount++
-
-		// 实现指数退避
-		baseDuration := int64(60) // 1 分钟基础时间
-		backoff := baseDuration * (1 << (status.RetryCount - 1))
-		if backoff > 3600 { // 最多 1 小时
-			backoff = 3600
-		}
-		status.BackoffDuration = backoff
-		nextAvailable := now.Add(time.Duration(backoff) * time.Second)
-		status.NextAvailableAt = &nextAvailable
-
-		m.cache.Store(key, status)
-		m.dirty.Store(key, status)
-		m.logger.Warn("Platform 健康状态已更新为警告",
-			slog.String("key", key),
-			slog.String("error", err.Error()),
-			slog.Int64("backoff_seconds", backoff))
-	}
+	// 更新状态为警告（使用退避策略）
+	status.Status = types.HealthStatusWarning
 }
 
 // FilterHealthyChannels 过滤出健康的通道
-func (m *Manager) FilterHealthyChannels(channels []*types.Channel) []*types.Channel {
-	return m.FilterHealthyChannelsWithTime(channels, time.Now())
-}
+//
+// 该方法会检查通道列表中的每个通道，返回当前可用的通道
+// 一个通道要被认为是健康的，其平台、模型和 API 密钥都必须是健康的
+//
+// 参数：
+//   - channels: 通道列表
+//   - now: 当前时间
+//
+// 返回值：
+//   - []*types.Channel: 健康的通道列表
+func (m *Manager) FilterHealthyChannels(channels []*types.Channel, now time.Time) []*types.Channel {
+	var healthyChannels []*types.Channel
 
-// FilterHealthyChannelsWithTime 使用指定的时间过滤出健康的通道，避免重复调用 time.Now()
-func (m *Manager) FilterHealthyChannelsWithTime(channels []*types.Channel, now time.Time) []*types.Channel {
-	healthyChannels := make([]*types.Channel, 0, len(channels))
-
-	for _, ch := range channels {
-		// 检查平台健康状态
-		platformHealthy := true
-		if ch.Platform != nil {
-			status := m.GetStatus(types.ResourceTypePlatform, ch.Platform.ID)
-			if status.Status == types.HealthStatusUnavailable ||
-				(status.Status == types.HealthStatusWarning && status.NextAvailableAt != nil && now.Before(*status.NextAvailableAt)) {
-				platformHealthy = false
-			}
+	for _, channel := range channels {
+		// 检查平台的健康状态
+		platformStatus := m.GetStatus(types.ResourceTypePlatform, channel.Platform.ID)
+		if !m.isStatusHealthy(platformStatus, now) {
+			continue
 		}
 
-		// 检查模型健康状态
-		modelHealthy := true
-		if ch.Model != nil {
-			status := m.GetStatus(types.ResourceTypeModel, ch.Model.ID)
-			if status.Status == types.HealthStatusUnavailable ||
-				(status.Status == types.HealthStatusWarning && status.NextAvailableAt != nil && now.Before(*status.NextAvailableAt)) {
-				modelHealthy = false
-			}
+		// 检查模型的健康状态
+		modelStatus := m.GetStatus(types.ResourceTypeModel, channel.Model.ID)
+		if !m.isStatusHealthy(modelStatus, now) {
+			continue
 		}
 
-		// 检查 API 密钥健康状态
-		apiKeyHealthy := true
-		if ch.APIKey != nil {
-			status := m.GetStatus(types.ResourceTypeAPIKey, ch.APIKey.ID)
-			if status.Status == types.HealthStatusUnavailable ||
-				(status.Status == types.HealthStatusWarning && status.NextAvailableAt != nil && now.Before(*status.NextAvailableAt)) {
-				apiKeyHealthy = false
-			}
+		// 检查 API 密钥的健康状态
+		apiKeyStatus := m.GetStatus(types.ResourceTypeAPIKey, channel.APIKey.ID)
+		if !m.isStatusHealthy(apiKeyStatus, now) {
+			continue
 		}
 
-		// 只有当所有相关资源都健康时，通道才被认为是健康的
-		if platformHealthy && modelHealthy && apiKeyHealthy {
-			healthyChannels = append(healthyChannels, ch)
-		}
+		// 所有组件都健康，将通道添加到健康通道列表中
+		healthyChannels = append(healthyChannels, channel)
 	}
+
 	return healthyChannels
 }
 
-// getOrCreateStatus 获取或创建健康状态
+// isStatusHealthy 检查给定的健康状态是否为健康状态
 //
 // 参数：
-//   - key: 缓存键
-//   - resourceType: 资源类型
-//   - resourceID: 资源 ID
+//   - status: 健康状态对象
+//   - now: 当前时间
 //
 // 返回值：
-//   - *types.Health: 健康状态
-func (m *Manager) getOrCreateStatus(key string, resourceType types.ResourceType, resourceID uint) *types.Health {
-	if value, ok := m.cache.Load(key); ok {
-		// 类型断言并返回存储的健康状态
-		if status, ok := value.(*types.Health); ok {
-			return status
+//   - bool: 如果状态健康返回 true，否则返回 false
+func (m *Manager) isStatusHealthy(status *types.Health, now time.Time) bool {
+	// 检查状态是否为可用或未知（未知状态表示尚未进行健康检查）
+	if status.Status == types.HealthStatusAvailable || status.Status == types.HealthStatusUnknown {
+		return true
+	}
+
+	// 对于警告状态，检查是否已到下次可用时间
+	if status.Status == types.HealthStatusWarning && status.NextAvailableAt != nil {
+		if now.After(*status.NextAvailableAt) {
+			// 退避时间已过，可以认为是健康的
+			return true
 		}
 	}
 
-	// 如果未找到，则创建一个新的健康状态对象
-	return &types.Health{
-		ResourceType: resourceType,
-		ResourceID:   resourceID,
-		Status:       types.HealthStatusUnknown,
-		LastCheckAt:  time.Now(),
-	}
+	return false
 }
 
-// generateKey 生成资源的键
+// generateKey 生成资源的缓存键
 //
 // 参数：
 //   - resourceType: 资源类型
 //   - resourceID: 资源 ID
 //
 // 返回值：
-//   - string: 生成的键
+//   - string: 缓存键
 func (m *Manager) generateKey(resourceType types.ResourceType, resourceID uint) string {
-	return fmt.Sprintf("%d-%d", resourceType, resourceID)
+	return fmt.Sprintf("%d:%d", resourceType, resourceID)
 }
 
-// syncDirtyToDB 将缓存中的脏数据同步到数据库
+// syncDirtyToDB 将脏数据同步到数据库
+//
+// 参数：
+//   - ctx: 上下文
+//
+// 返回值：
+//   - error: 错误信息
 func (m *Manager) syncDirtyToDB(ctx context.Context) error {
-	var dirtyStatuses []*types.Health
+	var statusesToSync []*types.Health
 	m.dirty.Range(func(key, value interface{}) bool {
-		if status, ok := value.(*types.Health); ok {
-			dirtyStatuses = append(dirtyStatuses, status)
-		}
+		status := value.(*types.Health)
+		statusesToSync = append(statusesToSync, status)
 		return true
 	})
 
-	if len(dirtyStatuses) == 0 {
-		m.logger.Debug("没有需要同步的健康状态")
+	if len(statusesToSync) == 0 {
 		return nil
 	}
 
-	if err := m.repo.BatchUpdateHealthStatus(ctx, dirtyStatuses); err != nil {
+	if err := m.repo.BatchUpdateHealthStatus(ctx, statusesToSync); err != nil {
 		return fmt.Errorf("批量更新健康状态失败：%w", err)
 	}
 
-	// 清理脏数据标记
-	m.dirty.Range(func(key, value interface{}) bool {
+	// 清理已同步的脏数据
+	for _, status := range statusesToSync {
+		key := m.generateKey(status.ResourceType, status.ResourceID)
 		m.dirty.Delete(key)
-		return true
-	})
-
-	m.logger.Info("成功同步脏健康状态到数据库", slog.Int("count", len(dirtyStatuses)))
-	return nil
-}
-
-// syncAllToDB 将缓存中的所有数据同步到数据库
-func (m *Manager) syncAllToDB(ctx context.Context) error {
-	var allStatuses []*types.Health
-	m.cache.Range(func(key, value interface{}) bool {
-		if status, ok := value.(*types.Health); ok {
-			allStatuses = append(allStatuses, status)
-		}
-		return true
-	})
-
-	if len(allStatuses) == 0 {
-		m.logger.Info("缓存中没有需要同步的健康状态")
-		return nil
 	}
 
-	if err := m.repo.BatchUpdateHealthStatus(ctx, allStatuses); err != nil {
-		return fmt.Errorf("批量更新所有健康状态失败：%w", err)
-	}
-
-	m.logger.Info("成功同步所有健康状态到数据库", slog.Int("count", len(allStatuses)))
+	m.logger.Debug("健康状态同步完成", slog.Int("count", len(statusesToSync)))
 	return nil
 }
