@@ -50,7 +50,7 @@ func (a *OpenAIAdapter) ChatCompletion(
 		slog.String("platform_base_url", channel.Platform.BaseURL),
 	)
 
-	openAIReq, err := a.buildChatRequest(request)
+	openAIReq, err := a.buildChatRequest(request, channel)
 	if err != nil {
 		return nil, err
 	}
@@ -96,216 +96,188 @@ func (a *OpenAIAdapter) ChatCompletionStream(
 	)
 	logger.Info("开始调用")
 
-	openAIReq, err := a.buildChatRequest(request)
+	openAIReq, err := a.buildChatRequest(request, channel)
 	if err != nil {
 		return nil, err
 	}
-	openAIReq.Model = channel.Model.Name
 	openAIReq.Stream = true
 
 	// 创建用于返回的流
 	stream := make(chan *coreTypes.Response, 1024)
 
 	// 启动一个 goroutine 来处理整个流式请求
-	go func() {
-		defer close(stream)
-
-		// 创建请求
-		req := fasthttp.AcquireRequest()
-		defer fasthttp.ReleaseRequest(req)
-
-		req.SetRequestURI(channel.Platform.BaseURL + "/v1/chat/completions")
-		req.Header.SetMethod("POST")
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", "Bearer "+channel.APIKey.Value)
-		req.Header.Set("Accept", "text/event-stream")
-		req.Header.Set("Cache-Control", "no-cache")
-		req.Header.Set("Connection", "keep-alive")
-
-		// 设置请求体
-		jsonData, err := json.Marshal(openAIReq)
-		if err != nil {
-			select {
-			case stream <- &coreTypes.Response{
-				Choices: []coreTypes.Choice{
-					{
-						Error: &coreTypes.ErrorResponse{
-							Code:    fasthttp.StatusInternalServerError,
-							Message: fmt.Sprintf("序列化请求体失败：%s", err.Error()),
-						},
-					},
-				},
-			}:
-			case <-ctx.Done():
-			}
-			return
-		}
-		// 调试，用于输出发送的 json
-		// a.logger.Info("发送给 OpenAI 的请求", slog.String("request_body", string(jsonData)))
-		req.SetBody(jsonData)
-
-		// 创建响应
-		resp := fasthttp.AcquireResponse()
-		defer fasthttp.ReleaseResponse(resp)
-
-		// 创建 HTTP 客户端
-		client := &fasthttp.Client{
-			StreamResponseBody:            true,
-			DisableHeaderNamesNormalizing: true,
-		}
-
-		// 设置超时
-		if deadline, ok := ctx.Deadline(); ok {
-			client.ReadTimeout = time.Until(deadline)
-			client.WriteTimeout = time.Until(deadline)
-		}
-
-		// 发起请求
-		err = client.Do(req, resp)
-		if err != nil {
-			logger.Error("发送 HTTP 请求失败", slog.Any("error", err))
-			return
-		}
-
-		if resp.StatusCode() != fasthttp.StatusOK {
-			body := resp.Body()
-			logger.Error("API 返回错误状态码",
-				slog.Int("status_code", resp.StatusCode()),
-				slog.String("response_body", string(body)))
-			return
-		}
-
-		// 获取响应体的 Reader
-		bodyReader := resp.BodyStream()
-		if bodyReader == nil {
-			logger.Error("响应体流为空")
-			return
-		}
-
-		defer func() {
-			if closer, ok := bodyReader.(io.Closer); ok {
-				closer.Close()
-			}
-		}()
-
-		reader := bufio.NewReader(bodyReader)
-
-		for {
-			select {
-			case <-ctx.Done():
-				logger.Info("上下文已取消，停止处理流")
-				select {
-				case stream <- &coreTypes.Response{
-					Choices: []coreTypes.Choice{
-						{
-							Error: &coreTypes.ErrorResponse{
-								Code:    fasthttp.StatusInternalServerError,
-								Message: "上下文已取消",
-							},
-						},
-					},
-				}:
-				default:
-				}
-				return
-			default:
-				// 读取一行数据
-				line, err := reader.ReadString('\n')
-				if err != nil {
-					if err == io.EOF {
-						logger.Info("流已结束")
-						select {
-						case stream <- &coreTypes.Response{
-							Choices: []coreTypes.Choice{
-								{
-									Error: &coreTypes.ErrorResponse{
-										Code:    fasthttp.StatusOK,
-										Message: "流已结束",
-									},
-								},
-							},
-						}:
-						default:
-						}
-						return
-					}
-					errMsg := fmt.Sprintf("读取行时发生错误: %v", err)
-					logger.Error(errMsg)
-					select {
-					case stream <- &coreTypes.Response{
-						Choices: []coreTypes.Choice{
-							{
-								Error: &coreTypes.ErrorResponse{
-									Code:    fasthttp.StatusInternalServerError,
-									Message: errMsg,
-								},
-							},
-						},
-					}:
-					case <-ctx.Done():
-					}
-					return
-				}
-
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				// 处理 SSE 格式数据
-				if !strings.HasPrefix(line, "data: ") {
-					continue
-				}
-				data := strings.TrimPrefix(line, "data: ")
-
-				// 检查是否是结束标记
-				if data == "[DONE]" {
-					logger.Info("流式传输正常结束")
-					return // 正常结束
-				}
-
-				var chunk types.ChatCompletionResponse
-				if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-					errMsg := fmt.Sprintf("解析流数据块失败：%v。数据: %s", err, data)
-					logger.Error(errMsg)
-					select {
-					case stream <- &coreTypes.Response{
-						Choices: []coreTypes.Choice{
-							{
-								Error: &coreTypes.ErrorResponse{
-									Code:    fasthttp.StatusInternalServerError,
-									Message: errMsg,
-								},
-							},
-						},
-					}:
-					case <-ctx.Done():
-					}
-					return
-				}
-
-				// 转换数据块为核心格式
-				coreChunk := openai.ChatCompletionResponseToResponse(&chunk)
-
-				// 尝试发送数据块到流
-				select {
-				case stream <- coreChunk:
-				case <-ctx.Done():
-					logger.Info("上下文已取消，停止处理流")
-					return
-				}
-			}
-		}
-	}()
+	go a.handleStreamingRequest(ctx, logger, channel, openAIReq, stream)
 
 	return stream, nil
 }
 
+// handleStreamingRequest 处理流式请求的具体逻辑
+func (a *OpenAIAdapter) handleStreamingRequest(
+	ctx context.Context,
+	logger *slog.Logger,
+	channel *coreTypes.Channel,
+	openAIReq *types.ChatCompletionRequest,
+	stream chan<- *coreTypes.Response,
+) {
+	defer close(stream)
+
+	// 创建请求
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	req.SetRequestURI(channel.Platform.BaseURL + "/v1/chat/completions")
+	req.Header.SetMethod("POST")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+channel.APIKey.Value)
+	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Cache-Control", "no-cache")
+	req.Header.Set("Connection", "keep-alive")
+
+	// 设置请求体
+	jsonData, err := json.Marshal(openAIReq)
+	if err != nil {
+		a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, fmt.Sprintf("序列化请求体失败：%s", err.Error()))
+		return
+	}
+	req.SetBody(jsonData)
+
+	// 创建响应
+	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
+
+	// 创建 HTTP 客户端
+	client := &fasthttp.Client{
+		StreamResponseBody:            true,
+		DisableHeaderNamesNormalizing: true,
+	}
+
+	// 设置超时
+	if deadline, ok := ctx.Deadline(); ok {
+		client.ReadTimeout = time.Until(deadline)
+		client.WriteTimeout = time.Until(deadline)
+	}
+
+	// 发起请求
+	err = client.Do(req, resp)
+	if err != nil {
+		logger.Error("发送 HTTP 请求失败", slog.Any("error", err))
+		return
+	}
+
+	if resp.StatusCode() != fasthttp.StatusOK {
+		body := resp.Body()
+		logger.Error("API 返回错误状态码",
+			slog.Int("status_code", resp.StatusCode()),
+			slog.String("response_body", string(body)))
+		return
+	}
+
+	// 获取响应体的 Reader
+	bodyReader := resp.BodyStream()
+	if bodyReader == nil {
+		logger.Error("响应体流为空")
+		return
+	}
+
+	defer func() {
+		if closer, ok := bodyReader.(io.Closer); ok {
+			closer.Close()
+		}
+	}()
+
+	reader := bufio.NewReader(bodyReader)
+	a.processStreamingResponse(ctx, logger, reader, stream)
+}
+
+// processStreamingResponse 处理流式响应数据
+func (a *OpenAIAdapter) processStreamingResponse(
+	ctx context.Context,
+	logger *slog.Logger,
+	reader *bufio.Reader,
+	stream chan<- *coreTypes.Response,
+) {
+	for {
+		select {
+		case <-ctx.Done():
+			logger.Info("上下文已取消，停止处理流")
+			a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, "上下文已取消")
+			return
+		default:
+			// 读取一行数据
+			line, err := reader.ReadString('\n')
+			if err != nil {
+				if err == io.EOF {
+					logger.Info("流已结束")
+					a.sendStreamError(ctx, stream, fasthttp.StatusOK, "流已结束")
+					return
+				}
+				errMsg := fmt.Sprintf("读取行时发生错误: %v", err)
+				logger.Error(errMsg)
+				a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, errMsg)
+				return
+			}
+
+			line = strings.TrimSpace(line)
+			if line == "" {
+				continue
+			}
+
+			// 处理 SSE 格式数据
+			if !strings.HasPrefix(line, "data: ") {
+				continue
+			}
+			data := strings.TrimPrefix(line, "data: ")
+
+			// 检查是否是结束标记
+			if data == "[DONE]" {
+				logger.Info("流式传输正常结束")
+				return // 正常结束
+			}
+
+			var chunk types.ChatCompletionResponse
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				errMsg := fmt.Sprintf("解析流数据块失败：%v。数据: %s", err, data)
+				logger.Error(errMsg)
+				a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, errMsg)
+				return
+			}
+
+			// 转换数据块为核心格式
+			coreChunk := openai.ChatCompletionResponseToResponse(&chunk)
+
+			// 尝试发送数据块到流
+			select {
+			case stream <- coreChunk:
+			case <-ctx.Done():
+				logger.Info("上下文已取消，停止处理流")
+				return
+			}
+		}
+	}
+}
+
+// sendStreamError 向流中发送错误信息
+func (a *OpenAIAdapter) sendStreamError(ctx context.Context, stream chan<- *coreTypes.Response, code int, message string) {
+	select {
+	case stream <- &coreTypes.Response{
+		Choices: []coreTypes.Choice{
+			{
+				Error: &coreTypes.ErrorResponse{
+					Code:    code,
+					Message: message,
+				},
+			},
+		},
+	}:
+	case <-ctx.Done():
+	}
+}
+
 // --- 辅助函数 ---
 
-func (a *OpenAIAdapter) buildChatRequest(request *coreTypes.Request) (*types.ChatCompletionRequest, error) {
+func (a *OpenAIAdapter) buildChatRequest(request *coreTypes.Request, channel *coreTypes.Channel) (*types.ChatCompletionRequest, error) {
 	openAIReq := &types.ChatCompletionRequest{
-		Model:    request.Model,
+		Model:    channel.Model.Name,
 		Messages: make([]types.RequestMessage, len(request.Messages)),
 	}
 
