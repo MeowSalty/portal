@@ -83,7 +83,7 @@ func (p *RequestProcessor) recordStreamStats(
 		p.Logger.Error("流式传输过程中发生错误",
 			slog.String("模型", statOptions.ModelName),
 			slog.String("平台", selectedChannel.Platform.Name),
-			slog.Any("错误", streamErr))
+			slog.Any("error", streamErr))
 
 		// 更新健康状态为失败
 		p.HealthManager.UpdateStatus(
@@ -113,7 +113,7 @@ func (p *RequestProcessor) recordStreamStats(
 	}
 
 	if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-		p.Logger.Error("记录统计信息失败", slog.Any("错误", recordErr))
+		p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
 	}
 }
 
@@ -187,7 +187,7 @@ func (p *RequestProcessor) processChatCompletion(ctx context.Context, request *t
 			p.Logger.Error("请求执行失败",
 				slog.String("模型", request.Model),
 				slog.String("平台", selectedChannel.Platform.Name),
-				slog.Any("错误", err))
+				slog.Any("error", err))
 
 			// 更新健康状态为失败
 			p.HealthManager.UpdateStatus(
@@ -204,7 +204,7 @@ func (p *RequestProcessor) processChatCompletion(ctx context.Context, request *t
 			statOptions.ErrorMsg = &errorMsg
 
 			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-				p.Logger.Error("记录统计信息失败", slog.Any("错误", recordErr))
+				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
 			}
 
 			// 从通道列表中移除失败的通道
@@ -232,7 +232,7 @@ func (p *RequestProcessor) processChatCompletion(ctx context.Context, request *t
 		// 记录成功的统计信息
 		statOptions.Success = true
 		if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-			p.Logger.Error("记录统计信息失败", slog.Any("错误", recordErr))
+			p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
 		}
 
 		return response, nil
@@ -298,7 +298,7 @@ func (p *RequestProcessor) processChatCompletionStream(ctx context.Context, requ
 			p.Logger.Error("流式请求初始化失败",
 				slog.String("模型", request.Model),
 				slog.String("平台", selectedChannel.Platform.Name),
-				slog.Any("错误", err))
+				slog.Any("error", err))
 
 			// 更新健康状态为失败
 			p.HealthManager.UpdateStatus(
@@ -315,7 +315,7 @@ func (p *RequestProcessor) processChatCompletionStream(ctx context.Context, requ
 			statOptions.ErrorMsg = &errorMsg
 
 			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-				p.Logger.Error("记录统计信息失败", slog.Any("错误", recordErr))
+				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
 			}
 
 			// 从通道列表中移除失败的通道
@@ -377,7 +377,7 @@ func (p *RequestProcessor) processChatCompletionStream(ctx context.Context, requ
 					p.Logger.Error("客户端断开连接",
 						slog.String("模型", request.Model),
 						slog.String("平台", selectedChannel.Platform.Name),
-						slog.Any("错误", streamErr))
+						slog.Any("error", streamErr))
 					return
 				}
 			}
@@ -399,7 +399,7 @@ func (p *RequestProcessor) prepareChannels(ctx context.Context, modelName string
 	// 1. 根据模型名称查找所有匹配的模型
 	models, err := p.FindModels(ctx, modelName)
 	if err != nil {
-		p.Logger.Error("查找模型失败", slog.String("模型名称", modelName), slog.Any("错误", err))
+		p.Logger.Error("查找模型失败", slog.String("模型名称", modelName), slog.Any("error", err))
 		return nil, fmt.Errorf("查找模型失败：%w", err)
 	}
 
@@ -410,7 +410,7 @@ func (p *RequestProcessor) prepareChannels(ctx context.Context, modelName string
 	// 2. 为这些模型构建所有可能的通道
 	channels, err := p.BuildChannels(ctx, models)
 	if err != nil {
-		p.Logger.Error("构建通道失败", slog.String("模型名称", modelName), slog.Any("错误", err))
+		p.Logger.Error("构建通道失败", slog.String("模型名称", modelName), slog.Any("error", err))
 		return nil, fmt.Errorf("构建通道失败：%w", err)
 	}
 

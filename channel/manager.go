@@ -35,7 +35,7 @@ func (m *Manager) BuildChannels(ctx context.Context, models []*types.Model) ([]*
 			m.logger.Error("获取模型平台失败",
 				slog.Uint64("模型 ID", uint64(model.ID)),
 				slog.Uint64("平台 ID", uint64(model.PlatformID)),
-				slog.String("错误", err.Error()))
+				slog.String("error", err.Error()))
 			errs = append(errs, fmt.Errorf("模型 ID %d: 获取平台失败：%w", model.ID, err))
 			continue
 		}
@@ -44,7 +44,7 @@ func (m *Manager) BuildChannels(ctx context.Context, models []*types.Model) ([]*
 		if err != nil {
 			m.logger.Error("获取平台 API 密钥失败",
 				slog.Uint64("平台 ID", uint64(platform.ID)),
-				slog.String("错误", err.Error()))
+				slog.String("error", err.Error()))
 			errs = append(errs, fmt.Errorf("平台 ID %d: 获取 API 密钥失败：%w", platform.ID, err))
 			continue
 		}
