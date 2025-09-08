@@ -264,15 +264,31 @@ func (m *GatewayManager) GetHealthStatus(resourceType types.ResourceType, resour
 	return m.healthManager.GetStatus(resourceType, resourceID)
 }
 
+// withSession 管理单个请求会话的生命周期
+//
+// 该函数负责在处理请求时正确管理会话计数和上下文取消。
+// 它会在网关关闭时拒绝新请求，并确保在处理过程中正确处理上下文取消。
+//
+// 参数：
+//
+//	ctx - 父级上下文
+//	fn - 在会话上下文中执行的函数
+//
+// 返回值：
+//
+//	error - 执行过程中发生的错误，如果服务正在关闭则返回 ErrServerShuttingDown
 func (m *GatewayManager) withSession(ctx context.Context, fn func(reqCtx context.Context) error) error {
+	// 检查服务是否正在关闭，如果是则拒绝新请求
 	if m.isShuttingDown.Load() {
 		return ErrServerShuttingDown
 	}
 	m.activeSessions.Add(1)
 
+	// 创建可取消的请求上下文，并确保在函数退出时取消
 	reqCtx, reqCancel := context.WithCancel(ctx)
 	defer reqCancel()
 
+	// 启动一个 goroutine 监听关闭信号和上下文完成信号
 	go func() {
 		select {
 		case <-m.shutdownCtx.Done():
