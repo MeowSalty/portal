@@ -227,24 +227,10 @@ func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Requ
 func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
 	var stream <-chan *types.Response
 	err := m.withSession(ctx, func(reqCtx context.Context) (err error) {
-		stream, err = m.requestProcessor.ProcessChatCompletionStream(reqCtx, request)
+		stream, err = m.requestProcessor.ProcessChatCompletionStream(reqCtx, request, m.activeSessions.Done)
 		return
 	})
-	if err != nil {
-		return nil, err
-	}
-
-	// 对于成功的流式请求，我们包装通道以管理会话生命周期。
-	wrappedStream := make(chan *types.Response)
-	go func() {
-		defer close(wrappedStream)
-		defer m.activeSessions.Done() // 当流完成时减少会话计数器。
-		for response := range stream {
-			wrappedStream <- response
-		}
-	}()
-
-	return wrappedStream, nil
+	return stream, err
 }
 
 // QueryStats 查询请求统计列表
@@ -284,9 +270,9 @@ func (m *GatewayManager) withSession(ctx context.Context, fn func(reqCtx context
 	}
 	m.activeSessions.Add(1)
 
-	// 创建可取消的请求上下文，并确保在函数退出时取消
+	// 创建可取消的请求上下文
 	reqCtx, reqCancel := context.WithCancel(ctx)
-	defer reqCancel()
+	// defer reqCancel()
 
 	// 启动一个 goroutine 监听关闭信号和上下文完成信号
 	go func() {
