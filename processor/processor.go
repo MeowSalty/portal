@@ -55,8 +55,166 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 }
 
 // ProcessChatCompletionStream 处理流式聊天完成请求
-func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
-	return p.processChatCompletionStream(ctx, request)
+//
+// 该方法实现了完整的流式请求处理流程：
+// 1. 查找匹配的模型
+// 2. 构建所有可能的通道
+// 3. 过滤出健康的通道
+// 4. 根据策略选择一个通道
+// 5. 获取对应的适配器并执行流式请求
+// 6. 根据执行结果更新健康状态并返回结果流
+func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, request *types.Request, doneFunc func()) (<-chan *types.Response, error) {
+	startTime := time.Now()
+	allChannels, err := p.prepareChannels(ctx, request.Model)
+	if err != nil {
+		return nil, err
+	}
+
+	// 循环重试直到成功或没有可用通道
+	for {
+		// 缓存当前时间，避免在 selectChannel 中多次调用 time.Now()
+		now := time.Now()
+		selectedChannel, err := p.selectChannel(ctx, allChannels, now)
+		if err != nil {
+			return nil, err
+		}
+
+		// 获取对应的适配器并执行流式请求
+		adapter, ok := p.Adapters[selectedChannel.Platform.Format]
+		if !ok {
+			p.Logger.Error("适配器未找到", slog.String("格式", selectedChannel.Platform.Format))
+			// 从通道列表中移除无效的通道
+			allChannels = removeChannel(allChannels, selectedChannel)
+
+			// 如果没有剩余通道，返回错误
+			if len(allChannels) == 0 {
+				return nil, fmt.Errorf("适配器未找到：%s", selectedChannel.Platform.Format)
+			}
+
+			// 更新时间戳并继续尝试其他通道
+			now = time.Now()
+			continue
+		}
+
+		// 记录统计信息
+		statOptions := &stats.RecordOptions{
+			Timestamp:   startTime,
+			RequestType: "stream",
+			ModelName:   request.Model,
+			ChannelInfo: types.ChannelInfo{
+				PlatformID: selectedChannel.Platform.ID,
+				APIKeyID:   selectedChannel.APIKey.ID,
+				ModelID:    selectedChannel.Model.ID,
+			},
+		}
+
+		// 执行请求前记录开始时间
+		requestStart := time.Now()
+
+		stream, err := adapter.ChatCompletionStream(ctx, request, selectedChannel)
+		if err != nil {
+			p.Logger.Error("流式请求初始化失败",
+				slog.String("model", request.Model),
+				slog.String("platform", selectedChannel.Platform.Name),
+				slog.Any("error", err),
+				slog.String("request_type", "stream"))
+
+			// 更新健康状态为失败
+			p.HealthManager.UpdateStatus(
+				types.ResourceTypeAPIKey,
+				selectedChannel.APIKey.ID,
+				false,
+				err.Error(),
+				0,
+			)
+
+			// 记录失败的统计信息
+			errorMsg := err.Error()
+			statOptions.Success = false
+			statOptions.ErrorMsg = &errorMsg
+
+			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
+				p.Logger.Error("记录统计信息失败",
+					slog.Any("error", recordErr),
+					slog.String("operation", "record_request_stat"))
+			}
+
+			// 从通道列表中移除失败的通道
+			allChannels = removeChannel(allChannels, selectedChannel)
+
+			// 如果没有剩余通道，返回错误
+			if len(allChannels) == 0 {
+				return nil, fmt.Errorf("所有通道都已尝试且失败：%w", err)
+			}
+
+			// 更新时间戳并继续尝试其他通道
+			now = time.Now()
+			continue
+		}
+
+		// 创建包装的流，用于处理统计信息记录
+		wrappedStream := make(chan *types.Response)
+
+		go func() {
+			defer close(wrappedStream)
+			// 确保在流处理完成后调用 doneFunc
+			defer doneFunc()
+
+			firstByteTime := time.Now()
+			var streamErr error
+
+			// 用于确保只处理一次流结束后的状态更新
+			statsRecorded := false
+			defer func() {
+				if !statsRecorded {
+					p.recordStreamStats(statOptions, requestStart, firstByteTime, streamErr, selectedChannel, ctx)
+					statsRecorded = true
+				}
+			}()
+
+			// 从原始流中读取数据
+			for response := range stream {
+				// 检查是否有错误信息
+				for _, choice := range response.Choices {
+					if choice.Error != nil && choice.Error.Code != fasthttp.StatusOK {
+						streamErr = fmt.Errorf("stream error: code=%d, message=%s", choice.Error.Code, choice.Error.Message)
+						// 记录错误日志
+						p.Logger.Error("流式传输过程中发生错误",
+							slog.String("model", request.Model),
+							slog.String("platform", selectedChannel.Platform.Name),
+							slog.Int("code", choice.Error.Code),
+							slog.String("message", choice.Error.Message),
+							slog.String("request_type", "stream"))
+
+						// 发送错误信息到包装流
+						wrappedStream <- response
+						return
+					}
+				}
+
+				// 记录第一个响应的到达时间
+				if firstByteTime.Equal(startTime) { // 如果还没有记录过第一个字节时间
+					firstByteTime = time.Now()
+				}
+
+				select {
+				case wrappedStream <- response:
+				case <-ctx.Done():
+					streamErr = ctx.Err()
+					p.Logger.Error("客户端断开连接",
+						slog.String("模型", request.Model),
+						slog.String("平台", selectedChannel.Platform.Name),
+						slog.Any("error", streamErr))
+					return
+				}
+			}
+
+			// 流正常结束，不需要单独更新健康状态
+			// defer 会处理统计信息记录
+		}()
+
+		return wrappedStream, nil
+	}
 }
 
 // recordStreamStats 记录流式请求的统计信息
@@ -236,157 +394,6 @@ func (p *RequestProcessor) processChatCompletion(ctx context.Context, request *t
 		}
 
 		return response, nil
-	}
-}
-
-// processChatCompletionStream 处理流式聊天完成请求
-//
-// 该方法实现了完整的流式请求处理流程：
-// 1. 查找匹配的模型
-// 2. 构建所有可能的通道
-// 3. 过滤出健康的通道
-// 4. 根据策略选择一个通道
-// 5. 获取对应的适配器并执行流式请求
-// 6. 根据执行结果更新健康状态并返回结果流
-func (p *RequestProcessor) processChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
-	startTime := time.Now()
-	allChannels, err := p.prepareChannels(ctx, request.Model)
-	if err != nil {
-		return nil, err
-	}
-
-	// 循环重试直到成功或没有可用通道
-	for {
-		// 缓存当前时间，避免在 selectChannel 中多次调用 time.Now()
-		now := time.Now()
-		selectedChannel, err := p.selectChannel(ctx, allChannels, now)
-		if err != nil {
-			return nil, err
-		}
-
-		// 获取对应的适配器并执行流式请求
-		adapter, ok := p.Adapters[selectedChannel.Platform.Format]
-		if !ok {
-			p.Logger.Error("适配器未找到", slog.String("格式", selectedChannel.Platform.Format))
-			// 从通道列表中移除无效的通道
-			allChannels = removeChannel(allChannels, selectedChannel)
-
-			// 如果没有剩余通道，返回错误
-			if len(allChannels) == 0 {
-				return nil, fmt.Errorf("适配器未找到：%s", selectedChannel.Platform.Format)
-			}
-			continue
-		}
-
-		// 记录统计信息
-		statOptions := &stats.RecordOptions{
-			Timestamp:   startTime,
-			RequestType: "stream",
-			ModelName:   request.Model,
-			ChannelInfo: types.ChannelInfo{
-				PlatformID: selectedChannel.Platform.ID,
-				APIKeyID:   selectedChannel.APIKey.ID,
-				ModelID:    selectedChannel.Model.ID,
-			},
-		}
-
-		// 执行请求前记录开始时间
-		requestStart := time.Now()
-
-		stream, err := adapter.ChatCompletionStream(ctx, request, selectedChannel)
-		if err != nil {
-			p.Logger.Error("流式请求初始化失败",
-				slog.String("模型", request.Model),
-				slog.String("平台", selectedChannel.Platform.Name),
-				slog.Any("error", err))
-
-			// 更新健康状态为失败
-			p.HealthManager.UpdateStatus(
-				types.ResourceTypeAPIKey,
-				selectedChannel.APIKey.ID,
-				false,
-				err.Error(),
-				0,
-			)
-
-			// 记录失败的统计信息
-			errorMsg := err.Error()
-			statOptions.Success = false
-			statOptions.ErrorMsg = &errorMsg
-
-			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
-			}
-
-			// 从通道列表中移除失败的通道
-			allChannels = removeChannel(allChannels, selectedChannel)
-
-			// 如果没有剩余通道，返回错误
-			if len(allChannels) == 0 {
-				return nil, fmt.Errorf("所有通道都已尝试且失败：%w", err)
-			}
-			continue
-		}
-
-		// 创建包装的流，用于处理统计信息记录
-		wrappedStream := make(chan *types.Response)
-
-		go func() {
-			defer close(wrappedStream)
-
-			firstByteTime := time.Now()
-			var streamErr error
-
-			// 用于确保只处理一次流结束后的状态更新
-			statsRecorded := false
-			defer func() {
-				if !statsRecorded {
-					p.recordStreamStats(statOptions, requestStart, firstByteTime, streamErr, selectedChannel, ctx)
-					statsRecorded = true
-				}
-			}()
-
-			// 从原始流中读取数据
-			for response := range stream {
-				// 检查是否有错误信息
-				for _, choice := range response.Choices {
-					if choice.Error != nil && choice.Error.Code != fasthttp.StatusOK {
-						streamErr = fmt.Errorf("stream error: code=%d, message=%s", choice.Error.Code, choice.Error.Message)
-						// 记录错误日志
-						p.Logger.Error("流式传输过程中发生错误",
-							slog.String("模型", request.Model),
-							slog.String("平台", selectedChannel.Platform.Name),
-							slog.Int("错误代码", choice.Error.Code),
-							slog.String("错误信息", choice.Error.Message))
-
-						// 发送错误信息到包装流
-						wrappedStream <- response
-						return
-					}
-				}
-
-				// 记录第一个响应的到达时间
-				if firstByteTime.Equal(startTime) { // 如果还没有记录过第一个字节时间
-					firstByteTime = time.Now()
-				}
-
-				select {
-				case wrappedStream <- response:
-				case <-ctx.Done():
-					streamErr = ctx.Err()
-					p.Logger.Error("客户端断开连接",
-						slog.String("模型", request.Model),
-						slog.String("平台", selectedChannel.Platform.Name),
-						slog.Any("error", streamErr))
-					return
-				}
-			}
-
-			// 流正常结束，不需要单独更新健康状态
-			// defer 会处理统计信息记录
-		}()
-
-		return wrappedStream, nil
 	}
 }
 
