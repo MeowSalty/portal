@@ -216,6 +216,7 @@ func (m *GatewayManager) ChatCompletion(ctx context.Context, request *types.Requ
 	var response *types.Response
 	err := m.withSession(ctx, func(reqCtx context.Context) (err error) {
 		response, err = m.requestProcessor.ProcessChatCompletion(reqCtx, request)
+		m.activeSessions.Done()
 		return
 	})
 	return response, err
