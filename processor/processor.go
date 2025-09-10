@@ -50,8 +50,125 @@ func NewRequestProcessor(
 }
 
 // ProcessChatCompletion 处理聊天完成请求
+//
+// 该方法实现了完整的请求处理流程：
+//
+//  1. 查找匹配的模型
+//  2. 构建所有可能的通道
+//  3. 过滤出健康的通道
+//  4. 根据策略选择一个通道
+//  5. 获取对应的适配器并执行请求
+//  6. 根据执行结果更新健康状态并返回结果
 func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *types.Request) (*types.Response, error) {
-	return p.processChatCompletion(ctx, request)
+	startTime := time.Now()
+	allChannels, err := p.prepareChannels(ctx, request.Model)
+	if err != nil {
+		return nil, err
+	}
+
+	// 缓存当前时间，避免在 FilterHealthyChannels 中多次调用 time.Now()
+	now := time.Now()
+
+	// 循环重试直到成功或没有可用通道
+	for {
+		selectedChannel, err := p.selectChannel(ctx, allChannels, now)
+		if err != nil {
+			return nil, err
+		}
+
+		// 获取对应的适配器并执行请求
+		adapter, ok := p.Adapters[selectedChannel.Platform.Format]
+		if !ok {
+			p.Logger.Error("适配器未找到", slog.String("格式", selectedChannel.Platform.Format))
+			// 从通道列表中移除无效的通道
+			allChannels = removeChannel(allChannels, selectedChannel)
+
+			// 如果没有剩余通道，返回错误
+			if len(allChannels) == 0 {
+				return nil, fmt.Errorf("适配器未找到：%s", selectedChannel.Platform.Format)
+			}
+
+			// 更新时间戳并继续尝试其他通道
+			now = time.Now()
+			continue
+		}
+
+		// 记录统计信息
+		statOptions := &stats.RecordOptions{
+			Timestamp:   startTime,
+			RequestType: "non-stream",
+			ModelName:   request.Model,
+			ChannelInfo: types.ChannelInfo{
+				PlatformID: selectedChannel.Platform.ID,
+				APIKeyID:   selectedChannel.APIKey.ID,
+				ModelID:    selectedChannel.Model.ID,
+			},
+		}
+
+		// 执行请求前记录开始时间
+		requestStart := time.Now()
+		response, err := adapter.ChatCompletion(ctx, request, selectedChannel)
+
+		// 计算耗时
+		requestDuration := time.Since(requestStart)
+
+		// 更新统计信息
+		statOptions.Duration = requestDuration
+
+		if err != nil {
+			p.Logger.Error("请求执行失败",
+				slog.String("model", request.Model),
+				slog.String("platform", selectedChannel.Platform.Name),
+				slog.Any("error", err))
+
+			// 更新健康状态为失败
+			p.HealthManager.UpdateStatus(
+				types.ResourceTypeAPIKey,
+				selectedChannel.APIKey.ID,
+				false,
+				err.Error(),
+				0,
+			)
+
+			// 记录失败的统计信息
+			errorMsg := err.Error()
+			statOptions.Success = false
+			statOptions.ErrorMsg = &errorMsg
+
+			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
+				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
+			}
+
+			// 从通道列表中移除失败的通道
+			allChannels = removeChannel(allChannels, selectedChannel)
+
+			// 如果没有剩余通道，返回错误
+			if len(allChannels) == 0 {
+				return nil, fmt.Errorf("所有通道都已尝试且失败：%w", err)
+			}
+
+			// 更新时间戳并继续尝试其他通道
+			now = time.Now()
+			continue
+		}
+
+		// 请求成功，更新健康状态
+		p.HealthManager.UpdateStatus(
+			types.ResourceTypeAPIKey,
+			selectedChannel.APIKey.ID,
+			true,
+			"",
+			0,
+		)
+
+		// 记录成功的统计信息
+		statOptions.Success = true
+		if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
+			p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
+		}
+
+		return response, nil
+	}
 }
 
 // ProcessChatCompletionStream 处理流式聊天完成请求
@@ -202,8 +319,8 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 				case <-ctx.Done():
 					streamErr = ctx.Err()
 					p.Logger.Error("客户端断开连接",
-						slog.String("模型", request.Model),
-						slog.String("平台", selectedChannel.Platform.Name),
+						slog.String("model", request.Model),
+						slog.String("platform", selectedChannel.Platform.Name),
 						slog.Any("error", streamErr))
 					return
 				}
@@ -239,8 +356,8 @@ func (p *RequestProcessor) recordStreamStats(
 
 	if streamErr != nil {
 		p.Logger.Error("流式传输过程中发生错误",
-			slog.String("模型", statOptions.ModelName),
-			slog.String("平台", selectedChannel.Platform.Name),
+			slog.String("model", statOptions.ModelName),
+			slog.String("platform", selectedChannel.Platform.Name),
 			slog.Any("error", streamErr))
 
 		// 更新健康状态为失败
@@ -275,131 +392,10 @@ func (p *RequestProcessor) recordStreamStats(
 	}
 }
 
-// processChatCompletion 处理聊天完成请求
-//
-// 该方法实现了完整的请求处理流程：
-//
-//  1. 查找匹配的模型
-//  2. 构建所有可能的通道
-//  3. 过滤出健康的通道
-//  4. 根据策略选择一个通道
-//  5. 获取对应的适配器并执行请求
-//  6. 根据执行结果更新健康状态并返回结果
-func (p *RequestProcessor) processChatCompletion(ctx context.Context, request *types.Request) (*types.Response, error) {
-	startTime := time.Now()
-	allChannels, err := p.prepareChannels(ctx, request.Model)
-	if err != nil {
-		return nil, err
-	}
-
-	// 缓存当前时间，避免在 FilterHealthyChannels 中多次调用 time.Now()
-	now := time.Now()
-
-	// 循环重试直到成功或没有可用通道
-	for {
-		selectedChannel, err := p.selectChannel(ctx, allChannels, now)
-		if err != nil {
-			return nil, err
-		}
-
-		// 5. 获取对应的适配器并执行请求
-		adapter, ok := p.Adapters[selectedChannel.Platform.Format]
-		if !ok {
-			p.Logger.Error("适配器未找到", slog.String("格式", selectedChannel.Platform.Format))
-			// 从通道列表中移除无效的通道
-			allChannels = removeChannel(allChannels, selectedChannel)
-
-			// 如果没有剩余通道，返回错误
-			if len(allChannels) == 0 {
-				return nil, fmt.Errorf("适配器未找到：%s", selectedChannel.Platform.Format)
-			}
-
-			// 更新时间戳并继续尝试其他通道
-			now = time.Now()
-			continue
-		}
-
-		// 记录统计信息
-		statOptions := &stats.RecordOptions{
-			Timestamp:   startTime,
-			RequestType: "non-stream",
-			ModelName:   request.Model,
-			ChannelInfo: types.ChannelInfo{
-				PlatformID: selectedChannel.Platform.ID,
-				APIKeyID:   selectedChannel.APIKey.ID,
-				ModelID:    selectedChannel.Model.ID,
-			},
-		}
-
-		// 执行请求前记录开始时间
-		requestStart := time.Now()
-		response, err := adapter.ChatCompletion(ctx, request, selectedChannel)
-
-		// 计算耗时
-		requestDuration := time.Since(requestStart)
-
-		// 更新统计信息
-		statOptions.Duration = requestDuration
-
-		if err != nil {
-			p.Logger.Error("请求执行失败",
-				slog.String("模型", request.Model),
-				slog.String("平台", selectedChannel.Platform.Name),
-				slog.Any("error", err))
-
-			// 更新健康状态为失败
-			p.HealthManager.UpdateStatus(
-				types.ResourceTypeAPIKey,
-				selectedChannel.APIKey.ID,
-				false,
-				err.Error(),
-				0,
-			)
-
-			// 记录失败的统计信息
-			errorMsg := err.Error()
-			statOptions.Success = false
-			statOptions.ErrorMsg = &errorMsg
-
-			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
-			}
-
-			// 从通道列表中移除失败的通道
-			allChannels = removeChannel(allChannels, selectedChannel)
-
-			// 如果没有剩余通道，返回错误
-			if len(allChannels) == 0 {
-				return nil, fmt.Errorf("所有通道都已尝试且失败：%w", err)
-			}
-
-			// 更新时间戳并继续尝试其他通道
-			now = time.Now()
-			continue
-		}
-
-		// 请求成功，更新健康状态
-		p.HealthManager.UpdateStatus(
-			types.ResourceTypeAPIKey,
-			selectedChannel.APIKey.ID,
-			true,
-			"",
-			0,
-		)
-
-		// 记录成功的统计信息
-		statOptions.Success = true
-		if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-			p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
-		}
-
-		return response, nil
-	}
-}
-
 // prepareChannels 准备通道
 //
 // 该方法实现了通道准备流程：
+//
 // 1. 根据模型名称查找所有匹配的模型
 // 2. 为这些模型构建所有可能的通道
 func (p *RequestProcessor) prepareChannels(ctx context.Context, modelName string) ([]*types.Channel, error) {
@@ -431,24 +427,25 @@ func (p *RequestProcessor) prepareChannels(ctx context.Context, modelName string
 // selectChannel 选择通道
 //
 // 该方法实现了通道选择流程：
+//
 // 1. 过滤出当前健康的通道
 // 2. 使用选择器从健康通道中选择一个
 func (p *RequestProcessor) selectChannel(ctx context.Context, channels []*types.Channel, now time.Time) (*types.Channel, error) {
-	// 1. 过滤出当前健康的通道
+	// 过滤出当前健康的通道
 	healthyChannels := p.HealthManager.FilterHealthyChannels(channels, now)
 	if len(healthyChannels) == 0 {
 		return nil, errors.New("没有可用的健康通道")
 	}
 
-	// 2. 使用选择器从健康通道中选择一个
+	// 使用选择器从健康通道中选择一个
 	selectedChannel, err := p.Selector.Select(ctx, healthyChannels)
 	if err != nil {
 		return nil, fmt.Errorf("选择通道失败：%w", err)
 	}
 
 	p.Logger.Info("通道选择成功",
-		slog.String("模型", selectedChannel.Model.Name),
-		slog.String("平台", selectedChannel.Platform.Name))
+		slog.String("model", selectedChannel.Model.Name),
+		slog.String("platform", selectedChannel.Platform.Name))
 
 	return selectedChannel, nil
 }
