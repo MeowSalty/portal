@@ -7,8 +7,6 @@ import (
 	"log/slog"
 	"time"
 
-	"reflect"
-
 	"github.com/MeowSalty/portal/health"
 	"github.com/MeowSalty/portal/stats"
 	"github.com/MeowSalty/portal/types"
@@ -60,18 +58,15 @@ func NewRequestProcessor(
 //  5. 获取对应的适配器并执行请求
 //  6. 根据执行结果更新健康状态并返回结果
 func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *types.Request) (*types.Response, error) {
-	startTime := time.Now()
+	requestStart := time.Now()
 	allChannels, err := p.prepareChannels(ctx, request.Model)
 	if err != nil {
 		return nil, err
 	}
 
-	// 缓存当前时间，避免在 FilterHealthyChannels 中多次调用 time.Now()
-	now := time.Now()
-
 	// 循环重试直到成功或没有可用通道
 	for {
-		selectedChannel, err := p.selectChannel(ctx, allChannels, now)
+		selectedChannel, err := p.selectChannel(ctx, allChannels, requestStart)
 		if err != nil {
 			return nil, err
 		}
@@ -89,13 +84,13 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 			}
 
 			// 更新时间戳并继续尝试其他通道
-			now = time.Now()
+			requestStart = time.Now()
 			continue
 		}
 
 		// 记录统计信息
-		statOptions := &stats.RecordOptions{
-			Timestamp:   startTime,
+		statOptions := &types.RequestStat{
+			Timestamp:   requestStart,
 			RequestType: "non-stream",
 			ModelName:   request.Model,
 			ChannelInfo: types.ChannelInfo{
@@ -105,8 +100,6 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 			},
 		}
 
-		// 执行请求前记录开始时间
-		requestStart := time.Now()
 		response, err := adapter.ChatCompletion(ctx, request, selectedChannel)
 
 		// 计算耗时
@@ -148,7 +141,7 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 			}
 
 			// 更新时间戳并继续尝试其他通道
-			now = time.Now()
+			requestStart = time.Now()
 			continue
 		}
 
@@ -214,7 +207,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 		}
 
 		// 记录统计信息
-		statOptions := &stats.RecordOptions{
+		statOptions := &types.RequestStat{
 			Timestamp:   startTime,
 			RequestType: "stream",
 			ModelName:   request.Model,
@@ -277,14 +270,63 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 			// 确保在流处理完成后调用 doneFunc
 			defer doneFunc()
 
-			firstByteTime := time.Now()
+			firstByteRecorded := false
+			var firstByteTime time.Time
 			var streamErr error
 
 			// 用于确保只处理一次流结束后的状态更新
 			statsRecorded := false
 			defer func() {
 				if !statsRecorded {
-					p.recordStreamStats(statOptions, requestStart, firstByteTime, streamErr, selectedChannel, ctx)
+					// 计算耗时
+					requestDuration := time.Since(requestStart)
+
+					// 更新统计信息
+					statOptions.Duration = requestDuration
+
+					// 如果记录了首字节时间，则计算首字节耗时
+					if firstByteRecorded {
+						firstByteDuration := firstByteTime.Sub(requestStart)
+						statOptions.FirstByteTime = &firstByteDuration
+					}
+
+					// 内联 recordStreamStats 函数的实现
+					if streamErr != nil {
+						p.Logger.Error("流式传输过程中发生错误",
+							slog.String("model", statOptions.ModelName),
+							slog.String("platform", selectedChannel.Platform.Name),
+							slog.Any("error", streamErr))
+
+						// 更新健康状态为失败
+						p.HealthManager.UpdateStatus(
+							types.ResourceTypeAPIKey,
+							selectedChannel.APIKey.ID,
+							false,
+							streamErr.Error(),
+							0,
+						)
+
+						// 记录失败的统计信息
+						errorMsg := streamErr.Error()
+						statOptions.Success = false
+						statOptions.ErrorMsg = &errorMsg
+					} else {
+						// 流正常结束，更新健康状态为成功
+						p.HealthManager.UpdateStatus(
+							types.ResourceTypeAPIKey,
+							selectedChannel.APIKey.ID,
+							true,
+							"",
+							0,
+						)
+
+						// 记录成功的统计信息
+						statOptions.Success = true
+					}
+
+					if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
+						p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
+					}
 					statsRecorded = true
 				}
 			}()
@@ -309,9 +351,10 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 					}
 				}
 
-				// 记录第一个响应的到达时间
-				if firstByteTime.Equal(startTime) { // 如果还没有记录过第一个字节时间
+				// 记录第一个响应的到达时间（只记录一次）
+				if !firstByteRecorded {
 					firstByteTime = time.Now()
+					firstByteRecorded = true
 				}
 
 				select {
@@ -331,64 +374,6 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 		}()
 
 		return wrappedStream, nil
-	}
-}
-
-// recordStreamStats 记录流式请求的统计信息
-func (p *RequestProcessor) recordStreamStats(
-	statOptions *stats.RecordOptions,
-	requestStart time.Time,
-	firstByteTime time.Time,
-	streamErr error,
-	selectedChannel *types.Channel,
-	ctx context.Context) {
-
-	// 计算耗时
-	requestDuration := time.Since(requestStart)
-
-	// 更新统计信息
-	statOptions.Duration = requestDuration
-
-	if !reflect.DeepEqual(firstByteTime, time.Time{}) {
-		firstByteDuration := firstByteTime.Sub(requestStart)
-		statOptions.FirstByteTime = &firstByteDuration
-	}
-
-	if streamErr != nil {
-		p.Logger.Error("流式传输过程中发生错误",
-			slog.String("model", statOptions.ModelName),
-			slog.String("platform", selectedChannel.Platform.Name),
-			slog.Any("error", streamErr))
-
-		// 更新健康状态为失败
-		p.HealthManager.UpdateStatus(
-			types.ResourceTypeAPIKey,
-			selectedChannel.APIKey.ID,
-			false,
-			streamErr.Error(),
-			0,
-		)
-
-		// 记录失败的统计信息
-		errorMsg := streamErr.Error()
-		statOptions.Success = false
-		statOptions.ErrorMsg = &errorMsg
-	} else {
-		// 流正常结束，更新健康状态为成功
-		p.HealthManager.UpdateStatus(
-			types.ResourceTypeAPIKey,
-			selectedChannel.APIKey.ID,
-			true,
-			"",
-			0,
-		)
-
-		// 记录成功的统计信息
-		statOptions.Success = true
-	}
-
-	if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
-		p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
 	}
 }
 
