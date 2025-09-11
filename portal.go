@@ -234,16 +234,6 @@ func (m *GatewayManager) ChatCompletionStream(ctx context.Context, request *type
 	return stream, err
 }
 
-// QueryStats 查询请求统计列表
-func (m *GatewayManager) QueryStats(ctx context.Context, params *types.StatsQueryParams) ([]*types.RequestStat, error) {
-	return m.statsManager.QueryStats(ctx, params)
-}
-
-// CountStats 统计请求计数
-func (m *GatewayManager) CountStats(ctx context.Context, params *types.StatsQueryParams) (*types.StatsSummary, error) {
-	return m.statsManager.CountStats(ctx, params)
-}
-
 // GetHealthStatus 获取特定资源的健康状态
 //
 // 该方法根据资源类型和资源 ID 返回对应的健康状态信息
