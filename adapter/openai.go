@@ -161,6 +161,7 @@ func (a *OpenAIAdapter) handleStreamingRequest(
 	err = client.Do(req, resp)
 	if err != nil {
 		logger.Error("发送 HTTP 请求失败", slog.Any("error", err))
+		a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, fmt.Sprintf("发送 HTTP 请求失败：%s", err.Error()))
 		return
 	}
 
@@ -169,6 +170,7 @@ func (a *OpenAIAdapter) handleStreamingRequest(
 		logger.Error("API 返回错误状态码",
 			slog.Int("status_code", resp.StatusCode()),
 			slog.String("response_body", string(body)))
+		a.sendStreamError(ctx, stream, resp.StatusCode(), fmt.Sprintf("API 返回错误状态码: %d, 响应内容: %s", resp.StatusCode(), string(body)))
 		return
 	}
 
@@ -176,6 +178,7 @@ func (a *OpenAIAdapter) handleStreamingRequest(
 	bodyReader := resp.BodyStream()
 	if bodyReader == nil {
 		logger.Error("响应体流为空")
+		a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, "响应体流为空")
 		return
 	}
 
