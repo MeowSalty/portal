@@ -17,13 +17,13 @@ import (
 //
 // 该结构体封装了处理各种 AI 请求的通用逻辑和上下文信息
 type RequestProcessor struct {
-	HealthManager *health.Manager
-	Selector      types.ChannelSelector
-	Adapters      map[string]types.Adapter
-	Logger        *slog.Logger
-	StatsManager  *stats.Manager
-	BuildChannels func(context.Context, []*types.Model) ([]*types.Channel, error)
-	FindModels    func(context.Context, string) ([]*types.Model, error)
+	HealthManager    *health.Manager
+	Selector         types.ChannelSelector
+	Adapters         map[string]types.Adapter
+	Logger           *slog.Logger
+	StatsManager     *stats.Manager
+	BuildChannels    func(context.Context, []*types.Model) ([]*types.Channel, error)
+	FindModelsByName func(context.Context, string) ([]*types.Model, error)
 }
 
 // NewRequestProcessor 创建一个新的请求处理器
@@ -34,16 +34,16 @@ func NewRequestProcessor(
 	logger *slog.Logger,
 	statsManager *stats.Manager,
 	buildChannels func(context.Context, []*types.Model) ([]*types.Channel, error),
-	findModels func(context.Context, string) ([]*types.Model, error),
+	FindModelsByName func(context.Context, string) ([]*types.Model, error),
 ) *RequestProcessor {
 	return &RequestProcessor{
-		HealthManager: healthManager,
-		Selector:      selector,
-		Adapters:      adapters,
-		Logger:        logger,
-		StatsManager:  statsManager,
-		BuildChannels: buildChannels,
-		FindModels:    findModels,
+		HealthManager:    healthManager,
+		Selector:         selector,
+		Adapters:         adapters,
+		Logger:           logger,
+		StatsManager:     statsManager,
+		BuildChannels:    buildChannels,
+		FindModelsByName: FindModelsByName,
 	}
 }
 
@@ -434,7 +434,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 // 2. 为这些模型构建所有可能的通道
 func (p *RequestProcessor) prepareChannels(ctx context.Context, modelName string) ([]*types.Channel, error) {
 	// 1. 根据模型名称查找所有匹配的模型
-	models, err := p.FindModels(ctx, modelName)
+	models, err := p.FindModelsByName(ctx, modelName)
 	if err != nil {
 		p.Logger.Error("查找模型失败", slog.String("模型名称", modelName), slog.Any("error", err))
 		return nil, fmt.Errorf("查找模型失败：%w", err)
