@@ -242,17 +242,21 @@ func ChatCompletionResponseToResponse(resp *openaiTypes.ChatCompletionResponse) 
 		// 根据 Object 类型判断是流式还是非流式
 		if resp.Object == "chat.completion.chunk" {
 			// 流式响应，转换 Delta
-			content := respChoice.Delta.Content
-			role := respChoice.Delta.Role
-			choice.Delta = &coreTypes.Delta{
-				Content: &content,
-				Role:    &role,
+			if respChoice.Delta != nil {
+				content := respChoice.Delta.Content
+				role := respChoice.Delta.Role
+				choice.Delta = &coreTypes.Delta{
+					Content: &content,
+					Role:    &role,
+				}
 			}
 		} else {
 			// 非流式响应，转换 Message
-			choice.Message = &coreTypes.ResponseMessage{
-				Role:    respChoice.Message.Role,
-				Content: respChoice.Message.Content,
+			if respChoice.Message != nil {
+				choice.Message = &coreTypes.ResponseMessage{
+					Role:    respChoice.Message.Role,
+					Content: respChoice.Message.Content,
+				}
 			}
 		}
 
