@@ -109,6 +109,7 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 		statOptions.Duration = requestDuration
 
 		if err != nil {
+			err = sanitizeError(err)
 			p.Logger.Error("请求执行失败",
 				slog.String("model", request.Model),
 				slog.String("platform", selectedChannel.Platform.Name),
@@ -124,9 +125,8 @@ func (p *RequestProcessor) ProcessChatCompletion(ctx context.Context, request *t
 			)
 
 			// 记录失败的统计信息
-			errorMsg := err.Error()
 			statOptions.Success = false
-			statOptions.ErrorMsg = &errorMsg
+			*statOptions.ErrorMsg = err.Error()
 
 			if recordErr := p.StatsManager.RecordRequestStat(ctx, statOptions); recordErr != nil {
 				p.Logger.Error("记录统计信息失败", slog.Any("error", recordErr))
@@ -248,6 +248,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 			now := time.Now()
 			selectedChannel, err := p.selectChannel(ctx, allChannels, now)
 			if err != nil {
+				err = sanitizeError(err)
 				// 如果没有可用通道，发送错误并返回
 				wrappedStream <- &types.Response{
 					Choices: []types.Choice{
@@ -305,6 +306,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 
 			stream, err := adapter.ChatCompletionStream(ctx, request, selectedChannel)
 			if err != nil {
+				err = sanitizeError(err)
 				p.Logger.Error("流式请求初始化失败",
 					slog.String("model", request.Model),
 					slog.String("platform", selectedChannel.Platform.Name),
@@ -348,13 +350,14 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 				hasError := false
 				for _, choice := range response.Choices {
 					if choice.Error != nil && choice.Error.Code != fasthttp.StatusOK {
-						streamErr = fmt.Errorf("stream error: code=%d, message=%s", choice.Error.Code, choice.Error.Message)
+						message := sanitizeErrorMessage(choice.Error.Message)
+						streamErr = fmt.Errorf("stream error: code=%d, message=%s", choice.Error.Code, message)
 						// 记录错误日志
 						p.Logger.Error("流式传输过程中发生错误",
 							slog.String("model", request.Model),
 							slog.String("platform", selectedChannel.Platform.Name),
 							slog.Int("code", choice.Error.Code),
-							slog.String("message", choice.Error.Message),
+							slog.String("message", message),
 							slog.String("request_type", "stream"))
 
 						hasError = true
@@ -495,4 +498,25 @@ func removeChannel(channels []*types.Channel, target *types.Channel) []*types.Ch
 		}
 	}
 	return channels
+}
+
+// isHTMLContent 检查错误信息是否包含 HTML 页面内容
+func isHTMLContent(errorMsg string) bool {
+	return len(errorMsg) > 15 && (errorMsg[:15] == "<!DOCTYPE html>" || errorMsg[:5] == "<html")
+}
+
+// sanitizeError 检查错误中是否包含 HTML 页面内容，如果包含，则屏蔽 HTML 内容并返回
+func sanitizeError(error error) error {
+	if isHTMLContent(error.Error()) {
+		return fmt.Errorf("[HTML content filtered]")
+	}
+	return error
+}
+
+// sanitizeErrorMessage 检查错误信息中是否包含 HTML 页面内容，如果包含，则屏蔽 HTML 内容并返回
+func sanitizeErrorMessage(errorMsg string) string {
+	if isHTMLContent(errorMsg) {
+		return "[HTML content filtered]"
+	}
+	return errorMsg
 }
