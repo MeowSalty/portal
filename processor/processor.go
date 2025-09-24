@@ -201,7 +201,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 			options.Duration = requestDuration
 
 			// 如果记录了首字节时间，则计算首字节耗时
-			if firstByteTime != nil {
+			if firstByteTime != nil && !firstByteTime.IsZero() {
 				firstByteDuration := firstByteTime.Sub(requestStart)
 				options.FirstByteTime = &firstByteDuration
 			}
