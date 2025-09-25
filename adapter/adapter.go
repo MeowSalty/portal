@@ -30,8 +30,8 @@ type Provider interface {
 	// APIEndpoint 返回 API 端点路径
 	APIEndpoint() string
 
-	// Headers 返回特定于提供商的 HTTP 头
-	Headers() map[string]string
+	// Headers 返回特定于提供商的 HTTP 头，包括身份验证头部
+	Headers(channel *coreTypes.Channel) map[string]string
 
 	// SupportsStreaming 返回是否支持流式传输
 	SupportsStreaming() bool
@@ -223,10 +223,9 @@ func (a *Adapter) sendHTTPRequest(
 	req.SetRequestURI(url)
 	req.Header.SetMethod("POST")
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+channel.APIKey.Value)
 
-	// 添加提供商特定头部
-	for key, value := range a.provider.Headers() {
+	// 添加提供商特定头部（包括身份验证头部）
+	for key, value := range a.provider.Headers(channel) {
 		req.Header.Set(key, value)
 	}
 

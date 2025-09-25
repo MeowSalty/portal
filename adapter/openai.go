@@ -60,8 +60,9 @@ func (p *OpenAI) APIEndpoint() string {
 // Headers 返回特定头部
 // OpenAI-Beta: assistants=v2 用于启用助手 API v2 的 beta 功能
 // 这是一个可选头部，仅在需要助手 API 特定功能时使用
-func (p *OpenAI) Headers() map[string]string {
+func (p *OpenAI) Headers(channel *coreTypes.Channel) map[string]string {
 	return map[string]string{
+		"Authorization": "Bearer " + channel.APIKey.Value,
 		// "OpenAI-Beta": "assistants=v2", // 可选：启用助手 API beta 功能
 	}
 }
