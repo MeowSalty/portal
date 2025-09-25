@@ -110,7 +110,7 @@ func New(ctx context.Context, opts ...Option) (*GatewayManager, error) {
 	adapterLogger := opt.logger.WithGroup("adapter")
 
 	// 使用 adapter 包中的注册机制初始化适配器
-	adapters := adapter.New(adapterLogger)
+	adapters := adapter.NewAdapterRegistry(adapterLogger)
 
 	// 初始化健康状态管理器
 	healthManager, err := health.New(ctx, opt.repo, opt.logger, opt.healthSyncInterval)
