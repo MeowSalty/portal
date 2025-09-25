@@ -162,7 +162,7 @@ func (m *RequestMessage) UnmarshalJSON(data []byte) error {
 
 			partType, ok := partMap["type"].(string)
 			if !ok {
-				return fmt.Errorf("content part missing type field")
+				return fmt.Errorf("内容部分缺少 type 字段")
 			}
 
 			switch partType {
