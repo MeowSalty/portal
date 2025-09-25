@@ -378,7 +378,7 @@ func (a *Adapter) processStream(
 			}
 
 			// 确保响应块有效后再发送
-			if chunk != nil {
+			if chunk != nil && len(chunk.Choices) > 0 {
 				select {
 				case stream <- chunk:
 				case <-ctx.Done():
