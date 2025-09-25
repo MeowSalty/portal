@@ -1,6 +1,9 @@
 package openai
 
 import (
+	"encoding/json"
+	"fmt"
+
 	openaiTypes "github.com/MeowSalty/portal/adapter/openai/types"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
@@ -39,9 +42,16 @@ func ChatCompletionRequestToRequest(req *openaiTypes.ChatCompletionRequest) *cor
 	// 转换 Messages
 	for i, msg := range req.Messages {
 		result.Messages[i] = coreTypes.Message{
-			Role:       msg.Role,
-			Name:       &msg.Name,
-			ToolCallID: &msg.ToolCallID,
+			Role: msg.Role,
+		}
+
+		// 正确处理可选字段指针
+		if msg.Name != "" {
+			result.Messages[i].Name = &msg.Name
+		}
+
+		if msg.ToolCallID != "" {
+			result.Messages[i].ToolCallID = &msg.ToolCallID
 		}
 
 		// 转换 Content
@@ -49,6 +59,21 @@ func ChatCompletionRequestToRequest(req *openaiTypes.ChatCompletionRequest) *cor
 			result.Messages[i].Content = coreTypes.MessageContent{
 				StringValue: &contentStr,
 			}
+		} else if contentParts, ok := msg.Content.([]interface{}); ok {
+			// 如果 Content 是内容部分数组，则进行转换
+			parts := make([]coreTypes.ContentPart, len(contentParts))
+			for j, part := range contentParts {
+				if textPart, ok := part.(map[string]interface{}); ok && textPart["type"] == "text" {
+					if text, ok := textPart["text"].(string); ok {
+						parts[j] = coreTypes.ContentPart{
+							Type: "text",
+							Text: &text,
+						}
+					}
+				}
+				// 可以在此处添加对其他类型（如 image_url）的支持
+			}
+			result.Messages[i].Content.ContentParts = parts
 		}
 	}
 
@@ -62,16 +87,26 @@ func ChatCompletionRequestToRequest(req *openaiTypes.ChatCompletionRequest) *cor
 
 	// 转换 Stop
 	if req.Stop != nil {
-		// 这里需要根据实际的 StopField 类型进行转换
+		if stopValue := req.Stop.Get(); stopValue != nil {
+			switch v := stopValue.(type) {
+			case string:
+				if v != "" {
+					result.Stop.StringValue = &v
+				}
+			case []string:
+				if len(v) > 0 {
+					result.Stop.StringArray = v
+				}
+			}
+		}
 	}
 
 	// 转换 LogitBias
 	for k, v := range req.LogitBias {
-		// 注意：这里需要处理 string 到 int 的键转换
-		// 由于 map[string]int 和 map[int]float64 之间的键类型不同，需要进行转换
-		// 这里简化处理，实际应用中可能需要更复杂的转换逻辑
-		_ = k
-		_ = v
+		// 将 string 类型的键转换为 int 类型
+		var intKey int
+		fmt.Sscanf(k, "%d", &intKey)
+		result.LogitBias[intKey] = float64(v)
 	}
 
 	// 转换 Tools
@@ -79,7 +114,13 @@ func ChatCompletionRequestToRequest(req *openaiTypes.ChatCompletionRequest) *cor
 		result.Tools[i] = coreTypes.Tool{
 			Type: tool.Type,
 		}
-		// 注意：由于 coreTypes.Tool 和 openaiTypes.Tool 结构不同，需要进一步处理 Function 字段
+		if tool.Function != nil {
+			result.Tools[i].Function = coreTypes.FunctionDescription{
+				Name:        tool.Function.Name,
+				Description: &tool.Function.Description,
+				Parameters:  tool.Function.Parameters,
+			}
+		}
 	}
 
 	return result
@@ -171,7 +212,17 @@ func RequestToChatCompletionRequest(req *coreTypes.Request) *openaiTypes.ChatCom
 		} else if msg.Content.ContentParts != nil {
 			// 这里需要将 ContentParts 转换为适当的格式
 			// 由于 RequestMessage.Content 是 interface{}类型，我们可以直接赋值
-			requestMsg.Content = msg.Content.ContentParts
+			contentParts := make([]interface{}, len(msg.Content.ContentParts))
+			for j, part := range msg.Content.ContentParts {
+				if part.Text != nil {
+					contentParts[j] = map[string]interface{}{
+						"type": "text",
+						"text": *part.Text,
+					}
+				}
+				// 可以根据需要添加对其他类型内容部分的支持
+			}
+			requestMsg.Content = contentParts
 		}
 
 		result.Messages[i] = requestMsg
@@ -185,17 +236,19 @@ func RequestToChatCompletionRequest(req *coreTypes.Request) *openaiTypes.ChatCom
 	}
 
 	// 转换 Stop
-	if req.Stop.StringValue != nil || req.Stop.StringArray != nil {
-		// 这里需要根据实际的 StopField 类型进行转换
+	if req.Stop.StringValue != nil && *req.Stop.StringValue != "" {
+		result.Stop = &openaiTypes.StopField{}
+		result.Stop.Value = *req.Stop.StringValue
+	} else if len(req.Stop.StringArray) > 0 {
+		result.Stop = &openaiTypes.StopField{}
+		result.Stop.Value = req.Stop.StringArray
 	}
 
 	// 转换 LogitBias
 	for k, v := range req.LogitBias {
 		// 注意：这里需要处理 int 到 string 的键转换
 		// 由于 map[int]float64 和 map[string]int 之间的键类型不同，需要进行转换
-		// 这里简化处理，实际应用中可能需要更复杂的转换逻辑
-		_ = k
-		_ = v
+		result.LogitBias[fmt.Sprintf("%d", k)] = int(v)
 	}
 
 	// 转换 Tools
@@ -203,7 +256,28 @@ func RequestToChatCompletionRequest(req *coreTypes.Request) *openaiTypes.ChatCom
 		result.Tools[i] = openaiTypes.Tool{
 			Type: tool.Type,
 		}
-		// 注意：由于 coreTypes.Tool 和 openaiTypes.Tool 结构不同，需要进一步处理 Function 字段
+
+		// 转换 Function 字段
+		if tool.Function.Name != "" {
+			// 将 interface{} 类型的 Parameters 转换为 json.RawMessage
+			var parameters json.RawMessage
+			if tool.Function.Parameters != nil {
+				if paramsBytes, err := json.Marshal(tool.Function.Parameters); err == nil {
+					parameters = json.RawMessage(paramsBytes)
+				}
+			}
+
+			result.Tools[i].Function = &openaiTypes.Function{
+				Name: tool.Function.Name,
+				Description: func() string {
+					if tool.Function.Description != nil {
+						return *tool.Function.Description
+					}
+					return ""
+				}(),
+				Parameters: parameters,
+			}
+		}
 	}
 
 	return result
@@ -243,11 +317,18 @@ func ChatCompletionResponseToResponse(resp *openaiTypes.ChatCompletionResponse) 
 		if resp.Object == "chat.completion.chunk" {
 			// 流式响应，转换 Delta
 			if respChoice.Delta != nil {
-				content := respChoice.Delta.Content
-				role := respChoice.Delta.Role
-				choice.Delta = &coreTypes.Delta{
-					Content: &content,
-					Role:    &role,
+				choice.Delta = &coreTypes.Delta{}
+
+				// 只有当 Content 不为空时才设置 Content 指针
+				if respChoice.Delta.Content != "" {
+					content := respChoice.Delta.Content
+					choice.Delta.Content = &content
+				}
+
+				// 只有当 Role 不为空时才设置 Role 指针
+				if respChoice.Delta.Role != "" {
+					role := respChoice.Delta.Role
+					choice.Delta.Role = &role
 				}
 			}
 		} else {
@@ -257,6 +338,9 @@ func ChatCompletionResponseToResponse(resp *openaiTypes.ChatCompletionResponse) 
 					Role:    respChoice.Message.Role,
 					Content: respChoice.Message.Content,
 				}
+
+				choice.Message.Role = respChoice.Message.Role
+				choice.Message.Content = respChoice.Message.Content
 			}
 		}
 
@@ -273,11 +357,10 @@ func ResponseToChatCompletionResponse(resp *coreTypes.Response) *openaiTypes.Cha
 	}
 
 	result := &openaiTypes.ChatCompletionResponse{
-		ID:          resp.ID,
-		Model:       resp.Model,
-		Object:      resp.Object,
-		Created:     int(resp.Created),
-		ServiceTier: resp.SystemFingerprint, // 这里可能需要调整
+		ID:      resp.ID,
+		Model:   resp.Model,
+		Object:  resp.Object,
+		Created: int(resp.Created),
 		SystemFingerprint: func() string {
 			if resp.SystemFingerprint != nil {
 				return *resp.SystemFingerprint
@@ -295,49 +378,38 @@ func ResponseToChatCompletionResponse(resp *coreTypes.Response) *openaiTypes.Cha
 		}
 	}
 
-	// 转换 Choices（只处理第一个 Choice）
-	if len(resp.Choices) > 0 {
-		choice := resp.Choices[0]
-		result.Choices = []openaiTypes.Choices{
-			{
-				FinishReason: choice.FinishReason,
-			},
+	// 转换 Choices（处理所有 Choices）
+	result.Choices = make([]openaiTypes.Choices, len(resp.Choices))
+	for i, choice := range resp.Choices {
+		openaiChoice := openaiTypes.Choices{
+			Index:        i,
+			FinishReason: choice.FinishReason,
 		}
 
 		// 根据 Object 类型判断是流式还是非流式
 		if resp.Object == "chat.completion.chunk" {
 			// 流式响应，转换 Delta
-			result.Choices[0].Delta = &openaiTypes.Delta{
-				Content: func() string {
-					if choice.Delta != nil && choice.Delta.Content != nil {
-						return *choice.Delta.Content
-					}
-					return ""
-				}(),
-				Role: func() string {
-					if choice.Delta != nil && choice.Delta.Role != nil {
-						return *choice.Delta.Role
-					}
-					return ""
-				}(),
+			delta := &openaiTypes.Delta{}
+			if choice.Delta != nil {
+				if choice.Delta.Content != nil {
+					delta.Content = *choice.Delta.Content
+				}
+				if choice.Delta.Role != nil {
+					delta.Role = *choice.Delta.Role
+				}
 			}
+			openaiChoice.Delta = delta
 		} else {
 			// 非流式响应，转换 Message
-			result.Choices[0].Message = &openaiTypes.ResponseMessage{
-				Role: func() string {
-					if choice.Message != nil {
-						return choice.Message.Role
-					}
-					return ""
-				}(),
-				Content: func() *string {
-					if choice.Message != nil {
-						return choice.Message.Content
-					}
-					return nil
-				}(),
+			message := &openaiTypes.ResponseMessage{}
+			if choice.Message != nil {
+				message.Role = choice.Message.Role
+				message.Content = choice.Message.Content
 			}
+			openaiChoice.Message = message
 		}
+
+		result.Choices[i] = openaiChoice
 	}
 
 	return result
