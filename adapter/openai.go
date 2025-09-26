@@ -1,9 +1,11 @@
 package adapter
 
 import (
+	"encoding/json"
 	"log/slog"
 
-	"github.com/MeowSalty/portal/adapter/openai"
+	converter "github.com/MeowSalty/portal/adapter/openai/converter"
+	openaiTypes "github.com/MeowSalty/portal/adapter/openai/types"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -36,20 +38,25 @@ func (p *OpenAI) Name() string {
 
 // CreateRequest 创建 OpenAI 请求
 func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *coreTypes.Channel) (interface{}, error) {
-	converter := &openai.OpenAIRequestConverter{}
-	return converter.ConvertRequest(request, channel)
+	return converter.ConvertRequest(request, channel), nil
 }
 
 // ParseResponse 解析 OpenAI 响应
 func (p *OpenAI) ParseResponse(responseData []byte) (*coreTypes.Response, error) {
-	converter := &openai.OpenAIResponseConverter{}
-	return converter.ConvertResponse(responseData)
+	var response openaiTypes.Response
+	if err := json.Unmarshal(responseData, &response); err != nil {
+		return nil, err
+	}
+	return converter.ConvertCoreResponse(&response), nil
 }
 
 // ParseStreamResponse 解析 OpenAI 流式响应
 func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, error) {
-	converter := &openai.OpenAIResponseConverter{}
-	return converter.ConvertStreamResponse(responseData)
+	var chunk openaiTypes.Response
+	if err := json.Unmarshal(responseData, &chunk); err != nil {
+		return nil, err
+	}
+	return converter.ConvertCoreResponse(&chunk), nil
 }
 
 // APIEndpoint 返回 API 端点
@@ -58,13 +65,13 @@ func (p *OpenAI) APIEndpoint() string {
 }
 
 // Headers 返回特定头部
-// OpenAI-Beta: assistants=v2 用于启用助手 API v2 的 beta 功能
-// 这是一个可选头部，仅在需要助手 API 特定功能时使用
 func (p *OpenAI) Headers(channel *coreTypes.Channel) map[string]string {
-	return map[string]string{
+	headers := map[string]string{
 		"Authorization": "Bearer " + channel.APIKey.Value,
-		// "OpenAI-Beta": "assistants=v2", // 可选：启用助手 API beta 功能
+		"Content-Type":  "application/json",
 	}
+
+	return headers
 }
 
 // SupportsStreaming 是否支持流式传输
