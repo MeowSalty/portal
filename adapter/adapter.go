@@ -28,10 +28,10 @@ type Provider interface {
 	ParseStreamResponse(responseData []byte) (*coreTypes.Response, error)
 
 	// APIEndpoint 返回 API 端点路径
-	APIEndpoint() string
+	APIEndpoint(model string, stream bool) string
 
 	// Headers 返回特定于提供商的 HTTP 头，包括身份验证头部
-	Headers(channel *coreTypes.Channel) map[string]string
+	Headers(key string) map[string]string
 
 	// SupportsStreaming 返回是否支持流式传输
 	SupportsStreaming() bool
@@ -210,7 +210,7 @@ func (a *Adapter) sendHTTPRequest(
 	}
 
 	// 构建 URL
-	url := channel.Platform.BaseURL + a.provider.APIEndpoint()
+	url := channel.Platform.BaseURL + a.provider.APIEndpoint(channel.Model.Name, isStream)
 
 	// 创建请求和响应对象
 	req := fasthttp.AcquireRequest()
@@ -225,7 +225,7 @@ func (a *Adapter) sendHTTPRequest(
 	req.Header.Set("Content-Type", "application/json")
 
 	// 添加提供商特定头部（包括身份验证头部）
-	for key, value := range a.provider.Headers(channel) {
+	for key, value := range a.provider.Headers(channel.APIKey.Value) {
 		req.Header.Set(key, value)
 	}
 

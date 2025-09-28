@@ -60,14 +60,14 @@ func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, 
 }
 
 // APIEndpoint 返回 API 端点
-func (p *OpenAI) APIEndpoint() string {
+func (p *OpenAI) APIEndpoint(model string, stream bool) string {
 	return "/v1/chat/completions"
 }
 
 // Headers 返回特定头部
-func (p *OpenAI) Headers(channel *coreTypes.Channel) map[string]string {
+func (p *OpenAI) Headers(key string) map[string]string {
 	headers := map[string]string{
-		"Authorization": "Bearer " + channel.APIKey.Value,
+		"Authorization": "Bearer " + key,
 		"Content-Type":  "application/json",
 	}
 
