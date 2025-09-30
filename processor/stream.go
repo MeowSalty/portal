@@ -10,7 +10,7 @@ import (
 )
 
 // ProcessChatCompletionStream 处理流式聊天完成请求
-func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, request *types.Request, doneFunc func()) (<-chan *types.Response, error) {
+func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
 	// 准备通道
 	allChannels, err := p.prepareChannels(ctx, request.Model)
 	if err != nil {
@@ -24,7 +24,7 @@ func (p *RequestProcessor) ProcessChatCompletionStream(ctx context.Context, requ
 	retryCtx := p.createRetryContext(allChannels, time.Now())
 
 	// 启动流处理协程
-	go p.processStreamWithRetry(ctx, request, wrappedStream, retryCtx, doneFunc)
+	go p.processStreamWithRetry(ctx, request, wrappedStream, retryCtx)
 
 	return wrappedStream, nil
 }
@@ -35,10 +35,8 @@ func (p *RequestProcessor) processStreamWithRetry(
 	request *types.Request,
 	output chan<- *types.Response,
 	retryCtx *retryContext,
-	doneFunc func(),
 ) {
 	defer close(output)
-	defer doneFunc()
 
 	for len(retryCtx.allChannels) > 0 {
 		// 选择通道
