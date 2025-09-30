@@ -1,4 +1,4 @@
-package channel
+package portal
 
 import (
 	"context"
@@ -8,15 +8,15 @@ import (
 	"github.com/MeowSalty/portal/types"
 )
 
-// Manager 负责通道的构建和管理
-type Manager struct {
+// ChannelManager 负责通道的构建和管理
+type ChannelManager struct {
 	repo   types.DataRepository
 	logger *slog.Logger
 }
 
-// NewManager 创建一个新的通道管理器
-func NewManager(repo types.DataRepository, logger *slog.Logger) *Manager {
-	return &Manager{
+// NewChannelManager 创建一个新的通道管理器
+func NewChannelManager(repo types.DataRepository, logger *slog.Logger) *ChannelManager {
+	return &ChannelManager{
 		repo:   repo,
 		logger: logger.WithGroup("channel"),
 	}
@@ -25,7 +25,7 @@ func NewManager(repo types.DataRepository, logger *slog.Logger) *Manager {
 // BuildChannels 从模型列表创建所有可能的通道列表
 //
 // 该方法会为每个模型获取对应的平台和 API 密钥，并构建通道对象
-func (m *Manager) BuildChannels(ctx context.Context, models []*types.Model) ([]*types.Channel, error) {
+func (m *ChannelManager) BuildChannels(ctx context.Context, models []*types.Model) ([]*types.Channel, error) {
 	var channels []*types.Channel
 	var errs []error
 
