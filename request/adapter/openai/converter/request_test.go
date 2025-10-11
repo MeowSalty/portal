@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/adapter/openai/converter"
-	"github.com/MeowSalty/portal/adapter/openai/types"
+	"github.com/MeowSalty/portal/request/adapter/openai/converter"
+	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -36,10 +37,8 @@ func TestConvertRequest_TextMessage(t *testing.T) {
 	}
 
 	// 创建通道信息
-	channel := &coreTypes.Channel{
-		Model: &coreTypes.Model{
-			Name: "gpt-3.5-turbo",
-		},
+	channel := &routing.Channel{
+		ModelName: "gpt-3.5-turbo",
 	}
 
 	// 调用转换函数
@@ -130,10 +129,8 @@ func TestConvertRequest_TextMessageWithStream(t *testing.T) {
 	}
 
 	// 创建通道信息
-	channel := &coreTypes.Channel{
-		Model: &coreTypes.Model{
-			Name: "gpt-4",
-		},
+	channel := &routing.Channel{
+		ModelName: "gpt-4",
 	}
 
 	// 调用转换函数

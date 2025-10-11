@@ -1,7 +1,7 @@
 package converter
 
 import (
-	"github.com/MeowSalty/portal/adapter/gemini/types"
+	"github.com/MeowSalty/portal/request/adapter/gemini/types"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 

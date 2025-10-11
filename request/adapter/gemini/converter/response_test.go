@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/adapter/gemini/converter"
-	"github.com/MeowSalty/portal/adapter/gemini/types"
+	"github.com/MeowSalty/portal/request/adapter/gemini/converter"
+	"github.com/MeowSalty/portal/request/adapter/gemini/types"
 	coryType "github.com/MeowSalty/portal/types"
 )
 

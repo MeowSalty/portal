@@ -1,12 +1,13 @@
 package converter
 
 import (
-	"github.com/MeowSalty/portal/adapter/gemini/types"
+	"github.com/MeowSalty/portal/request/adapter/gemini/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // ConvertRequest 将核心请求转换为 Gemini 请求
-func ConvertRequest(request *coreTypes.Request, channel *coreTypes.Channel) *types.Request {
+func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *types.Request {
 	geminiReq := &types.Request{
 		Contents: convertMessagesToContents(request.Messages),
 	}

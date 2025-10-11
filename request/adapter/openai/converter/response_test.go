@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/adapter/openai/converter"
-	"github.com/MeowSalty/portal/adapter/openai/types"
+	"github.com/MeowSalty/portal/request/adapter/openai/converter"
+	"github.com/MeowSalty/portal/request/adapter/openai/types"
 	// coreTypes "github.com/MeowSalty/portal/types"
 )
 

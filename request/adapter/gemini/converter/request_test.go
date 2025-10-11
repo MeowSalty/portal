@@ -4,8 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/adapter/gemini/converter"
-	"github.com/MeowSalty/portal/adapter/gemini/types"
+	"github.com/MeowSalty/portal/request/adapter/gemini/converter"
+	"github.com/MeowSalty/portal/request/adapter/gemini/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -31,7 +32,7 @@ func TestConvertRequest_TextMessage(t *testing.T) {
 	}
 
 	// 创建一个模拟的通道对象
-	channel := &coreTypes.Channel{}
+	channel := &routing.Channel{}
 
 	// 执行转换
 	geminiReq := converter.ConvertRequest(&request, channel)
@@ -133,7 +134,7 @@ func TestConvertRequest_TextMessageWithMultipleParts(t *testing.T) {
 	}
 
 	// 创建一个模拟的通道对象
-	channel := &coreTypes.Channel{}
+	channel := &routing.Channel{}
 
 	// 执行转换
 	geminiReq := converter.ConvertRequest(&request, channel)

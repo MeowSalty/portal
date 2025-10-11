@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/MeowSalty/portal/adapter/openai/types"
+	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // ConvertRequest 将核心请求转换为 OpenAI 请求
-func ConvertRequest(request *coreTypes.Request, channel *coreTypes.Channel) interface{} {
+func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interface{} {
 	openaiReq := &types.Request{
-		Model:    channel.Model.Name,
+		Model:    channel.ModelName,
 		Messages: make([]types.RequestMessage, len(request.Messages)),
 	}
 

@@ -2,33 +2,26 @@ package adapter
 
 import (
 	"encoding/json"
-	"log/slog"
 
-	"github.com/MeowSalty/portal/adapter/gemini/converter"
-	geminiTypes "github.com/MeowSalty/portal/adapter/gemini/types"
+	"github.com/MeowSalty/portal/request/adapter/gemini/converter"
+	geminiTypes "github.com/MeowSalty/portal/request/adapter/gemini/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // Gemini Gemini 提供商实现
-type Gemini struct {
-	logger *slog.Logger
-}
+type Gemini struct{}
 
 // init 函数注册 Gemini 提供商
 func init() {
-	RegisterProviderFactory("Gemini", func(logger *slog.Logger) Provider {
-		return NewGeminiProvider(logger)
+	RegisterProviderFactory("Gemini", func() Provider {
+		return NewGeminiProvider()
 	})
 }
 
 // NewGeminiProvider 创建新的 Gemini 提供商
-func NewGeminiProvider(logger *slog.Logger) *Gemini {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Gemini{
-		logger: logger.WithGroup("gemini"),
-	}
+func NewGeminiProvider() *Gemini {
+	return &Gemini{}
 }
 
 // Name 返回提供商名称
@@ -37,7 +30,7 @@ func (p *Gemini) Name() string {
 }
 
 // CreateRequest 创建 Gemini 请求
-func (p *Gemini) CreateRequest(request *coreTypes.Request, channel *coreTypes.Channel) (interface{}, error) {
+func (p *Gemini) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
 	return converter.ConvertRequest(request, channel), nil
 }
 

@@ -2,33 +2,26 @@ package adapter
 
 import (
 	"encoding/json"
-	"log/slog"
 
-	converter "github.com/MeowSalty/portal/adapter/openai/converter"
-	openaiTypes "github.com/MeowSalty/portal/adapter/openai/types"
+	converter "github.com/MeowSalty/portal/request/adapter/openai/converter"
+	openaiTypes "github.com/MeowSalty/portal/request/adapter/openai/types"
+	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // OpenAI OpenAI 提供商实现
-type OpenAI struct {
-	logger *slog.Logger
-}
+type OpenAI struct{}
 
 // init 函数注册 OpenAI 提供商
 func init() {
-	RegisterProviderFactory("OpenAI", func(logger *slog.Logger) Provider {
-		return NewOpenAIProvider(logger)
+	RegisterProviderFactory("OpenAI", func() Provider {
+		return NewOpenAIProvider()
 	})
 }
 
 // NewOpenAIProvider 创建新的 OpenAI 提供商
-func NewOpenAIProvider(logger *slog.Logger) *OpenAI {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &OpenAI{
-		logger: logger.WithGroup("openai"),
-	}
+func NewOpenAIProvider() *OpenAI {
+	return &OpenAI{}
 }
 
 // Name 返回提供商名称
@@ -37,7 +30,7 @@ func (p *OpenAI) Name() string {
 }
 
 // CreateRequest 创建 OpenAI 请求
-func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *coreTypes.Channel) (interface{}, error) {
+func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
 	return converter.ConvertRequest(request, channel), nil
 }
 
