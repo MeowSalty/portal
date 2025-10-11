@@ -4,20 +4,18 @@ package health
 import (
 	"fmt"
 	"sync"
-
-	"github.com/MeowSalty/portal/types"
 )
 
 // Cache 定义健康状态缓存接口
 type Cache interface {
 	// Get 获取指定资源的健康状态
-	Get(resourceType types.ResourceType, resourceID uint) (*types.Health, bool)
+	Get(resourceType ResourceType, resourceID uint) (*Health, bool)
 	// Set 设置指定资源的健康状态
-	Set(resourceType types.ResourceType, resourceID uint, status *types.Health)
+	Set(resourceType ResourceType, resourceID uint, status *Health)
 	// LoadAll 批量加载健康状态
-	LoadAll(statuses []*types.Health) int
+	LoadAll(statuses []*Health)
 	// ForEach 遍历所有缓存项
-	ForEach(fn func(key string, status *types.Health) bool)
+	ForEach(fn func(key string, status *Health) bool)
 }
 
 // cache 实现了线程安全的健康状态缓存
@@ -31,45 +29,58 @@ func NewCache() Cache {
 }
 
 // Get 获取指定资源的健康状态
-func (c *cache) Get(resourceType types.ResourceType, resourceID uint) (*types.Health, bool) {
+func (c *cache) Get(resourceType ResourceType, resourceID uint) (*Health, bool) {
 	key := generateKey(resourceType, resourceID)
-	if value, ok := c.data.Load(key); ok {
-		return value.(*types.Health), true
+	value, ok := c.data.Load(key)
+	if !ok {
+		return nil, false
 	}
-	return nil, false
+
+	status, ok := value.(*Health)
+	if !ok {
+		// 类型不匹配，清理无效数据
+		c.data.Delete(key)
+		return nil, false
+	}
+	return status, true
 }
 
 // Set 设置指定资源的健康状态
-func (c *cache) Set(resourceType types.ResourceType, resourceID uint, status *types.Health) {
+func (c *cache) Set(resourceType ResourceType, resourceID uint, status *Health) {
 	key := generateKey(resourceType, resourceID)
 	c.data.Store(key, status)
 }
 
 // LoadAll 批量加载健康状态
-//
-// 返回加载的健康状态数量
-func (c *cache) LoadAll(statuses []*types.Health) int {
-	count := 0
+func (c *cache) LoadAll(statuses []*Health) {
 	for _, status := range statuses {
+		if status == nil {
+			continue
+		}
 		// 为缓存创建堆分配的副本以避免数据竞争
 		s := *status
 		key := generateKey(s.ResourceType, s.ResourceID)
 		c.data.Store(key, &s)
-		count++
 	}
-	return count
 }
 
 // ForEach 遍历所有缓存项
 //
 // 如果 fn 返回 false，则停止遍历
-func (c *cache) ForEach(fn func(key string, status *types.Health) bool) {
+func (c *cache) ForEach(fn func(key string, status *Health) bool) {
 	c.data.Range(func(key, value interface{}) bool {
-		return fn(key.(string), value.(*types.Health))
+		k, ok1 := key.(string)
+		v, ok2 := value.(*Health)
+		if !ok1 || !ok2 {
+			// 类型不匹配，清理无效数据
+			c.data.Delete(key)
+			return true
+		}
+		return fn(k, v)
 	})
 }
 
 // generateKey 生成资源的缓存键
-func generateKey(resourceType types.ResourceType, resourceID uint) string {
+func generateKey(resourceType ResourceType, resourceID uint) string {
 	return fmt.Sprintf("%d:%d", resourceType, resourceID)
 }
