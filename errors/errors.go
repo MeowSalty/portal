@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // ErrorCode 定义错误码类型
@@ -84,21 +85,29 @@ func (e *Error) Error() string {
 		msg = fmt.Sprintf("[%s] %s", e.Code, e.Message)
 	}
 
+	// 如果有 HTTP 状态码，则添加到错误信息中
+	if e.HTTPStatus != nil {
+		msg = fmt.Sprintf("%s (HTTP Status: %d)", msg, *e.HTTPStatus)
+	}
+
 	// 如果有上下文信息，则添加到错误信息中
 	if len(e.Context) > 0 {
 		// 将上下文信息转换为字符串
-		contextStr := "{"
+		var builder strings.Builder
+		builder.WriteString("{")
 		first := true
 		for k, v := range e.Context {
 			if !first {
-				contextStr += ", "
+				builder.WriteString(", ")
 			}
-			contextStr += fmt.Sprintf("%s=%v", k, v)
+			builder.WriteString(k)
+			builder.WriteString("=")
+			builder.WriteString(fmt.Sprintf("%v", v))
 			first = false
 		}
-		contextStr += "}"
+		builder.WriteString("}")
 
-		msg = fmt.Sprintf("%s (context: %s)", msg, contextStr)
+		msg = fmt.Sprintf("%s [context: %s]", msg, builder.String())
 	}
 
 	return msg
