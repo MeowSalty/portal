@@ -62,9 +62,7 @@ func (sm *Session) WithSession(ctx context.Context, fn func(reqCtx context.Conte
 	}()
 
 	// 执行会话函数
-	err := fn(reqCtx, reqCancel)
-
-	return err
+	return fn(reqCtx, reqCancel)
 }
 
 // Shutdown 优雅地关闭服务
