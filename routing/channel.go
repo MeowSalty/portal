@@ -28,10 +28,28 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 		return
 	}
 
+	// 更新平台级别的健康状态
+	c.healthService.UpdateStatus(
+		health.ResourceTypePlatform,
+		c.PlatformID,
+		true, // 成功
+		"",   // 无错误信息
+		0,    // 无错误码
+	)
+
 	// 更新模型级别的健康状态
 	c.healthService.UpdateStatus(
 		health.ResourceTypeModel,
 		c.ModelID,
+		true, // 成功
+		"",   // 无错误信息
+		0,    // 无错误码
+	)
+
+	// 更新 API 密钥级别的健康状态
+	c.healthService.UpdateStatus(
+		health.ResourceTypeAPIKey,
+		c.APIKeyID,
 		true, // 成功
 		"",   // 无错误信息
 		0,    // 无错误码
