@@ -37,22 +37,19 @@ type ChannelInfo struct {
 // recordRequestLog 记录请求统计信息
 func (p *Request) recordRequestLog(
 	requestLog *RequestLog,
-	requestStart time.Time,
 	firstByteTime *time.Time,
 	success bool,
-	errMsg *string,
 ) {
 	// 计算耗时
-	requestDuration := time.Since(requestStart)
+	requestDuration := time.Since(requestLog.Timestamp)
 	requestLog.Duration = requestDuration
 
 	// 如果记录了首字节时间，则计算首字节耗时
 	if firstByteTime != nil && !firstByteTime.IsZero() {
-		firstByteDuration := firstByteTime.Sub(requestStart)
+		firstByteDuration := firstByteTime.Sub(requestLog.Timestamp)
 		requestLog.FirstByteTime = &firstByteDuration
 	}
 	requestLog.Success = success
-	requestLog.ErrorMsg = errMsg
 
 	p.createRequestLog(context.Background(), requestLog)
 }

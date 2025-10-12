@@ -36,24 +36,11 @@ func (p *Request) ChatCompletionStream(
 	requestLog := &RequestLog{
 		Timestamp:   now,
 		RequestType: "stream",
-		ModelName:   request.Model,
+		ModelName:   channel.ModelName,
 		ChannelInfo: ChannelInfo{
 			PlatformID: channel.PlatformID,
 			APIKeyID:   channel.APIKeyID,
 			ModelID:    channel.ModelID,
-		},
-	}
-	streamCtx := &streamContext{
-		requestStart: now,
-		requestLog: &RequestLog{
-			Timestamp:   now,
-			RequestType: "stream",
-			ModelName:   request.Model,
-			ChannelInfo: ChannelInfo{
-				PlatformID: channel.PlatformID,
-				APIKeyID:   channel.APIKeyID,
-				ModelID:    channel.ModelID,
-			},
 		},
 	}
 
@@ -62,12 +49,13 @@ func (p *Request) ChatCompletionStream(
 	err = adapter.ChatCompletionStream(ctx, request, channel, internalStream)
 	if err != nil {
 		errorMsg := err.(*errors.Error).Error()
-		p.recordRequestLog(requestLog, now, nil, false, &errorMsg)
+		requestLog.ErrorMsg = &errorMsg
+		p.recordRequestLog(requestLog, nil, false)
 		return err
 	}
 
 	// 处理流数据
-	return p.handleStreamData(ctx, internalStream, output, streamCtx)
+	return p.handleStreamData(ctx, internalStream, output, requestLog)
 }
 
 // handleStreamData 处理流数据
@@ -75,35 +63,36 @@ func (p *Request) handleStreamData(
 	ctx context.Context,
 	input <-chan *types.Response,
 	output chan<- *types.Response,
-	streamCtx *streamContext,
+	requestLog *RequestLog,
 ) error {
 	firstByteRecorded := false
-
+	var firstByteTime *time.Time
 	for response := range input {
 		// 检查错误
 		if err := p.checkResponseError(response); err != nil {
 			msg := err.Error()
-			streamCtx.requestLog.ErrorMsg = &msg
-			p.recordLog(streamCtx)
+			requestLog.ErrorMsg = &msg
+			p.recordRequestLog(requestLog, nil, false)
 			return err
 		}
 
 		// 记录首字节时间
 		if !firstByteRecorded {
 			now := time.Now()
-			streamCtx.firstByteTime = &now
+			firstByteTime = &now
 			firstByteRecorded = true
 		}
 
 		// 发送响应
-		if err := p.sendResponse(ctx, output, response, streamCtx); err != nil {
+		if err := p.sendResponse(ctx, output, response, requestLog, firstByteTime); err != nil {
 			return err
 		}
+
 	}
 
 	// 流成功完成
 	close(output)
-	p.recordLog(streamCtx)
+	p.recordRequestLog(requestLog, firstByteTime, true)
 	return nil
 }
 
@@ -112,7 +101,8 @@ func (p *Request) sendResponse(
 	ctx context.Context,
 	output chan<- *types.Response,
 	response *types.Response,
-	streamCtx *streamContext,
+	requestLog *RequestLog,
+	firstByteTime *time.Time,
 ) error {
 	select {
 	case output <- response:
@@ -120,26 +110,8 @@ func (p *Request) sendResponse(
 	case <-ctx.Done():
 		err := errors.Wrap(errors.ErrCodeAborted, "连接被终止", ctx.Err())
 		msg := err.Error()
-		streamCtx.requestLog.ErrorMsg = &msg
-		p.recordLog(streamCtx)
+		requestLog.ErrorMsg = &msg
+		p.recordRequestLog(requestLog, firstByteTime, true)
 		return err
 	}
-}
-
-// recordLog 记录请求日志
-func (p *Request) recordLog(streamCtx *streamContext) {
-	var errorMsg *string
-	isSuccess := true
-	if streamCtx.streamError != nil {
-		isSuccess = false
-		if portalErr, ok := streamCtx.streamError.(*errors.Error); ok {
-			if portalErr.Is(errors.ErrAborted) {
-				// 忽略因终止操作导致的错误
-				isSuccess = true
-			}
-			msg := portalErr.Error()
-			errorMsg = &msg
-		}
-	}
-	p.recordRequestLog(streamCtx.requestLog, streamCtx.requestStart, streamCtx.firstByteTime, isSuccess, errorMsg)
 }
