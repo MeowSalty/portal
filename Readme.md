@@ -4,11 +4,12 @@ Portal 是一个用 Go 语言编写的 AI 网关管理模块，提供多平台 A
 
 ## 功能特性
 
-- **统一接入**: 支持多种 AI 平台（虽然现在只有 OpenAI）的统一接入
-- **负载均衡**: 提供多种通道选择策略（随机、最近最少使用等）
+- **统一接入**: 支持多种 AI 平台（包括 OpenAI 和 Gemini）的统一接入
+- **智能路由**: 基于模型名称和健康状态自动选择最佳通道
 - **健康检查**: 实时监控各平台和通道的健康状态
-- **请求统计**: 记录和统计请求数据，便于分析和监控
-- **优雅停机**: 支持优雅停机，确保正在处理的请求能正常完成
+- **会话管理**: 提供请求会话生命周期管理和优雅停机
+- **错误处理**: 结构化错误码和上下文信息
+- **性能监控**: 请求统计和性能指标收集
 
 ## 安装
 
@@ -20,7 +21,7 @@ go get github.com/MeowSalty/portal
 
 ## 使用方法
 
-### 1. 初始化 GatewayManager
+### 1. 初始化 Portal
 
 ```go
 import (
@@ -29,25 +30,24 @@ import (
     "time"
 
     "github.com/MeowSalty/portal"
-    "github.com/MeowSalty/portal/types"
+    "github.com/MeowSalty/portal/routing"
+    "github.com/MeowSalty/portal/request"
+    "github.com/MeowSalty/portal/routing/health"
 )
 
 // 创建配置
-config := &portal.Config{
-    Repo:  yourDataRepository, // 实现 types.DataRepository 接口
-    Logger: slog.Default(),
+cfg := &portal.Config{
+    PlatformRepo: yourPlatformRepo,    // 实现 routing.PlatformRepository
+    ModelRepo:    yourModelRepo,      // 实现 routing.ModelRepository
+    KeyRepo:      yourKeyRepo,       // 实现 routing.KeyRepository
+    HealthRepo:   yourHealthRepo,    // 实现 health.HealthRepository
+    LogRepo:      yourLogRepo,       // 实现 request.RequestLogRepository
 }
 
-// 创建 GatewayManager 实例
-ctx := context.Background()
-manager, err := portal.New(ctx,
-    portal.WithRepository(yourDataRepository),
-    portal.WithSelectorStrategy(portal.RandomSelectorStrategy), // 或 portal.LRUSelectorStrategy
-    portal.WithHealthSyncInterval(time.Minute),
-    portal.WithLogger(slog.Default()),
-)
+// 创建 Portal 实例
+portal, err := portal.New(cfg)
 if err != nil {
-    log.Fatal("Failed to create GatewayManager:", err)
+    log.Fatal("Failed to create Portal:", err)
 }
 ```
 
@@ -66,13 +66,13 @@ request := &types.Request{
 }
 
 // 处理聊天完成请求
-response, err := manager.ChatCompletion(context.Background(), request)
+response, err := portal.ChatCompletion(context.Background(), request)
 if err != nil {
     log.Fatal("Failed to process request:", err)
 }
 
 // 处理流式聊天完成请求
-stream, err := manager.ChatCompletionStream(context.Background(), request)
+stream, err := portal.ChatCompletionStream(context.Background(), request)
 if err != nil {
     log.Fatal("Failed to process stream request:", err)
 }
@@ -83,29 +83,11 @@ for resp := range stream {
 }
 ```
 
-### 3. 查询统计信息
-
-```go
-// 查询请求统计
-stats, err := manager.QueryStats(context.Background(), &types.StatsQueryParams{
-    Limit: 100,
-})
-if err != nil {
-    log.Fatal("Failed to query stats:", err)
-}
-
-// 统计请求计数
-summary, err := manager.CountStats(context.Background(), &types.StatsQueryParams{})
-if err != nil {
-    log.Fatal("Failed to count stats:", err)
-}
-```
-
-### 4. 优雅停机
+### 3. 优雅停机
 
 ```go
 // 优雅停机，等待最多 30 秒
-err := manager.Shutdown(30 * time.Second)
+err := portal.Close(30 * time.Second)
 if err != nil {
     log.Fatal("Shutdown error:", err)
 }
@@ -115,33 +97,40 @@ if err != nil {
 
 ```tree
 portal/
-├── adapter/           # 适配器相关
-│   ├── openai/        # OpenAI 适配器实现
-│   └── registry.go    # 适配器注册机制
-├── health/            # 健康检查模块
-├── selector/          # 通道选择策略
-├── stats/             # 统计模块
+├── request/           # 请求处理模块
+│   ├── adapter/       # 平台适配器实现
+│   │   ├── openai/    # OpenAI 适配器
+│   │   ├── gemini/    # Gemini 适配器
+│   │   └── registry.go # 适配器注册机制
+│   └── request.go     # 核心请求处理逻辑
+├── routing/            # 路由管理模块
+│   ├── health/        # 健康检查实现
+│   ├── selector/      # 通道选择策略
+│   └── routing.go     # 核心路由逻辑
+├── session/           # 会话管理模块
 ├── types/             # 数据类型定义
-├── processor/         # 请求处理逻辑（新增）
-├── channel/           # 通道管理（新增）
-├── config.go          # 配置定义
-└── portal.go          # 核心管理器
+├── errors/            # 错误处理模块
+└── portal.go          # 核心入口
 ```
 
 ## 核心概念
 
 ### 适配器 (Adapter)
 
-适配器负责与特定 AI 平台的 API 交互，目前支持 OpenAI 格式的适配器。
+适配器负责与特定 AI 平台的 API 交互，目前支持 OpenAI 和 Gemini 格式的适配器。
 
-### 选择器 (Selector)
+### 路由 (Routing)
 
-选择器决定在多个可用通道中选择哪个通道来处理请求，支持随机选择和最近最少使用 (LRU) 选择策略。
+路由模块负责根据模型名称查找可用通道，并基于健康状态选择最佳通道。
 
-### 健康管理 (Health)
+### 会话 (Session)
 
-健康管理系统监控各平台和通道的健康状态，确保请求只会被发送到健康的通道。
+会话管理模块处理请求的生命周期，包括优雅停机和上下文取消。
 
-### 统计 (Stats)
+### 错误处理 (Error Handling)
 
-统计模块记录和分析请求数据，提供查询和统计功能。
+提供结构化错误码和上下文信息，便于问题诊断和监控。
+
+### 性能监控 (Performance Monitoring)
+
+收集和分析请求统计信息，提供性能洞察和优化建议。
