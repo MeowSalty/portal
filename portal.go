@@ -93,6 +93,25 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 		for {
 			channel, err = p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
+				// 创建错误响应并发送到流中
+				errorResponse := &types.Response{
+					Choices: []types.Choice{
+						{
+							Error: &types.ErrorResponse{
+								Code:    *err.(*errors.Error).HTTPStatus,
+								Message: errors.GetMessage(err),
+							},
+						},
+					},
+				}
+				select {
+				case <-ctx.Done():
+				default:
+					select {
+					case clientStream <- errorResponse:
+					default:
+					}
+				}
 				close(clientStream)
 				break
 			}
@@ -118,6 +137,8 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				if errors.IsCode(err, errors.ErrCodeAborted) {
 					channel.MarkSuccess(ctx)
 				}
+				channel.MarkFailure(ctx, errors.GetHTTPStatus(err), errors.GetMessage(err))
+				close(clientStream)
 				break
 			}
 			channel.MarkSuccess(ctx)

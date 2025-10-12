@@ -7,6 +7,7 @@ import (
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/routing/health"
 	"github.com/MeowSalty/portal/routing/selector"
+	"github.com/valyala/fasthttp"
 )
 
 // Routing 管理通道的获取和状态
@@ -67,18 +68,18 @@ func New(ctx context.Context, cfg Config) (*Routing, error) {
 // GetChannel 根据模型名称获取一个可用的通道
 func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, error) {
 	if modelName == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空")
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
 
 	// 1. 通过模型名称或别名查找模型
 	models, err := r.modelRepo.FindModelsByNameOrAlias(ctx, modelName)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err)
+		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
 
 	if len(models) == 0 {
 		// 返回错误
-		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型")
+		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型").WithHTTPStatus(fasthttp.StatusNotFound)
 	}
 
 	// 2. 为每个模型构建通道
@@ -113,13 +114,13 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 
 	// 4. 如果没有可用通道，返回错误
 	if len(availableChannels) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "没有可用的通道")
+		return nil, errors.New(errors.ErrCodeResourceExhausted, "没有可用的通道").WithHTTPStatus(fasthttp.StatusServiceUnavailable)
 	}
 
 	// 5. 使用 selector 选择一个通道
 	selectedID, err := r.selector.Select(channelInfos)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err)
+		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
 
 	// 找到对应的通道
@@ -130,7 +131,7 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 	}
 
 	// 不应该到达这里
-	return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到")
+	return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(fasthttp.StatusInternalServerError)
 }
 
 // buildChannelsForModel 为指定模型构建所有可能的通道
