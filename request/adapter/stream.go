@@ -95,10 +95,11 @@ func (a *Adapter) handleStreaming(
 				// 确保响应块有效后再发送
 				if chunk != nil && len(chunk.Choices) > 0 {
 					select {
-					case stream <- chunk:
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
 						return
+					default:
+						stream <- chunk
 					}
 				}
 			}
@@ -116,16 +117,17 @@ func (a *Adapter) sendStreamError(
 	message string,
 ) {
 	select {
-	case stream <- &coreTypes.Response{
-		Choices: []coreTypes.Choice{
-			{
-				Error: &coreTypes.ErrorResponse{
-					Code:    code,
-					Message: message,
+	case <-ctx.Done():
+	default:
+		stream <- &coreTypes.Response{
+			Choices: []coreTypes.Choice{
+				{
+					Error: &coreTypes.ErrorResponse{
+						Code:    code,
+						Message: message,
+					},
 				},
 			},
-		},
-	}:
-	case <-ctx.Done():
+		}
 	}
 }
