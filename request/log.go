@@ -13,10 +13,11 @@ type RequestLog struct {
 	ID string `json:"id"` // 唯一标识符
 
 	// 请求基本信息
-	Timestamp   time.Time   `json:"timestamp"`    // 请求时间
-	RequestType string      `json:"request_type"` // 请求类型：stream 或 non-stream
-	ModelName   string      `json:"model_name"`   // 模型名称
-	ChannelInfo ChannelInfo `json:"channel_info"` // 通道信息
+	Timestamp         time.Time   `json:"timestamp"`                     // 请求时间
+	RequestType       string      `json:"request_type"`                  // 请求类型：stream 或 non-stream
+	ModelName         string      `json:"model_name"`                    // 模型名称
+	OriginalModelName string      `json:"original_model_name,omitempty"` // 原始模型名称（用户请求中的模型名称）
+	ChannelInfo       ChannelInfo `json:"channel_info"`                  // 通道信息
 
 	// 耗时信息
 	Duration      time.Duration  `json:"duration"`                  // 总用时

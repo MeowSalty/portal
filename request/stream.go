@@ -34,9 +34,10 @@ func (p *Request) ChatCompletionStream(
 	// 创建流上下文
 	now := time.Now()
 	requestLog := &RequestLog{
-		Timestamp:   now,
-		RequestType: "stream",
-		ModelName:   channel.ModelName,
+		Timestamp:         now,
+		RequestType:       "stream",
+		ModelName:         channel.ModelName,
+		OriginalModelName: request.Model,
 		ChannelInfo: ChannelInfo{
 			PlatformID: channel.PlatformID,
 			APIKeyID:   channel.APIKeyID,
