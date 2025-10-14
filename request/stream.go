@@ -14,7 +14,7 @@ import (
 //
 // 该方法负责处理单个通道的流式请求，包括：
 // - 获取并验证适配器
-// - 创建流上下文
+// - 创建请求日志
 // - 初始化流连接
 // - 处理流数据
 func (p *Request) ChatCompletionStream(
@@ -31,7 +31,7 @@ func (p *Request) ChatCompletionStream(
 			WithContext("format", channel.PlatformType)
 	}
 
-	// 创建流上下文
+	// 创建请求日志
 	now := time.Now()
 	requestLog := &RequestLog{
 		Timestamp:         now,
