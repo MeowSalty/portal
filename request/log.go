@@ -2,15 +2,12 @@ package request
 
 import (
 	"context"
-	"crypto/rand"
-	"fmt"
-	"math/big"
 	"time"
 )
 
 // RequestLog 表示单个请求的统计信息
 type RequestLog struct {
-	ID string `json:"id"` // 唯一标识符
+	ID uint `json:"id"` // 唯一标识符
 
 	// 请求基本信息
 	Timestamp         time.Time `json:"timestamp"`                     // 请求时间
@@ -54,20 +51,5 @@ func (p *Request) recordRequestLog(
 	}
 	requestLog.Success = success
 
-	p.createRequestLog(context.Background(), requestLog)
-}
-
-// createRequestLog 安全地记录统计信息
-func (p *Request) createRequestLog(ctx context.Context, log *RequestLog) {
-	log.ID = generateID()
-	p.repo.CreateRequestLog(ctx, log) // TODO：添加错误处理
-}
-
-// generateID 生成唯一的 ID
-func generateID() string {
-	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
-	if err != nil {
-		return fmt.Sprintf("%d", time.Now().UnixNano())
-	}
-	return fmt.Sprintf("%d%d", time.Now().UnixNano(), n)
+	p.repo.CreateRequestLog(context.Background(), requestLog)
 }
