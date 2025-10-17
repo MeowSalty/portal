@@ -29,11 +29,9 @@ func (p *Request) ChatCompletion(
 		RequestType:       "non-stream",
 		ModelName:         channel.ModelName,
 		OriginalModelName: request.Model,
-		ChannelInfo: ChannelInfo{
-			PlatformID: channel.PlatformID,
-			APIKeyID:   channel.APIKeyID,
-			ModelID:    channel.ModelID,
-		},
+		PlatformID:        channel.PlatformID,
+		APIKeyID:          channel.APIKeyID,
+		ModelID:           channel.ModelID,
 	}
 
 	// 执行请求
@@ -42,6 +40,13 @@ func (p *Request) ChatCompletion(
 	// 计算耗时
 	requestDuration := time.Since(now)
 	requestLog.Duration = requestDuration
+
+	// 记录 Token 用量
+	if response.Usage != nil {
+		requestLog.PromptTokens = &response.Usage.PromptTokens
+		requestLog.CompletionTokens = &response.Usage.CompletionTokens
+		requestLog.TotalTokens = &response.Usage.TotalTokens
+	}
 
 	if err != nil {
 		// 记录失败统计

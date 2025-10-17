@@ -38,11 +38,9 @@ func (p *Request) ChatCompletionStream(
 		RequestType:       "stream",
 		ModelName:         channel.ModelName,
 		OriginalModelName: request.Model,
-		ChannelInfo: ChannelInfo{
-			PlatformID: channel.PlatformID,
-			APIKeyID:   channel.APIKeyID,
-			ModelID:    channel.ModelID,
-		},
+		PlatformID:        channel.PlatformID,
+		APIKeyID:          channel.APIKeyID,
+		ModelID:           channel.ModelID,
 	}
 
 	// 创建内部流
@@ -82,6 +80,13 @@ func (p *Request) handleStreamData(
 			now := time.Now()
 			firstByteTime = &now
 			firstByteRecorded = true
+		}
+
+		// 记录 Token 用量
+		if response.Usage != nil {
+			requestLog.CompletionTokens = &response.Usage.CompletionTokens
+			requestLog.PromptTokens = &response.Usage.PromptTokens
+			requestLog.TotalTokens = &response.Usage.TotalTokens
 		}
 
 		// 发送响应
