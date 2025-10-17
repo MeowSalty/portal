@@ -19,6 +19,13 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 	// 处理流参数
 	if request.Stream != nil {
 		openaiReq.Stream = request.Stream
+		// 当开启流式传输时，默认开启 include_usage
+		if *request.Stream {
+			trueValue := true
+			openaiReq.StreamOptions = &types.StreamOptions{
+				IncludeUsage: &trueValue,
+			}
+		}
 	}
 
 	// 处理温度参数
