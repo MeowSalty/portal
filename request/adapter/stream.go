@@ -93,7 +93,7 @@ func (a *Adapter) handleStreaming(
 				}
 
 				// 确保响应块有效后再发送
-				if chunk != nil && len(chunk.Choices) > 0 {
+				if chunk != nil {
 					select {
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
