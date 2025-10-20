@@ -54,11 +54,11 @@ func (p *Anthropic) ParseResponse(responseData []byte) (*coreTypes.Response, err
 		}, nil
 	}
 
-	var response anthropicTypes.AnthropicResponse
+	var response anthropicTypes.Response
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		return nil, err
 	}
-	return converter.ConvertCoreResponse(&response), nil
+	return response.ConvertCoreResponse(), nil
 }
 
 // ParseStreamResponse 解析 Anthropic 流式响应
@@ -88,7 +88,7 @@ func (p *Anthropic) ParseStreamResponse(responseData []byte) (*coreTypes.Respons
 		}
 	}
 
-	return converter.ConvertStreamEvent(&event), nil
+	return event.ConvertCoreResponse(), nil
 }
 
 // APIEndpoint 返回 API 端点

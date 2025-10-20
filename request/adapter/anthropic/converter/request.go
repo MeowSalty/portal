@@ -9,8 +9,8 @@ import (
 )
 
 // ConvertRequest 将核心请求转换为 Anthropic 请求
-func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthropicTypes.AnthropicRequest {
-	anthropicReq := &anthropicTypes.AnthropicRequest{
+func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthropicTypes.Request {
+	anthropicReq := &anthropicTypes.Request{
 		Model:     request.Model,
 		Messages:  convertMessages(request.Messages),
 		MaxTokens: getMaxTokens(request.MaxTokens),

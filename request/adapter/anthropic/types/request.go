@@ -1,7 +1,11 @@
 package types
 
-// AnthropicRequest Anthropic API 请求结构
-type AnthropicRequest struct {
+import (
+	coreTypes "github.com/MeowSalty/portal/types"
+)
+
+// Request Anthropic API 请求结构
+type Request struct {
 	Model         string         `json:"model"`                    // 模型名称
 	Messages      []InputMessage `json:"messages"`                 // 消息列表
 	MaxTokens     int            `json:"max_tokens"`               // 最大生成 token 数
@@ -34,6 +38,9 @@ type ContentBlock struct {
 	Content   interface{}  `json:"content,omitempty"`     // 工具结果内容
 	IsError   *bool        `json:"is_error,omitempty"`    // 是否为错误
 }
+
+// ContentBlocks 是 ContentBlock 的切片类型，用于添加相关方法
+type ContentBlocks []ContentBlock
 
 // ImageSource 图像源
 type ImageSource struct {
@@ -78,4 +85,209 @@ type ToolChoiceTool struct {
 	Type                   string `json:"type"` // "tool"
 	Name                   string `json:"name"` // 工具名称
 	DisableParallelToolUse *bool  `json:"disable_parallel_tool_use,omitempty"`
+}
+
+// ConvertCoreRequest 将 Anthropic 请求转换为核心请求
+func (anthropicReq *Request) ConvertCoreRequest() *coreTypes.Request {
+	coreReq := &coreTypes.Request{
+		Model: anthropicReq.Model,
+	}
+
+	// 转换流参数
+	if anthropicReq.Stream != nil {
+		coreReq.Stream = anthropicReq.Stream
+	}
+
+	// 转换温度参数
+	if anthropicReq.Temperature != nil {
+		coreReq.Temperature = anthropicReq.Temperature
+	}
+
+	// 转换 TopP 参数
+	if anthropicReq.TopP != nil {
+		coreReq.TopP = anthropicReq.TopP
+	}
+
+	// 转换 TopK 参数
+	if anthropicReq.TopK != nil {
+		coreReq.TopK = anthropicReq.TopK
+	}
+
+	// 转换最大 token 数
+	maxTokens := anthropicReq.MaxTokens
+	coreReq.MaxTokens = &maxTokens
+
+	// 转换停止序列
+	if len(anthropicReq.StopSequences) > 0 {
+		if len(anthropicReq.StopSequences) == 1 {
+			coreReq.Stop.StringValue = &anthropicReq.StopSequences[0]
+		} else {
+			coreReq.Stop.StringArray = anthropicReq.StopSequences
+		}
+	}
+
+	// 转换消息
+	coreReq.Messages = make([]coreTypes.Message, 0, len(anthropicReq.Messages)+1)
+
+	// 如果存在系统消息，添加到消息列表开头
+	if anthropicReq.System != nil {
+		systemMsg := coreTypes.Message{
+			Role: "system",
+		}
+
+		switch sys := anthropicReq.System.(type) {
+		case string:
+			systemMsg.Content.StringValue = &sys
+		case []ContentBlock:
+			// 如果系统消息是内容块数组，转换为核心格式
+			contentParts := ContentBlocks(sys).convertAnthropicContentBlocks()
+			systemMsg.Content.ContentParts = contentParts
+		}
+
+		coreReq.Messages = append(coreReq.Messages, systemMsg)
+	}
+
+	// 转换普通消息
+	for _, msg := range anthropicReq.Messages {
+		coreMsg := coreTypes.Message{
+			Role: msg.Role,
+		}
+
+		// 转换消息内容
+		switch content := msg.Content.(type) {
+		case string:
+			// 字符串内容
+			coreMsg.Content.StringValue = &content
+		case []ContentBlock:
+			// 内容块数组
+			coreMsg.Content.ContentParts = ContentBlocks(content).convertAnthropicContentBlocks()
+		}
+
+		coreReq.Messages = append(coreReq.Messages, coreMsg)
+	}
+
+	// 转换工具（如果存在）
+	if len(anthropicReq.Tools) > 0 {
+		coreReq.Tools = make([]coreTypes.Tool, len(anthropicReq.Tools))
+		for i, tool := range anthropicReq.Tools {
+			coreReq.Tools[i] = coreTypes.Tool{
+				Type: "function",
+				Function: coreTypes.FunctionDescription{
+					Name:        tool.Name,
+					Description: tool.Description,
+					Parameters:  tool.InputSchema.convertAnthropicInputSchema(),
+				},
+			}
+		}
+	}
+
+	// 转换工具选择
+	if anthropicReq.ToolChoice != nil {
+		coreReq.ToolChoice = convertAnthropicToolChoice(anthropicReq.ToolChoice)
+	}
+
+	// 转换用户元数据
+	if anthropicReq.Metadata != nil && anthropicReq.Metadata.UserID != nil {
+		coreReq.User = anthropicReq.Metadata.UserID
+	}
+
+	return coreReq
+}
+
+// convertAnthropicContentBlocks 转换 Anthropic 内容块为核心内容部分
+func (blocks ContentBlocks) convertAnthropicContentBlocks() []coreTypes.ContentPart {
+	contentParts := make([]coreTypes.ContentPart, 0, len(blocks))
+
+	for _, block := range blocks {
+		switch block.Type {
+		case "text":
+			if block.Text != nil {
+				contentParts = append(contentParts, coreTypes.ContentPart{
+					Type: "text",
+					Text: block.Text,
+				})
+			}
+		case "image":
+			if block.Source != nil {
+				// 将 Anthropic 的 base64 图像格式转换为 data URL
+				url := "data:" + block.Source.MediaType + ";base64," + block.Source.Data
+				contentParts = append(contentParts, coreTypes.ContentPart{
+					Type: "image_url",
+					ImageURL: &coreTypes.ImageURL{
+						URL: url,
+					},
+				})
+			}
+		case "tool_use":
+			// 工具使用内容暂不处理，因为核心 ContentPart 不支持
+			// 可能需要在未来扩展核心类型
+		case "tool_result":
+			// 工具结果内容暂不处理
+		}
+	}
+
+	return contentParts
+}
+
+// convertAnthropicInputSchema 转换 Anthropic InputSchema 为核心参数格式
+func (schema InputSchema) convertAnthropicInputSchema() interface{} {
+	params := map[string]interface{}{
+		"type": schema.Type,
+	}
+
+	if schema.Properties != nil {
+		params["properties"] = schema.Properties
+	}
+
+	if len(schema.Required) > 0 {
+		params["required"] = schema.Required
+	}
+
+	return params
+}
+
+// convertAnthropicToolChoice 转换 Anthropic 工具选择为核心格式
+func convertAnthropicToolChoice(toolChoice interface{}) coreTypes.ToolChoice {
+	var coreToolChoice coreTypes.ToolChoice
+
+	switch tc := toolChoice.(type) {
+	case ToolChoiceAuto:
+		mode := "auto"
+		coreToolChoice.Mode = &mode
+	case ToolChoiceAny:
+		// "any" 在核心格式中映射为 "auto"
+		mode := "auto"
+		coreToolChoice.Mode = &mode
+	case ToolChoiceTool:
+		// 指定工具选择
+		coreToolChoice.Function = &coreTypes.FunctionToolChoice{
+			Type: "function",
+			Function: coreTypes.FunctionNameChoice{
+				Name: tc.Name,
+			},
+		}
+	case map[string]interface{}:
+		// 处理通过 JSON 解析得到的 map 格式
+		if typeStr, ok := tc["type"].(string); ok {
+			switch typeStr {
+			case "auto":
+				mode := "auto"
+				coreToolChoice.Mode = &mode
+			case "any":
+				mode := "auto"
+				coreToolChoice.Mode = &mode
+			case "tool":
+				if name, ok := tc["name"].(string); ok {
+					coreToolChoice.Function = &coreTypes.FunctionToolChoice{
+						Type: "function",
+						Function: coreTypes.FunctionNameChoice{
+							Name: name,
+						},
+					}
+				}
+			}
+		}
+	}
+
+	return coreToolChoice
 }
