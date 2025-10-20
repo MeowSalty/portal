@@ -14,10 +14,11 @@ type Response struct {
 
 // Choice 表示聊天完成选择
 type Choice struct {
-	FinishReason *string   `json:"finish_reason"`   // 完成原因
-	Index        int       `json:"index"`           // 索引
-	Logprobs     *Logprobs `json:"logprobs"`        // 对数概率
-	Delta        *Delta    `json:"delta,omitempty"` // 消息
+	FinishReason *string   `json:"finish_reason"`     // 完成原因
+	Index        int       `json:"index"`             // 索引
+	Logprobs     *Logprobs `json:"logprobs"`          // 对数概率
+	Message      *Message  `json:"message,omitempty"` // 消息（非流式响应）
+	Delta        *Delta    `json:"delta,omitempty"`   // 增量消息（流式响应）
 }
 
 // Logprobs 表示对数概率信息
@@ -41,11 +42,20 @@ type TokenLogprobTopLogprob struct {
 	Logprob float64 `json:"logprob"` // 对数概率
 }
 
-// Delta 表示聊天完成消息
-type Delta struct {
+// Message 表示聊天完成消息（非流式响应）
+type Message struct {
 	Content      *string       `json:"content,omitempty"`       // 内容
 	Refusal      *string       `json:"refusal,omitempty"`       // 拒绝消息
 	Role         string        `json:"role"`                    // 角色
+	FunctionCall *FunctionCall `json:"function_call,omitempty"` // 函数调用
+	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`    // 工具调用
+}
+
+// Delta 表示聊天完成增量消息（流式响应）
+type Delta struct {
+	Content      *string       `json:"content,omitempty"`       // 内容
+	Refusal      *string       `json:"refusal,omitempty"`       // 拒绝消息
+	Role         *string       `json:"role,omitempty"`          // 角色
 	FunctionCall *FunctionCall `json:"function_call,omitempty"` // 函数调用
 	ToolCalls    []ToolCall    `json:"tool_calls,omitempty"`    // 工具调用
 }

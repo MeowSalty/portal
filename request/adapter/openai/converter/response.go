@@ -34,22 +34,53 @@ func ConvertCoreResponse(openaiResp *types.Response) *coreTypes.Response {
 			FinishReason: choice.FinishReason,
 		}
 
-		// 转换消息内容
+		// 判断是流式响应还是非流式响应
 		if choice.Delta != nil {
-			coreChoice.Message = &coreTypes.ResponseMessage{
+			// 流式响应：数据应放在 Delta 中
+			coreChoice.Delta = &coreTypes.Delta{
 				Role: choice.Delta.Role,
 			}
 
 			// 转换消息内容
 			if choice.Delta.Content != nil {
 				content := *choice.Delta.Content
-				coreChoice.Message.Content = &content
+				coreChoice.Delta.Content = &content
 			}
 
 			// 转换工具调用
 			if len(choice.Delta.ToolCalls) > 0 {
-				coreChoice.Message.ToolCalls = make([]coreTypes.ToolCall, len(choice.Delta.ToolCalls))
+				coreChoice.Delta.ToolCalls = make([]coreTypes.ToolCall, len(choice.Delta.ToolCalls))
 				for j, toolCall := range choice.Delta.ToolCalls {
+					coreToolCall := coreTypes.ToolCall{
+						ID:   toolCall.ID,
+						Type: toolCall.Type,
+					}
+					// 转换函数调用
+					if toolCall.Function != nil {
+						coreToolCall.Function = coreTypes.FunctionCall{
+							Name:      toolCall.Function.Name,
+							Arguments: toolCall.Function.Arguments,
+						}
+					}
+					coreChoice.Delta.ToolCalls[j] = coreToolCall
+				}
+			}
+		} else if choice.Message != nil {
+			// 非流式响应：数据应放在 Message 中
+			coreChoice.Message = &coreTypes.ResponseMessage{
+				Role: choice.Message.Role,
+			}
+
+			// 转换消息内容
+			if choice.Message.Content != nil {
+				content := *choice.Message.Content
+				coreChoice.Message.Content = &content
+			}
+
+			// 转换工具调用
+			if len(choice.Message.ToolCalls) > 0 {
+				coreChoice.Message.ToolCalls = make([]coreTypes.ToolCall, len(choice.Message.ToolCalls))
+				for j, toolCall := range choice.Message.ToolCalls {
 					coreToolCall := coreTypes.ToolCall{
 						ID:   toolCall.ID,
 						Type: toolCall.Type,
@@ -102,22 +133,23 @@ func ConvertResponse(resp *coreTypes.Response) *types.Response {
 			Index:        i,
 		}
 
-		// 只有当 choice.Message 不为 nil 时才处理消息相关内容
-		if choice.Message != nil {
+		// 判断是流式响应还是非流式响应
+		if choice.Delta != nil {
+			// 流式响应：数据在 Delta 中
 			openaiChoice.Delta = &types.Delta{
-				Role: choice.Message.Role,
+				Role: choice.Delta.Role,
 			}
 
 			// 转换消息内容
-			if choice.Message.Content != nil {
-				content := *choice.Message.Content
+			if choice.Delta.Content != nil {
+				content := *choice.Delta.Content
 				openaiChoice.Delta.Content = &content
 			}
 
 			// 转换工具调用
-			if len(choice.Message.ToolCalls) > 0 {
-				openaiChoice.Delta.ToolCalls = make([]types.ToolCall, len(choice.Message.ToolCalls))
-				for j, toolCall := range choice.Message.ToolCalls {
+			if len(choice.Delta.ToolCalls) > 0 {
+				openaiChoice.Delta.ToolCalls = make([]types.ToolCall, len(choice.Delta.ToolCalls))
+				for j, toolCall := range choice.Delta.ToolCalls {
 					openaiToolCall := types.ToolCall{
 						ID:   toolCall.ID,
 						Type: toolCall.Type,
@@ -129,6 +161,35 @@ func ConvertResponse(resp *coreTypes.Response) *types.Response {
 						}
 					}
 					openaiChoice.Delta.ToolCalls[j] = openaiToolCall
+				}
+			}
+		} else if choice.Message != nil {
+			// 非流式响应：数据在 Message 中
+			openaiChoice.Message = &types.Message{
+				Role: choice.Message.Role,
+			}
+
+			// 转换消息内容
+			if choice.Message.Content != nil {
+				content := *choice.Message.Content
+				openaiChoice.Message.Content = &content
+			}
+
+			// 转换工具调用
+			if len(choice.Message.ToolCalls) > 0 {
+				openaiChoice.Message.ToolCalls = make([]types.ToolCall, len(choice.Message.ToolCalls))
+				for j, toolCall := range choice.Message.ToolCalls {
+					openaiToolCall := types.ToolCall{
+						ID:   toolCall.ID,
+						Type: toolCall.Type,
+					}
+					if toolCall.Function.Name != "" {
+						openaiToolCall.Function = &types.ToolCallFunction{
+							Name:      toolCall.Function.Name,
+							Arguments: toolCall.Function.Arguments,
+						}
+					}
+					openaiChoice.Message.ToolCalls[j] = openaiToolCall
 				}
 			}
 		}
