@@ -1,6 +1,8 @@
 package types
 
 import (
+	"encoding/json"
+
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -20,10 +22,105 @@ type Request struct {
 	ToolChoice    interface{}    `json:"tool_choice,omitempty"`    // 工具选择
 }
 
+// UnmarshalJSON 实现 Request 的自定义 JSON 反序列化
+func (r *Request) UnmarshalJSON(data []byte) error {
+	// 使用临时结构体避免递归调用
+	type Alias Request
+	aux := &struct {
+		System     json.RawMessage `json:"system,omitempty"`
+		ToolChoice json.RawMessage `json:"tool_choice,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(r),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// 解析 System 字段
+	if len(aux.System) > 0 {
+		// 尝试解析为字符串
+		var str string
+		if err := json.Unmarshal(aux.System, &str); err == nil {
+			r.System = str
+		} else {
+			// 尝试解析为 ContentBlock 数组
+			var blocks []ContentBlock
+			if err := json.Unmarshal(aux.System, &blocks); err == nil {
+				r.System = blocks
+			}
+		}
+	}
+
+	// 解析 ToolChoice 字段
+	if len(aux.ToolChoice) > 0 {
+		// 先解析为 map 以获取 type 字段
+		var typeMap map[string]interface{}
+		if err := json.Unmarshal(aux.ToolChoice, &typeMap); err == nil {
+			if typeStr, ok := typeMap["type"].(string); ok {
+				switch typeStr {
+				case "auto":
+					var toolChoice ToolChoiceAuto
+					if err := json.Unmarshal(aux.ToolChoice, &toolChoice); err == nil {
+						r.ToolChoice = toolChoice
+					}
+				case "any":
+					var toolChoice ToolChoiceAny
+					if err := json.Unmarshal(aux.ToolChoice, &toolChoice); err == nil {
+						r.ToolChoice = toolChoice
+					}
+				case "tool":
+					var toolChoice ToolChoiceTool
+					if err := json.Unmarshal(aux.ToolChoice, &toolChoice); err == nil {
+						r.ToolChoice = toolChoice
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
 // InputMessage 输入消息结构
 type InputMessage struct {
 	Role    string      `json:"role"`    // 角色："user" 或 "assistant"
 	Content interface{} `json:"content"` // 内容，可以是 string 或 []ContentBlock
+}
+
+// UnmarshalJSON 实现 InputMessage 的自定义 JSON 反序列化
+func (m *InputMessage) UnmarshalJSON(data []byte) error {
+	// 使用临时结构体避免递归调用
+	type Alias InputMessage
+	aux := &struct {
+		Content json.RawMessage `json:"content"`
+		*Alias
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// 尝试解析 Content 为字符串
+	var str string
+	if err := json.Unmarshal(aux.Content, &str); err == nil {
+		m.Content = str
+		return nil
+	}
+
+	// 尝试解析为 ContentBlock 数组
+	var blocks []ContentBlock
+	if err := json.Unmarshal(aux.Content, &blocks); err == nil {
+		m.Content = blocks
+		return nil
+	}
+
+	// 如果都失败，保持为 nil
+	m.Content = nil
+	return nil
 }
 
 // ContentBlock 内容块接口，可以是文本、图像等
@@ -37,6 +134,54 @@ type ContentBlock struct {
 	ToolUseID *string      `json:"tool_use_id,omitempty"` // 工具结果对应的工具使用 ID
 	Content   interface{}  `json:"content,omitempty"`     // 工具结果内容
 	IsError   *bool        `json:"is_error,omitempty"`    // 是否为错误
+}
+
+// UnmarshalJSON 实现 ContentBlock 的自定义 JSON 反序列化
+func (cb *ContentBlock) UnmarshalJSON(data []byte) error {
+	// 使用临时结构体避免递归调用
+	type Alias ContentBlock
+	aux := &struct {
+		Input   json.RawMessage `json:"input,omitempty"`
+		Content json.RawMessage `json:"content,omitempty"`
+		*Alias
+	}{
+		Alias: (*Alias)(cb),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// 解析 Input 字段 - 保持为原始 map 或值
+	if len(aux.Input) > 0 {
+		var input map[string]interface{}
+		if err := json.Unmarshal(aux.Input, &input); err == nil {
+			cb.Input = input
+		}
+	}
+
+	// 解析 Content 字段
+	if len(aux.Content) > 0 {
+		// 尝试解析为字符串
+		var str string
+		if err := json.Unmarshal(aux.Content, &str); err == nil {
+			cb.Content = str
+		} else {
+			// 尝试解析为 ContentBlock 数组
+			var blocks []ContentBlock
+			if err := json.Unmarshal(aux.Content, &blocks); err == nil {
+				cb.Content = blocks
+			} else {
+				// 尝试解析为通用 map (用于其他类型的内容)
+				var content map[string]interface{}
+				if err := json.Unmarshal(aux.Content, &content); err == nil {
+					cb.Content = content
+				}
+			}
+		}
+	}
+
+	return nil
 }
 
 // ContentBlocks 是 ContentBlock 的切片类型，用于添加相关方法

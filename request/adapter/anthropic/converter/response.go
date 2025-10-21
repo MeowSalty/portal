@@ -227,6 +227,19 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 			c.toolCallsStarted = make(map[string]bool)
 			c.currentIndex = 0
 
+			var usage *anthropicTypes.Usage
+			if coreResp.Usage != nil {
+				usage = &anthropicTypes.Usage{
+					InputTokens:  coreResp.Usage.PromptTokens,
+					OutputTokens: coreResp.Usage.CompletionTokens,
+				}
+			} else {
+				usage = &anthropicTypes.Usage{
+					InputTokens:  1, // TODO: 获取实际使用统计
+					OutputTokens: 1,
+				}
+			}
+
 			// 生成 message_start 事件
 			events = append(events, &anthropicTypes.StreamEvent{
 				Type: "message_start",
@@ -236,6 +249,7 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 					Model:   coreResp.Model,
 					Role:    *choice.Delta.Role,
 					Content: []anthropicTypes.ResponseContent{},
+					Usage:   usage,
 				},
 			})
 		}
