@@ -3,7 +3,7 @@ package converter
 import (
 	"encoding/json"
 
-	anthropicTypes "github.com/MeowSalty/portal/request/adapter/anthropic/types"
+	"github.com/MeowSalty/portal/request/adapter/anthropic/types"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -40,8 +40,8 @@ func (c *StreamEventConverter) Reset() {
 }
 
 // ParseStreamLine 解析流式响应行
-func ParseStreamLine(line []byte) (*anthropicTypes.StreamEvent, error) {
-	var event anthropicTypes.StreamEvent
+func ParseStreamLine(line []byte) (*types.StreamEvent, error) {
+	var event types.StreamEvent
 	if err := json.Unmarshal(line, &event); err != nil {
 		return nil, err
 	}
@@ -49,8 +49,8 @@ func ParseStreamLine(line []byte) (*anthropicTypes.StreamEvent, error) {
 }
 
 // ConvertResponse 将核心响应转换为 Anthropic 响应（非流式）
-func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
-	anthropicResp := &anthropicTypes.Response{
+func ConvertResponse(coreResp *coreTypes.Response) *types.Response {
+	anthropicResp := &types.Response{
 		ID:    coreResp.ID,
 		Type:  "message",
 		Model: coreResp.Model,
@@ -66,7 +66,7 @@ func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
 
 			// 转换消息内容
 			if choice.Message.Content != nil {
-				anthropicResp.Content = []anthropicTypes.ResponseContent{
+				anthropicResp.Content = []types.ResponseContent{
 					{
 						Type: "text",
 						Text: choice.Message.Content,
@@ -83,7 +83,7 @@ func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
 						json.Unmarshal([]byte(toolCall.Function.Arguments), &input)
 					}
 
-					anthropicResp.Content = append(anthropicResp.Content, anthropicTypes.ResponseContent{
+					anthropicResp.Content = append(anthropicResp.Content, types.ResponseContent{
 						Type:  "tool_use",
 						ID:    &toolCall.ID,
 						Name:  &toolCall.Function.Name,
@@ -94,7 +94,7 @@ func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
 		} else {
 			// 如果没有消息，设置默认角色
 			anthropicResp.Role = "assistant"
-			anthropicResp.Content = []anthropicTypes.ResponseContent{}
+			anthropicResp.Content = []types.ResponseContent{}
 		}
 
 		// 转换停止原因
@@ -105,7 +105,7 @@ func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
 
 	// 转换使用统计
 	if coreResp.Usage != nil {
-		anthropicResp.Usage = &anthropicTypes.Usage{
+		anthropicResp.Usage = &types.Usage{
 			InputTokens:  coreResp.Usage.PromptTokens,
 			OutputTokens: coreResp.Usage.CompletionTokens,
 		}
@@ -114,84 +114,12 @@ func ConvertResponse(coreResp *coreTypes.Response) *anthropicTypes.Response {
 	return anthropicResp
 }
 
-// ConvertStreamEvent 将核心流式响应转换为 StreamEvent
-// 用于将统一的核心响应格式转换回 Anthropic 的流式事件格式
-// 注意：此函数不会自动生成 content_block_start 事件，仅用于 Anthropic 原生响应
-// 如果需要从其他提供商（如 OpenAI）转换，请使用 StreamEventConverter
-func ConvertStreamEvent(coreResp *coreTypes.Response) *anthropicTypes.StreamEvent {
-	event := &anthropicTypes.StreamEvent{}
-
-	// 根据响应的内容判断事件类型
-	if len(coreResp.Choices) > 0 {
-		choice := coreResp.Choices[0]
-
-		// 如果有 Delta，说明是流式响应
-		if choice.Delta != nil {
-			// 如果有角色信息，这是 message_start 事件
-			if choice.Delta.Role != nil {
-				event.Type = "message_start"
-				event.Message = &anthropicTypes.Response{
-					ID:    coreResp.ID,
-					Type:  "message",
-					Model: coreResp.Model,
-					Role:  *choice.Delta.Role,
-				}
-			} else if choice.Delta.Content != nil {
-				// 如果有内容，这是 content_block_delta 事件
-				event.Type = "content_block_delta"
-				event.Delta = &anthropicTypes.Delta{
-					Type: "text_delta",
-					Text: choice.Delta.Content,
-				}
-			} else if len(choice.Delta.ToolCalls) > 0 {
-				// 如果有工具调用，根据内容判断是开始还是增量
-				toolCall := choice.Delta.ToolCalls[0]
-				if toolCall.Function.Name != "" {
-					// 工具使用块开始
-					event.Type = "content_block_start"
-					event.ContentBlock = &anthropicTypes.ResponseContent{
-						Type: "tool_use",
-						ID:   &toolCall.ID,
-						Name: &toolCall.Function.Name,
-					}
-				} else if toolCall.Function.Arguments != "" {
-					// 工具输入增量
-					event.Type = "content_block_delta"
-					event.Delta = &anthropicTypes.Delta{
-						Type:        "input_json_delta",
-						PartialJSON: &toolCall.Function.Arguments,
-					}
-				}
-			}
-		}
-
-		// 如果有完成原因，这是 message_delta 事件
-		if choice.FinishReason != nil {
-			event.Type = "message_delta"
-			anthropicStopReason := convertFinishReason(*choice.FinishReason)
-			event.Delta = &anthropicTypes.Delta{
-				StopReason: anthropicStopReason,
-			}
-		}
-	}
-
-	// 如果有使用统计，添加到事件中
-	if coreResp.Usage != nil {
-		event.Usage = &anthropicTypes.Usage{
-			InputTokens:  coreResp.Usage.PromptTokens,
-			OutputTokens: coreResp.Usage.CompletionTokens,
-		}
-	}
-
-	return event
-}
-
 // ConvertStreamEvents 将核心流式响应转换为 Anthropic StreamEvent 列表
 // 此方法会自动处理 content_block_start 和 content_block_stop 事件的生成
 // 适用于从其他提供商（如 OpenAI）转换到 Anthropic 格式
 // 通过检测角色变更来识别消息边界，角色变更时会自动生成新的 message_start 事件
-func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response) []*anthropicTypes.StreamEvent {
-	events := make([]*anthropicTypes.StreamEvent, 0)
+func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response) []*types.StreamEvent {
+	events := make([]*types.StreamEvent, 0)
 
 	if len(coreResp.Choices) == 0 {
 		return events
@@ -216,7 +144,7 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 			// 如果有正在进行的内容块，先结束它
 			if c.contentBlockStarted || len(c.toolCallsStarted) > 0 {
 				indexCopy := c.currentIndex
-				events = append(events, &anthropicTypes.StreamEvent{
+				events = append(events, &types.StreamEvent{
 					Type:  "content_block_stop",
 					Index: &indexCopy,
 				})
@@ -227,28 +155,28 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 			c.toolCallsStarted = make(map[string]bool)
 			c.currentIndex = 0
 
-			var usage *anthropicTypes.Usage
+			var usage *types.Usage
 			if coreResp.Usage != nil {
-				usage = &anthropicTypes.Usage{
+				usage = &types.Usage{
 					InputTokens:  coreResp.Usage.PromptTokens,
 					OutputTokens: coreResp.Usage.CompletionTokens,
 				}
 			} else {
-				usage = &anthropicTypes.Usage{
+				usage = &types.Usage{
 					InputTokens:  1, // TODO: 获取实际使用统计
 					OutputTokens: 1,
 				}
 			}
 
 			// 生成 message_start 事件
-			events = append(events, &anthropicTypes.StreamEvent{
+			events = append(events, &types.StreamEvent{
 				Type: "message_start",
-				Message: &anthropicTypes.Response{
+				Message: &types.Response{
 					ID:      coreResp.ID,
 					Type:    "message",
 					Model:   coreResp.Model,
 					Role:    *choice.Delta.Role,
-					Content: []anthropicTypes.ResponseContent{},
+					Content: []types.ResponseContent{},
 					Usage:   usage,
 				},
 			})
@@ -260,10 +188,10 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 			if !c.contentBlockStarted {
 				emptyText := ""
 				indexCopy := c.currentIndex
-				events = append(events, &anthropicTypes.StreamEvent{
+				events = append(events, &types.StreamEvent{
 					Type:  "content_block_start",
 					Index: &indexCopy,
-					ContentBlock: &anthropicTypes.ResponseContent{
+					ContentBlock: &types.ResponseContent{
 						Type: "text",
 						Text: &emptyText,
 					},
@@ -273,10 +201,10 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 
 			// 发送 content_block_delta
 			indexCopy := c.currentIndex
-			events = append(events, &anthropicTypes.StreamEvent{
+			events = append(events, &types.StreamEvent{
 				Type:  "content_block_delta",
 				Index: &indexCopy,
-				Delta: &anthropicTypes.Delta{
+				Delta: &types.Delta{
 					Type: "text_delta",
 					Text: choice.Delta.Content,
 				},
@@ -291,7 +219,7 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 					// 如果之前有文本内容块，先结束它
 					if c.contentBlockStarted {
 						indexCopy := c.currentIndex
-						events = append(events, &anthropicTypes.StreamEvent{
+						events = append(events, &types.StreamEvent{
 							Type:  "content_block_stop",
 							Index: &indexCopy,
 						})
@@ -300,10 +228,10 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 					}
 
 					indexCopy := c.currentIndex
-					events = append(events, &anthropicTypes.StreamEvent{
+					events = append(events, &types.StreamEvent{
 						Type:  "content_block_start",
 						Index: &indexCopy,
-						ContentBlock: &anthropicTypes.ResponseContent{
+						ContentBlock: &types.ResponseContent{
 							Type: "tool_use",
 							ID:   &toolCall.ID,
 							Name: &toolCall.Function.Name,
@@ -315,10 +243,10 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 				// 工具调用参数增量
 				if toolCall.Function.Arguments != "" {
 					indexCopy := c.currentIndex
-					events = append(events, &anthropicTypes.StreamEvent{
+					events = append(events, &types.StreamEvent{
 						Type:  "content_block_delta",
 						Index: &indexCopy,
-						Delta: &anthropicTypes.Delta{
+						Delta: &types.Delta{
 							Type:        "input_json_delta",
 							PartialJSON: &toolCall.Function.Arguments,
 						},
@@ -333,7 +261,7 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 		// 结束当前内容块
 		if c.contentBlockStarted || len(c.toolCallsStarted) > 0 {
 			indexCopy := c.currentIndex
-			events = append(events, &anthropicTypes.StreamEvent{
+			events = append(events, &types.StreamEvent{
 				Type:  "content_block_stop",
 				Index: &indexCopy,
 			})
@@ -347,12 +275,12 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 	if coreResp.Usage != nil && c.cachedFinishReason != nil {
 		// 发送 message_delta 事件（包含 stop_reason 和 usage）
 		anthropicStopReason := convertFinishReason(*c.cachedFinishReason)
-		messageDeltaEvent := &anthropicTypes.StreamEvent{
+		messageDeltaEvent := &types.StreamEvent{
 			Type: "message_delta",
-			Delta: &anthropicTypes.Delta{
+			Delta: &types.Delta{
 				StopReason: anthropicStopReason,
 			},
-			Usage: &anthropicTypes.Usage{
+			Usage: &types.Usage{
 				InputTokens:  coreResp.Usage.PromptTokens,
 				OutputTokens: coreResp.Usage.CompletionTokens,
 			},
@@ -360,7 +288,7 @@ func (c *StreamEventConverter) ConvertStreamEvents(coreResp *coreTypes.Response)
 		events = append(events, messageDeltaEvent)
 
 		// 发送 message_stop 事件
-		events = append(events, &anthropicTypes.StreamEvent{
+		events = append(events, &types.StreamEvent{
 			Type: "message_stop",
 		})
 

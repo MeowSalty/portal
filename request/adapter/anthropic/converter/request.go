@@ -10,11 +10,15 @@ import (
 
 // ConvertRequest 将核心请求转换为 Anthropic 请求
 func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthropicTypes.Request {
+	// 先提取系统消息，然后转换非系统消息
+	systemMsg, nonSystemMessages := extractSystemMessageFromCore(request.Messages)
+
 	anthropicReq := &anthropicTypes.Request{
 		Model:     request.Model,
-		Messages:  convertMessages(request.Messages),
+		Messages:  convertMessages(nonSystemMessages),
 		MaxTokens: getMaxTokens(request.MaxTokens),
 		Stream:    request.Stream,
+		System:    systemMsg,
 	}
 
 	// 设置可选参数
@@ -37,9 +41,6 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthr
 		anthropicReq.StopSequences = request.Stop.StringArray
 	}
 
-	// 提取系统消息
-	anthropicReq.System, anthropicReq.Messages = extractSystemMessage(anthropicReq.Messages)
-
 	// 转换工具
 	if len(request.Tools) > 0 {
 		anthropicReq.Tools = convertTools(request.Tools)
@@ -54,6 +55,44 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthr
 	}
 
 	return anthropicReq
+}
+
+// extractSystemMessageFromCore 从核心消息列表中提取系统消息
+func extractSystemMessageFromCore(messages []coreTypes.Message) (interface{}, []coreTypes.Message) {
+	var systemContent string
+	var systemBlocks []anthropicTypes.ContentBlock
+	nonSystemMessages := make([]coreTypes.Message, 0, len(messages))
+
+	for _, msg := range messages {
+		if msg.Role == "system" {
+			// 提取系统消息内容
+			if msg.Content.StringValue != nil {
+				if systemContent != "" {
+					systemContent += "\n\n"
+				}
+				systemContent += *msg.Content.StringValue
+			} else if msg.Content.ContentParts != nil {
+				// 如果系统消息包含内容块（如图像），转换为 Anthropic 格式
+				blocks := convertContentParts(msg.Content.ContentParts)
+				systemBlocks = append(systemBlocks, blocks...)
+			}
+		} else {
+			nonSystemMessages = append(nonSystemMessages, msg)
+		}
+	}
+
+	// 如果有内容块格式的系统消息，返回块数组
+	if len(systemBlocks) > 0 {
+		return systemBlocks, nonSystemMessages
+	}
+
+	// 如果有字符串格式的系统消息，返回字符串
+	if systemContent != "" {
+		return systemContent, nonSystemMessages
+	}
+
+	// 没有系统消息
+	return nil, nonSystemMessages
 }
 
 // convertMessages 转换消息列表
@@ -128,32 +167,6 @@ func convertImageURL(imageURL *coreTypes.ImageURL) *anthropicTypes.ImageSource {
 	// 对于普通 URL,Anthropic 不直接支持，需要先下载转换为 base64
 	// 这里返回 nil，实际使用时应该先处理
 	return nil
-}
-
-// extractSystemMessage 提取系统消息
-func extractSystemMessage(messages []anthropicTypes.InputMessage) (interface{}, []anthropicTypes.InputMessage) {
-	var systemContent string
-	filtered := make([]anthropicTypes.InputMessage, 0, len(messages))
-
-	for _, msg := range messages {
-		if msg.Role == "system" {
-			// 提取系统消息内容
-			if str, ok := msg.Content.(string); ok {
-				if systemContent != "" {
-					systemContent += "\n\n"
-				}
-				systemContent += str
-			}
-		} else {
-			filtered = append(filtered, msg)
-		}
-	}
-
-	if systemContent != "" {
-		return systemContent, filtered
-	}
-
-	return nil, filtered
 }
 
 // convertTools 转换工具定义

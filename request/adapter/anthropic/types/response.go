@@ -8,14 +8,22 @@ import (
 
 // Response Anthropic API 响应结构
 type Response struct {
-	ID           string            `json:"id"`              // 消息 ID
-	Type         string            `json:"type"`            // "message"
-	Role         string            `json:"role"`            // "assistant"
-	Content      []ResponseContent `json:"content"`         // 内容块数组
-	Model        string            `json:"model"`           // 使用的模型
-	StopReason   *string           `json:"stop_reason"`     // 停止原因
-	StopSequence *string           `json:"stop_sequence"`   // 停止序列
-	Usage        *Usage            `json:"usage,omitempty"` // 使用统计
+	ID      string            `json:"id"`      // 消息 ID
+	Type    string            `json:"type"`    // "message"
+	Role    string            `json:"role"`    // "assistant"
+	Content []ResponseContent `json:"content"` // 内容块数组
+	Model   string            `json:"model"`   // 使用的模型
+	// StopReason 停止原因：
+	//
+	//  - end_turn：模型到达自然停止点
+	//  - max_tokens：超过最大 token 限制
+	//  - stop_sequence：生成了自定义停止序列
+	//  - tool_use：模型调用工具
+	//  - pause_turn：暂停长时间运行的会话
+	//  - refusal：流式分类器介入处理潜在的政策违规
+	StopReason   *string `json:"stop_reason"`
+	StopSequence *string `json:"stop_sequence"`   // 停止序列
+	Usage        *Usage  `json:"usage,omitempty"` // 使用统计
 }
 
 // ResponseContent 响应内容块
@@ -102,15 +110,17 @@ func (resp Response) ConvertCoreResponse() *coreTypes.Response {
 		},
 	}
 
-	// 设置停止原因
+	// 设置停止原因（转换为核心格式）
 	if resp.StopReason != nil {
-		choice.FinishReason = resp.StopReason
+		finishReason := convertAnthropicStopReason(*resp.StopReason)
+		choice.FinishReason = &finishReason
+		choice.NativeFinishReason = resp.StopReason
 	}
 
 	response.Choices[0] = choice
 
 	// 转换使用统计
-	if resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0 {
+	if resp.Usage != nil && (resp.Usage.InputTokens > 0 || resp.Usage.OutputTokens > 0) {
 		response.Usage = &coreTypes.ResponseUsage{
 			PromptTokens:     resp.Usage.InputTokens,
 			CompletionTokens: resp.Usage.OutputTokens,
@@ -335,8 +345,6 @@ func (event *StreamEvent) ConvertCoreResponse() *coreTypes.Response {
 
 // convertAnthropicStopReason 将 Anthropic 的停止原因转换为核心格式
 func convertAnthropicStopReason(anthropicReason string) string {
-	// Anthropic 停止原因："end_turn", "max_tokens", "stop_sequence", "tool_use"
-	// 核心格式："stop", "length", "tool_calls", "content_filter"
 	switch anthropicReason {
 	case "end_turn":
 		return "stop"
@@ -346,6 +354,10 @@ func convertAnthropicStopReason(anthropicReason string) string {
 		return "tool_calls"
 	case "stop_sequence":
 		return "stop"
+	case "pause_turn":
+		return "stop"
+	case "refusal":
+		return "content_filter"
 	default:
 		return "stop"
 	}
