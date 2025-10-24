@@ -30,7 +30,7 @@ type ResponseUsage struct {
 
 // Choice 表示选择项，可以是非聊天选择、非流式选择或流式选择
 type Choice struct {
-	FinishReason       *string          `json:"finish_reason,omitempty"`        // 完成原因
+	FinishReason       *string          `json:"finish_reason,omitempty"`        // 完成原因（tool_calls, stop, length, content_filter, error）
 	NativeFinishReason *string          `json:"native_finish_reason,omitempty"` // 原生完成原因
 	Text               *string          `json:"text,omitempty"`                 // 文本内容（仅用于非聊天选择）
 	Message            *ResponseMessage `json:"message,omitempty"`              // 消息内容（仅用于非流式选择）
