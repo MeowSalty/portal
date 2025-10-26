@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/routing/health"
 )
 
@@ -57,15 +58,28 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 }
 
 // MarkFailure 标记通道调用失败
-func (c *Channel) MarkFailure(ctx context.Context, errorCode int, errorMessage string) {
+func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	if c.healthService == nil {
 		return
 	}
 
-	// 更新模型级别的健康状态
+	errorCode := errors.GetHTTPStatus(err)
+	errorMessage := errors.GetMessage(err)
+
+	// 根据错误类型确定资源类型和资源 ID
+	resourceType := health.ResourceTypeModel
+	resourceID := c.ModelID
+
+	// 如果错误码为 ErrCodeUnavailable，则标记为平台级别错误
+	if errors.IsCode(err, errors.ErrCodeUnavailable) {
+		resourceType = health.ResourceTypePlatform
+		resourceID = c.PlatformID
+	}
+
+	// 更新健康状态
 	c.healthService.UpdateStatus(
-		health.ResourceTypeModel,
-		c.ModelID,
+		resourceType,
+		resourceID,
 		false,        // 失败
 		errorMessage, // 错误信息
 		errorCode,    // 错误码

@@ -32,7 +32,18 @@ func (a *Adapter) handleStreaming(
 	}
 
 	if httpResp.StatusCode != fasthttp.StatusOK {
-		return errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "API 返回错误状态码", httpResp.StatusCode)
+		// 读取响应体以获取详细错误信息
+		var body []byte
+		if httpResp.BodyStream != nil {
+			// 读取 BodyStream 的内容
+			body, err = io.ReadAll(httpResp.BodyStream)
+			if err != nil {
+				body = []byte{}
+			}
+		} else {
+			body = []byte{}
+		}
+		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, body)
 	}
 
 	// 检查 BodyStream 是否为 nil

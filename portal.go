@@ -64,9 +64,14 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 
 		// 检查错误是否可以重试
 		if err != nil {
+			// 网络错误
+			if errors.IsCode(err, errors.ErrCodeUnavailable) {
+				channel.MarkFailure(ctx, err)
+				continue
+			}
 			// 请求失败
 			if errors.IsCode(err, errors.ErrCodeRequestFailed) {
-				channel.MarkFailure(ctx, errors.GetHTTPStatus(err), errors.GetMessage(err))
+				channel.MarkFailure(ctx, err)
 				continue
 			}
 			// 操作终止
@@ -123,21 +128,26 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 
 			// 检查错误是否可以重试
 			if err != nil {
+				// 网络错误
+				if errors.IsCode(err, errors.ErrCodeUnavailable) {
+					channel.MarkFailure(ctx, err)
+					continue
+				}
 				// 请求失败
 				if errors.IsCode(err, errors.ErrCodeRequestFailed) {
-					channel.MarkFailure(ctx, errors.GetHTTPStatus(err), errors.GetMessage(err))
+					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 流处理失败
 				if errors.IsCode(err, errors.ErrCodeStreamError) {
-					channel.MarkFailure(ctx, errors.GetHTTPStatus(err), errors.GetMessage(err))
+					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 操作终止
 				if errors.IsCode(err, errors.ErrCodeAborted) {
 					channel.MarkSuccess(ctx)
 				}
-				channel.MarkFailure(ctx, errors.GetHTTPStatus(err), errors.GetMessage(err))
+				channel.MarkFailure(ctx, err)
 				close(clientStream)
 				break
 			}

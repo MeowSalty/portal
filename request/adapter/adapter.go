@@ -57,7 +57,7 @@ func (a *Adapter) ChatCompletion(
 	// 创建提供商特定请求
 	apiReq, err := a.provider.CreateRequest(request, channel)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeRequestFailed, "创建请求失败", err)
+		return nil, errors.Wrap(errors.ErrCodeInvalidArgument, "创建请求失败", err)
 	}
 
 	// 发送请求
@@ -97,7 +97,7 @@ func (a *Adapter) ChatCompletionStream(
 	// 创建提供商特定请求
 	apiReq, err := a.provider.CreateRequest(request, channel)
 	if err != nil {
-		return errors.Wrap(errors.ErrCodeRequestFailed, "创建请求失败", err)
+		return errors.Wrap(errors.ErrCodeInvalidArgument, "创建请求失败", err)
 	}
 
 	// 启动流式处理协程

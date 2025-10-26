@@ -72,7 +72,7 @@ func (a *Adapter) sendHTTPRequest(
 	if err != nil {
 		// 发生错误时释放 response 对象
 		fasthttp.ReleaseResponse(resp)
-		return nil, errors.Wrap(errors.ErrCodeRequestFailed, "HTTP 请求失败", stripErrorHTML(err))
+		return nil, errors.Wrap(errors.ErrCodeUnavailable, "HTTP 请求失败", stripErrorHTML(err))
 	}
 
 	// 根据是否流式请求返回不同的响应体
