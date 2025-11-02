@@ -16,11 +16,12 @@ import (
 func (a *Adapter) handleStreaming(
 	ctx context.Context,
 	channel *routing.Channel,
+	headers map[string]string,
 	apiReq interface{},
 	stream chan<- *coreTypes.Response,
 ) error {
 	// 发送 HTTP 请求
-	httpResp, err := a.sendHTTPRequest(channel, apiReq, true)
+	httpResp, err := a.sendHTTPRequest(channel, headers, apiReq, true)
 	if err != nil {
 		return err
 	}

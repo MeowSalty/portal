@@ -31,6 +31,7 @@ func newHTTPClient() *fasthttp.Client {
 // sendHTTPRequest 发送 HTTP 请求
 func (a *Adapter) sendHTTPRequest(
 	channel *routing.Channel,
+	headers map[string]string,
 	payload interface{},
 	isStream bool,
 ) (*httpResponse, error) {
@@ -63,6 +64,11 @@ func (a *Adapter) sendHTTPRequest(
 		req.Header.Set("Accept", "text/event-stream")
 		req.Header.Set("Cache-Control", "no-cache")
 		req.Header.Set("Connection", "keep-alive")
+	}
+
+	// 应用自定义 HTTP 头部
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 
 	req.SetBody(jsonData)

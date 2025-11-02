@@ -73,6 +73,10 @@ type Request struct {
 	Provider *ProviderPreferences `json:"provider,omitempty"`
 	// 用于标识最终用户的稳定标识符。用于帮助检测和防止滥用
 	User *string `json:"user,omitempty"`
+
+	// 自定义 HTTP 头部（不会被序列化到请求体中）
+	// 用于透传 User-Agent、Referer 等 HTTP 头部信息
+	Headers map[string]string `json:"-"`
 }
 
 // ResponseFormat 定义输出格式约束

@@ -61,7 +61,7 @@ func (a *Adapter) ChatCompletion(
 	}
 
 	// 发送请求
-	httpResp, err := a.sendHTTPRequest(channel, apiReq, false)
+	httpResp, err := a.sendHTTPRequest(channel, request.Headers, apiReq, false)
 	if err != nil {
 		return nil, err
 	}
@@ -101,5 +101,5 @@ func (a *Adapter) ChatCompletionStream(
 	}
 
 	// 启动流式处理协程
-	return a.handleStreaming(ctx, channel, apiReq, output)
+	return a.handleStreaming(ctx, channel, request.Headers, apiReq, output)
 }
