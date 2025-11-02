@@ -41,13 +41,6 @@ func (p *Request) ChatCompletion(
 	requestDuration := time.Since(now)
 	requestLog.Duration = requestDuration
 
-	// 记录 Token 用量
-	if response.Usage != nil {
-		requestLog.PromptTokens = &response.Usage.PromptTokens
-		requestLog.CompletionTokens = &response.Usage.CompletionTokens
-		requestLog.TotalTokens = &response.Usage.TotalTokens
-	}
-
 	if err != nil {
 		// 记录失败统计
 		errorMsg := err.Error()
@@ -56,6 +49,13 @@ func (p *Request) ChatCompletion(
 		p.recordRequestLog(requestLog, nil, false)
 
 		return nil, err
+	}
+
+	// 记录 Token 用量
+	if response.Usage != nil {
+		requestLog.PromptTokens = &response.Usage.PromptTokens
+		requestLog.CompletionTokens = &response.Usage.CompletionTokens
+		requestLog.TotalTokens = &response.Usage.TotalTokens
 	}
 
 	// 记录成功统计
