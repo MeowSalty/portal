@@ -70,10 +70,13 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	resourceType := health.ResourceTypeModel
 	resourceID := c.ModelID
 
-	// 如果错误码为 ErrCodeUnavailable，则标记为平台级别错误
-	if errors.IsCode(err, errors.ErrCodeUnavailable) {
+	switch errors.GetCode(err) {
+	case errors.ErrCodeUnavailable:
 		resourceType = health.ResourceTypePlatform
 		resourceID = c.PlatformID
+	case errors.ErrCodeAuthenticationFailed:
+		resourceType = health.ResourceTypeAPIKey
+		resourceID = c.APIKeyID
 	}
 
 	// 更新健康状态

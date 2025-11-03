@@ -25,6 +25,8 @@ const (
 	ErrCodeAlreadyExists ErrorCode = "ALREADY_EXISTS"
 	// 权限拒绝
 	ErrCodePermissionDenied ErrorCode = "PERMISSION_DENIED"
+	// 认证失败
+	ErrCodeAuthenticationFailed ErrorCode = "AUTHENTICATION_FAILED"
 	// 资源耗尽
 	ErrCodeResourceExhausted ErrorCode = "RESOURCE_EXHAUSTED"
 	// 前置条件失败
@@ -256,20 +258,21 @@ func GetMessage(err error) string {
 // 预定义的常用错误
 var (
 	// 通用错误
-	ErrUnknown            = New(ErrCodeUnknown, "未知错误")
-	ErrInternal           = New(ErrCodeInternal, "内部错误")
-	ErrInvalidArgument    = New(ErrCodeInvalidArgument, "无效参数")
-	ErrNotFound           = New(ErrCodeNotFound, "资源未找到")
-	ErrAlreadyExists      = New(ErrCodeAlreadyExists, "资源已存在")
-	ErrPermissionDenied   = New(ErrCodePermissionDenied, "权限被拒绝")
-	ErrResourceExhausted  = New(ErrCodeResourceExhausted, "资源耗尽")
-	ErrFailedPrecondition = New(ErrCodeFailedPrecondition, "前置条件失败")
-	ErrAborted            = New(ErrCodeAborted, "操作中止")
-	ErrOutOfRange         = New(ErrCodeOutOfRange, "超出范围")
-	ErrUnimplemented      = New(ErrCodeUnimplemented, "功能未实现")
-	ErrUnavailable        = New(ErrCodeUnavailable, "服务不可用")
-	ErrDataLoss           = New(ErrCodeDataLoss, "数据丢失")
-	ErrDeadlineExceeded   = New(ErrCodeDeadlineExceeded, "超过截止时间")
+	ErrUnknown              = New(ErrCodeUnknown, "未知错误")
+	ErrInternal             = New(ErrCodeInternal, "内部错误")
+	ErrInvalidArgument      = New(ErrCodeInvalidArgument, "无效参数")
+	ErrNotFound             = New(ErrCodeNotFound, "资源未找到")
+	ErrAlreadyExists        = New(ErrCodeAlreadyExists, "资源已存在")
+	ErrPermissionDenied     = New(ErrCodePermissionDenied, "权限被拒绝")
+	ErrAuthenticationFailed = New(ErrCodeAuthenticationFailed, "认证失败")
+	ErrResourceExhausted    = New(ErrCodeResourceExhausted, "资源耗尽")
+	ErrFailedPrecondition   = New(ErrCodeFailedPrecondition, "前置条件失败")
+	ErrAborted              = New(ErrCodeAborted, "操作中止")
+	ErrOutOfRange           = New(ErrCodeOutOfRange, "超出范围")
+	ErrUnimplemented        = New(ErrCodeUnimplemented, "功能未实现")
+	ErrUnavailable          = New(ErrCodeUnavailable, "服务不可用")
+	ErrDataLoss             = New(ErrCodeDataLoss, "数据丢失")
+	ErrDeadlineExceeded     = New(ErrCodeDeadlineExceeded, "超过截止时间")
 
 	// 业务错误
 	ErrNoHealthyChannel   = New(ErrCodeNoHealthyChannel, "没有可用的健康通道")

@@ -74,6 +74,11 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 				channel.MarkFailure(ctx, err)
 				continue
 			}
+			// 认证失败
+			if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
+				channel.MarkFailure(ctx, err)
+				continue
+			}
 			// 操作终止
 			if errors.IsCode(err, errors.ErrCodeAborted) {
 				channel.MarkSuccess(ctx)
@@ -135,6 +140,11 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				}
 				// 请求失败
 				if errors.IsCode(err, errors.ErrCodeRequestFailed) {
+					channel.MarkFailure(ctx, err)
+					continue
+				}
+				// 认证失败
+				if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
 					channel.MarkFailure(ctx, err)
 					continue
 				}

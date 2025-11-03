@@ -1,19 +1,73 @@
 package adapter
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
 	"github.com/MeowSalty/portal/errors"
 )
 
+// HTTPErrorType 表示 HTTP 错误类型
+type HTTPErrorType int
+
+const (
+	// HTTPErrorTypeAPIError API 服务器正常接收请求但返回错误
+	HTTPErrorTypeAPIError HTTPErrorType = iota
+	// HTTPErrorTypeServiceUnavailable API 服务器无法正常接收请求
+	HTTPErrorTypeServiceUnavailable
+)
+
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) error {
-	// TODO：这里可以对 body 的内容进行解析，并返回更详细的错误信息
-
 	// 去除 body 中的 HTML 内容
 	bodyStr := stripHTML(string(body))
-	return errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, message, statusCode).
+
+	// 尝试解析 JSON 响应，检查是否包含 error.type 字段
+	errorType := a.classifyHTTPErrorType(body)
+
+	// 根据错误类型和状态码处理错误
+	return a.createHTTPError(message, statusCode, bodyStr, errorType)
+}
+
+// classifyHTTPErrorType 根据响应体内容分类 HTTP 错误类型
+func (a *Adapter) classifyHTTPErrorType(body []byte) HTTPErrorType {
+	if len(body) == 0 {
+		return HTTPErrorTypeServiceUnavailable
+	}
+
+	var jsonResp struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+
+	// 尝试解析 JSON，如果解析失败或没有 error.type 字段，则认为是服务不可用
+	if err := json.Unmarshal(body, &jsonResp); err != nil || jsonResp.Error.Type == "" {
+		return HTTPErrorTypeServiceUnavailable
+	}
+
+	return HTTPErrorTypeAPIError
+}
+
+// createHTTPError 根据错误类型和状态码创建适当的错误
+func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string, errorType HTTPErrorType) error {
+	// 定义错误码
+	var errCode errors.ErrorCode
+
+	switch {
+	case statusCode == 401:
+		// 401 状态码表示认证失败 (密钥问题)
+		errCode = errors.ErrCodeAuthenticationFailed
+	case errorType == HTTPErrorTypeAPIError:
+		// API 服务器正常接收请求但返回错误
+		errCode = errors.ErrCodeRequestFailed
+	default:
+		// API 服务器无法正常接收请求
+		errCode = errors.ErrCodeUnavailable
+	}
+
+	return errors.NewWithHTTPStatus(errCode, message, statusCode).
 		WithContext("response_body", bodyStr)
 }
 
