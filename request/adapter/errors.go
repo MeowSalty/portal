@@ -20,34 +20,63 @@ const (
 
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) error {
-	// 去除 body 中的 HTML 内容
-	bodyStr := stripHTML(string(body))
+	if len(body) == 0 {
+		return a.createHTTPError(message, statusCode, "", HTTPErrorTypeServiceUnavailable)
+	}
 
-	// 尝试解析 JSON 响应，检查是否包含 error.type 字段
-	errorType := a.classifyHTTPErrorType(body)
+	// 只解析一次 JSON
+	var jsonData map[string]interface{}
+	err := json.Unmarshal(body, &jsonData)
+
+	// 根据解析结果分别处理
+	var bodyStr string
+	var errorType HTTPErrorType
+
+	if err != nil {
+		// JSON 解析失败，直接清理 HTML
+		bodyStr = stripHTML(string(body))
+		errorType = HTTPErrorTypeServiceUnavailable
+	} else {
+		// JSON 解析成功，处理 body 和分类错误类型
+		bodyStr = a.processBodyHTML(jsonData)
+		errorType = a.classifyHTTPErrorType(jsonData)
+	}
 
 	// 根据错误类型和状态码处理错误
 	return a.createHTTPError(message, statusCode, bodyStr, errorType)
 }
 
-// classifyHTTPErrorType 根据响应体内容分类 HTTP 错误类型
-func (a *Adapter) classifyHTTPErrorType(body []byte) HTTPErrorType {
-	if len(body) == 0 {
-		return HTTPErrorTypeServiceUnavailable
+// processBodyHTML 处理已解析的 JSON 数据中的 HTML 内容
+// 如果包含 error.message 字段，则清理该字段中的 HTML 并重新序列化
+func (a *Adapter) processBodyHTML(jsonData map[string]interface{}) string {
+	// 检查是否存在 error.message 字段
+	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
+		if message, ok := errorObj["message"].(string); ok {
+			// 清理 message 中的 HTML 内容
+			errorObj["message"] = stripHTML(message)
+		}
 	}
 
-	var jsonResp struct {
-		Error struct {
-			Type string `json:"type"`
-		} `json:"error"`
+	// 重新序列化 JSON
+	cleanedBody, err := json.Marshal(jsonData)
+	if err != nil {
+		// 序列化失败，返回空字符串
+		return ""
 	}
 
-	// 尝试解析 JSON，如果解析失败或没有 error.type 字段，则认为是服务不可用
-	if err := json.Unmarshal(body, &jsonResp); err != nil || jsonResp.Error.Type == "" {
-		return HTTPErrorTypeServiceUnavailable
+	return string(cleanedBody)
+}
+
+// classifyHTTPErrorType 根据已解析的 JSON 数据分类 HTTP 错误类型
+func (a *Adapter) classifyHTTPErrorType(jsonData map[string]interface{}) HTTPErrorType {
+	// 检查是否存在 error.type 字段
+	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
+		if errorType, ok := errorObj["type"].(string); ok && errorType != "" {
+			return HTTPErrorTypeAPIError
+		}
 	}
 
-	return HTTPErrorTypeAPIError
+	return HTTPErrorTypeServiceUnavailable
 }
 
 // createHTTPError 根据错误类型和状态码创建适当的错误
