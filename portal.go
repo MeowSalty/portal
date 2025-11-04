@@ -69,10 +69,13 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 			break
 		}
 
-		p.logger.DebugContext(ctx, "获取到通道",
+		// 使用 With 创建带有通道上下文的日志记录器
+		channelLogger := p.logger.With(
 			"platform_id", channel.PlatformID,
 			"model_id", channel.ModelID,
 			"api_key_id", channel.APIKeyID)
+
+		channelLogger.DebugContext(ctx, "获取到通道")
 
 		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 			defer reqCancel()
@@ -84,48 +87,32 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 		if err != nil {
 			// 网络错误
 			if errors.IsCode(err, errors.ErrCodeUnavailable) {
-				p.logger.WarnContext(ctx, "通道不可用，尝试重试",
-					"platform_id", channel.PlatformID,
-					"model_id", channel.ModelID,
-					"error", err)
+				channelLogger.WarnContext(ctx, "通道不可用，尝试重试", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
 			// 请求失败
 			if errors.IsCode(err, errors.ErrCodeRequestFailed) {
-				p.logger.WarnContext(ctx, "请求失败，尝试重试",
-					"platform_id", channel.PlatformID,
-					"model_id", channel.ModelID,
-					"error", err)
+				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
 			// 认证失败
 			if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
-				p.logger.WarnContext(ctx, "认证失败，尝试重试",
-					"platform_id", channel.PlatformID,
-					"model_id", channel.ModelID,
-					"error", err)
+				channelLogger.WarnContext(ctx, "认证失败，尝试重试", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
 			// 操作终止
 			if errors.IsCode(err, errors.ErrCodeAborted) {
-				p.logger.InfoContext(ctx, "操作终止",
-					"platform_id", channel.PlatformID,
-					"model_id", channel.ModelID)
+				channelLogger.InfoContext(ctx, "操作终止")
 				channel.MarkSuccess(ctx)
 			}
-			p.logger.ErrorContext(ctx, "请求处理失败",
-				"platform_id", channel.PlatformID,
-				"model_id", channel.ModelID,
-				"error", err)
+			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
 			break
 		}
 		channel.MarkSuccess(ctx)
-		p.logger.InfoContext(ctx, "请求处理成功",
-			"platform_id", channel.PlatformID,
-			"model_id", channel.ModelID)
+		channelLogger.InfoContext(ctx, "请求处理成功")
 		break
 	}
 	return response, err
@@ -169,10 +156,13 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				break
 			}
 
-			p.logger.DebugContext(ctx, "获取到通道",
+			// 使用 With 创建带有通道上下文的日志记录器
+			channelLogger := p.logger.With(
 				"platform_id", channel.PlatformID,
 				"model_id", channel.ModelID,
 				"api_key_id", channel.APIKeyID)
+
+			channelLogger.DebugContext(ctx, "获取到通道")
 
 			err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 				defer reqCancel()
@@ -183,59 +173,40 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 			if err != nil {
 				// 网络错误
 				if errors.IsCode(err, errors.ErrCodeUnavailable) {
-					p.logger.WarnContext(ctx, "通道不可用，尝试重试",
-						"platform_id", channel.PlatformID,
-						"model_id", channel.ModelID,
-						"error", err)
+					channelLogger.WarnContext(ctx, "通道不可用，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 请求失败
 				if errors.IsCode(err, errors.ErrCodeRequestFailed) {
-					p.logger.WarnContext(ctx, "请求失败，尝试重试",
-						"platform_id", channel.PlatformID,
-						"model_id", channel.ModelID,
-						"error", err)
+					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 认证失败
 				if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
-					p.logger.WarnContext(ctx, "认证失败，尝试重试",
-						"platform_id", channel.PlatformID,
-						"model_id", channel.ModelID,
-						"error", err)
+					channelLogger.WarnContext(ctx, "认证失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 流处理失败
 				if errors.IsCode(err, errors.ErrCodeStreamError) {
-					p.logger.WarnContext(ctx, "流处理失败，尝试重试",
-						"platform_id", channel.PlatformID,
-						"model_id", channel.ModelID,
-						"error", err)
+					channelLogger.WarnContext(ctx, "流处理失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
 				// 操作终止
 				if errors.IsCode(err, errors.ErrCodeAborted) {
-					p.logger.InfoContext(ctx, "操作终止",
-						"platform_id", channel.PlatformID,
-						"model_id", channel.ModelID)
+					channelLogger.InfoContext(ctx, "操作终止")
 					channel.MarkSuccess(ctx)
 				}
-				p.logger.ErrorContext(ctx, "流处理失败",
-					"platform_id", channel.PlatformID,
-					"model_id", channel.ModelID,
-					"error", err)
+				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
 				channel.MarkFailure(ctx, err)
 				close(clientStream)
 				break
 			}
 			channel.MarkSuccess(ctx)
-			p.logger.InfoContext(ctx, "流处理成功",
-				"platform_id", channel.PlatformID,
-				"model_id", channel.ModelID)
+			channelLogger.InfoContext(ctx, "流处理成功")
 			break
 		}
 	}()
