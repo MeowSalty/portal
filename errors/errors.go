@@ -4,6 +4,15 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode/utf8"
+)
+
+// 上下文值的最大长度限制
+const (
+	// 单个上下文值的最大字符数
+	maxContextValueLength = 400
+	// 截断后的后缀提示
+	truncateSuffix = "[被截断]"
 )
 
 // ErrorCode 定义错误码类型
@@ -104,7 +113,33 @@ func (e *Error) Error() string {
 			}
 			builder.WriteString(k)
 			builder.WriteString("=")
-			builder.WriteString(fmt.Sprintf("%v", v))
+			valueStr := fmt.Sprintf("%v", v)
+			if len(valueStr) > maxContextValueLength {
+				// 计算截断后缀的字节长度
+				suffixLen := len(truncateSuffix)
+				// 计算实际可用的内容长度（需要预留后缀空间）
+				maxContentLen := maxContextValueLength - suffixLen
+
+				// 如果后缀长度大于等于最大长度，则只显示后缀
+				if maxContentLen <= 0 {
+					valueStr = truncateSuffix
+				} else {
+					// 从 maxContentLen 位置向前查找有效的 UTF-8 字符边界
+					truncatePos := maxContentLen
+					for truncatePos > 0 && !utf8.RuneStart(valueStr[truncatePos]) {
+						truncatePos--
+					}
+
+					// 如果找到了有效的截断位置，则进行截断
+					if truncatePos > 0 {
+						valueStr = valueStr[:truncatePos] + truncateSuffix
+					} else {
+						// 如果没有找到有效的截断位置，只显示后缀
+						valueStr = truncateSuffix
+					}
+				}
+			}
+			builder.WriteString(valueStr)
 			first = false
 		}
 		builder.WriteString("}")
