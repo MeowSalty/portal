@@ -25,6 +25,7 @@ type Model struct {
 	PlatformID uint
 	Name       string
 	Alias      string
+	APIKeys    []APIKey // 模型关联的密钥（多对多关系）
 }
 
 // APIKey 表示平台的 API 密钥

@@ -142,19 +142,14 @@ func (r *Routing) buildChannelsForModel(ctx context.Context, model Model) ([]*Ch
 		return nil, errors.Wrap(errors.ErrCodeInternal, "获取平台信息失败", err)
 	}
 
-	// 获取平台的所有密钥
-	apiKeys, err := r.keyRepo.GetAllAPIKeysByPlatformID(ctx, platform.ID)
-	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "获取 API 密钥失败", err)
-	}
-
-	if len(apiKeys) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "平台没有配置 API 密钥")
+	// 检查模型是否有关联的密钥
+	if len(model.APIKeys) == 0 {
+		return nil, errors.New(errors.ErrCodeNotFound, "模型没有配置 API 密钥")
 	}
 
 	// 为每个密钥创建一个通道
 	var channels []*Channel
-	for _, apiKey := range apiKeys {
+	for _, apiKey := range model.APIKeys {
 		ch := &Channel{
 			PlatformID:    platform.ID,
 			ModelID:       model.ID,
