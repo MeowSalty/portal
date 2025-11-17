@@ -70,6 +70,39 @@ func (a *Adapter) handleStreaming(
 				return
 			default:
 				line, err := reader.ReadString('\n')
+
+				// 处理数据
+				line = strings.TrimSpace(line)
+				if line != "" && strings.HasPrefix(line, "data:") {
+					// 提取数据部分
+					data := strings.TrimSpace(line[5:])
+					if data == "[DONE]" {
+						// 流式传输正常完成
+						return
+					}
+
+					// 解析流式响应块
+					chunk, parseErr := a.provider.ParseStreamResponse([]byte(data))
+					if parseErr != nil {
+						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
+							WithContext("data", data)
+						a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, parseErr.Error())
+						return
+					}
+
+					// 确保响应块有效后再发送
+					if chunk != nil {
+						select {
+						case <-ctx.Done():
+							// 上下文已取消，停止发送响应块
+							return
+						default:
+							stream <- chunk
+						}
+					}
+				}
+
+				// 检查错误
 				if err != nil {
 					if err == io.EOF {
 						// 流已结束
@@ -78,41 +111,6 @@ func (a *Adapter) handleStreaming(
 					streamErr := errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
 					a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, streamErr.Error())
 					return
-				}
-
-				line = strings.TrimSpace(line)
-				if line == "" {
-					continue
-				}
-
-				if !strings.HasPrefix(line, "data: ") {
-					continue
-				}
-
-				data := strings.TrimPrefix(line, "data: ")
-				if data == "[DONE]" {
-					// 流式传输正常完成
-					return
-				}
-
-				// 解析流式响应块
-				chunk, err := a.provider.ParseStreamResponse([]byte(data))
-				if err != nil {
-					parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(err)).
-						WithContext("data", data)
-					a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, parseErr.Error())
-					return
-				}
-
-				// 确保响应块有效后再发送
-				if chunk != nil {
-					select {
-					case <-ctx.Done():
-						// 上下文已取消，停止发送响应块
-						return
-					default:
-						stream <- chunk
-					}
 				}
 			}
 		}
