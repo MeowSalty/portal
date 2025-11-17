@@ -23,13 +23,28 @@ func (p *Request) ChatCompletionStream(
 	output chan<- *types.Response,
 	channel *routing.Channel,
 ) error {
+	// 创建带有请求上下文的日志记录器
+	log := p.logger.With(
+		"platform_type", channel.PlatformType,
+		"platform_id", channel.PlatformID,
+		"model_id", channel.ModelID,
+		"api_key_id", channel.APIKeyID,
+		"model_name", channel.ModelName,
+		"original_model", request.Model,
+	)
+
+	log.DebugContext(ctx, "开始处理流式聊天完成请求")
+
 	// 获取适配器
+	log.DebugContext(ctx, "获取适配器", "format", channel.PlatformType)
 	adapter, err := p.getAdapter(channel.PlatformType)
 	if err != nil {
+		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.PlatformType)
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithHTTPStatus(fasthttp.StatusInternalServerError).
 			WithContext("format", channel.PlatformType)
 	}
+	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 
 	// 创建请求日志
 	now := time.Now()
@@ -42,18 +57,25 @@ func (p *Request) ChatCompletionStream(
 		APIKeyID:          channel.APIKeyID,
 		ModelID:           channel.ModelID,
 	}
+	log.DebugContext(ctx, "创建请求日志")
 
 	// 创建内部流
+	log.DebugContext(ctx, "创建内部流通道")
 	internalStream := make(chan *types.Response, 1024)
+
+	log.DebugContext(ctx, "执行流式聊天完成请求")
 	err = adapter.ChatCompletionStream(ctx, request, channel, internalStream)
 	if err != nil {
 		errorMsg := err.(*errors.Error).Error()
 		requestLog.ErrorMsg = &errorMsg
 		p.recordRequestLog(requestLog, nil, false)
+
+		log.ErrorContext(ctx, "流式聊天完成请求失败", "error", err)
 		return err
 	}
 
 	// 处理流数据
+	log.DebugContext(ctx, "开始处理流数据")
 	return p.handleStreamData(ctx, internalStream, output, requestLog)
 }
 
@@ -64,14 +86,31 @@ func (p *Request) handleStreamData(
 	output chan<- *types.Response,
 	requestLog *RequestLog,
 ) error {
+	log := p.logger.With(
+		"platform_id", requestLog.PlatformID,
+		"model_id", requestLog.ModelID,
+		"api_key_id", requestLog.APIKeyID,
+	)
+
+	log.DebugContext(ctx, "开始处理流数据")
+
 	firstByteRecorded := false
 	var firstByteTime *time.Time
+	messageCount := 0
+
 	for response := range input {
+		messageCount++
+
 		// 检查错误
 		if err := p.checkResponseError(response); err != nil {
 			msg := err.Error()
 			requestLog.ErrorMsg = &msg
 			p.recordRequestLog(requestLog, nil, false)
+
+			log.ErrorContext(ctx, "流数据包含错误",
+				"error", err,
+				"message_count", messageCount,
+			)
 			return err
 		}
 
@@ -80,6 +119,11 @@ func (p *Request) handleStreamData(
 			now := time.Now()
 			firstByteTime = &now
 			firstByteRecorded = true
+
+			firstByteDuration := now.Sub(requestLog.Timestamp)
+			log.DebugContext(ctx, "收到首字节",
+				"first_byte_time", firstByteDuration.String(),
+			)
 		}
 
 		// 记录 Token 用量
@@ -87,18 +131,35 @@ func (p *Request) handleStreamData(
 			requestLog.CompletionTokens = &response.Usage.CompletionTokens
 			requestLog.PromptTokens = &response.Usage.PromptTokens
 			requestLog.TotalTokens = &response.Usage.TotalTokens
+
+			log.DebugContext(ctx, "更新 Token 使用情况",
+				"prompt_tokens", response.Usage.PromptTokens,
+				"completion_tokens", response.Usage.CompletionTokens,
+				"total_tokens", response.Usage.TotalTokens,
+			)
 		}
 
 		// 发送响应
 		if err := p.sendResponse(ctx, output, response, requestLog, firstByteTime); err != nil {
+			log.ErrorContext(ctx, "发送响应失败",
+				"error", err,
+				"message_count", messageCount,
+			)
 			return err
 		}
 
 	}
 
 	// 流成功完成
+	log.DebugContext(ctx, "流数据处理完成",
+		"total_messages", messageCount,
+		"duration", time.Since(requestLog.Timestamp).String(),
+	)
+
 	close(output)
 	p.recordRequestLog(requestLog, firstByteTime, true)
+
+	log.InfoContext(ctx, "流式请求成功完成")
 	return nil
 }
 
@@ -110,14 +171,23 @@ func (p *Request) sendResponse(
 	requestLog *RequestLog,
 	firstByteTime *time.Time,
 ) error {
+	log := p.logger.With(
+		"platform_id", requestLog.PlatformID,
+		"model_id", requestLog.ModelID,
+		"api_key_id", requestLog.APIKeyID,
+	)
+
 	select {
 	case output <- response:
+		log.DebugContext(ctx, "响应发送成功")
 		return nil
 	case <-ctx.Done():
 		err := errors.Wrap(errors.ErrCodeAborted, "连接被终止", ctx.Err())
 		msg := err.Error()
 		requestLog.ErrorMsg = &msg
 		p.recordRequestLog(requestLog, firstByteTime, true)
+
+		log.WarnContext(ctx, "连接被终止", "error", ctx.Err())
 		return err
 	}
 }

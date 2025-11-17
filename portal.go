@@ -50,7 +50,7 @@ func New(cfg Config) (*Portal, error) {
 	portal := &Portal{
 		session: session.New(),
 		routing: routing,
-		request: request.New(cfg.LogRepo),
+		request: request.New(cfg.LogRepo, log.WithGroup("request")),
 		logger:  log,
 	}
 	return portal, nil
