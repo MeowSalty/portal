@@ -158,6 +158,7 @@ func (r *Routing) buildChannelsForModel(ctx context.Context, model Model) ([]*Ch
 			APIEndpoint:   platform.BaseURL,
 			ModelName:     model.Name,
 			APIKey:        apiKey.Value,
+			CustomHeaders: platform.CustomHeaders, // 传递平台自定义头部给通道
 			healthService: r.healthService,
 		}
 		channels = append(channels, ch)

@@ -12,11 +12,12 @@ type RateLimitConfig struct {
 
 // Platform 表示一个 AI 平台（例如 OpenAI、Anthropic）
 type Platform struct {
-	ID        uint
-	Name      string
-	Format    string
-	BaseURL   string
-	RateLimit RateLimitConfig
+	ID            uint
+	Name          string
+	Format        string
+	BaseURL       string
+	RateLimit     RateLimitConfig
+	CustomHeaders map[string]string // 平台级别的自定义 HTTP 头部
 }
 
 // Model 表示平台上的一个具体模型

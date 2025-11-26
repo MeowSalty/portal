@@ -66,9 +66,16 @@ func (a *Adapter) sendHTTPRequest(
 		req.Header.Set("Connection", "keep-alive")
 	}
 
-	// 应用自定义 HTTP 头部
+	// 应用请求级别的自定义 HTTP 头部
 	for key, value := range headers {
 		req.Header.Set(key, value)
+	}
+
+	// 应用通道级别的自定义 HTTP 头部（优先级最高，会覆盖请求级别的同名头部）
+	if channel.CustomHeaders != nil {
+		for key, value := range channel.CustomHeaders {
+			req.Header.Set(key, value)
+		}
 	}
 
 	req.SetBody(jsonData)

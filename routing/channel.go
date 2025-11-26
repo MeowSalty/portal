@@ -19,6 +19,8 @@ type Channel struct {
 	ModelName    string // 模型名称
 	APIKey       string // API 密钥
 
+	CustomHeaders map[string]string // 通道级别的自定义 HTTP 头部（优先级高于请求级别）
+
 	// 健康管理器引用，用于更新状态
 	healthService *health.Service
 }
