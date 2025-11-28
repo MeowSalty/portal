@@ -21,7 +21,7 @@ func TestConvertCoreResponse_TextMessage(t *testing.T) {
 			{
 				"index": 0,
 				"finish_reason": "stop",
-				"delta": {
+				"message": {
 					"role": "assistant",
 					"content": "Hello! How can I help you today?"
 				}
@@ -123,7 +123,7 @@ func TestConvertCoreResponse_TextMessageWithoutUsage(t *testing.T) {
 			{
 				"index": 0,
 				"finish_reason": "length",
-				"delta": {
+				"message": {
 					"role": "assistant",
 					"content": "This is a test response."
 				}
@@ -179,7 +179,7 @@ func TestConvertCoreResponse_EmptyContent(t *testing.T) {
 			{
 				"index": 0,
 				"finish_reason": "stop",
-				"delta": {
+				"message": {
 					"role": "assistant"
 				}
 			}
