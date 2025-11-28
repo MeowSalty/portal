@@ -74,6 +74,12 @@ type Request struct {
 	// 用于标识最终用户的稳定标识符。用于帮助检测和防止滥用
 	User *string `json:"user,omitempty"`
 
+	// 额外字段存储，用于保存来自不同 API 格式的未知字段
+	ExtraFields map[string]interface{} `json:"-"`
+	// 额外字段的来源格式，如 "openai"、"anthropic"、"gemini" 等
+	// 用于在转换回原始格式时保持兼容性
+	ExtraFieldsFormat *string `json:"-"`
+
 	// 自定义 HTTP 头部（不会被序列化到请求体中）
 	// 用于透传 User-Agent、Referer 等 HTTP 头部信息
 	Headers map[string]string `json:"-"`

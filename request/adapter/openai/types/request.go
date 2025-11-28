@@ -4,6 +4,45 @@ import (
 	"encoding/json"
 )
 
+// requestKnownFields 定义 Request 结构体的所有已知字段名称
+// 用于在反序列化时识别未知字段
+var requestKnownFields = map[string]bool{
+	"model":                 true,
+	"messages":              true,
+	"stream":                true,
+	"frequency_penalty":     true,
+	"logprobs":              true,
+	"max_completion_tokens": true,
+	"max_tokens":            true,
+	"n":                     true,
+	"presence_penalty":      true,
+	"seed":                  true,
+	"store":                 true,
+	"temperature":           true,
+	"top_logprobs":          true,
+	"top_p":                 true,
+	"parallel_tool_calls":   true,
+	"prompt_cache_key":      true,
+	"safety_identifier":     true,
+	"user":                  true,
+	"audio":                 true,
+	"logit_bias":            true,
+	"metadata":              true,
+	"modalities":            true,
+	"reasoning_effort":      true,
+	"service_tier":          true,
+	"stop":                  true,
+	"stream_options":        true,
+	"verbosity":             true,
+	"function_call":         true,
+	"functions":             true,
+	"prediction":            true,
+	"response_format":       true,
+	"tool_choice":           true,
+	"tools":                 true,
+	"web_search_options":    true,
+}
+
 // Request 表示 OpenAI 聊天完成请求参数
 type Request struct {
 	Model    string           `json:"model"`            // 模型名称
@@ -42,6 +81,9 @@ type Request struct {
 	ToolChoice          *ToolChoiceUnion     `json:"tool_choice,omitempty"`           // 工具选择
 	Tools               []ToolUnion          `json:"tools,omitempty"`                 // 工具列表
 	WebSearchOptions    *WebSearchOptions    `json:"web_search_options,omitempty"`    // 网络搜索选项
+
+	// ExtraFields 存储未知字段
+	ExtraFields map[string]interface{} `json:"-"`
 }
 
 // RequestMessage 表示消息参数
@@ -247,4 +289,65 @@ func (t ToolUnion) MarshalJSON() ([]byte, error) {
 		return json.Marshal(t.Custom)
 	}
 	return json.Marshal(nil)
+}
+
+// UnmarshalJSON 实现 Request 的自定义 JSON 反序列化
+// 捕获所有未知字段并存储到 ExtraFields
+func (r *Request) UnmarshalJSON(data []byte) error {
+	// 1. 解析到通用 map 以获取所有字段
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// 2. 使用类型别名避免递归调用
+	type Alias Request
+	aux := &struct{ *Alias }{Alias: (*Alias)(r)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// 3. 提取未知字段
+	r.ExtraFields = make(map[string]interface{})
+	for key, value := range raw {
+		if !requestKnownFields[key] {
+			r.ExtraFields[key] = value
+		}
+	}
+
+	return nil
+}
+
+// MarshalJSON 实现 Request 的自定义 JSON 序列化
+// 合并已知字段和 ExtraFields 中的未知字段
+func (r Request) MarshalJSON() ([]byte, error) {
+	// 1. 如果没有未知字段，使用默认序列化
+	if len(r.ExtraFields) == 0 {
+		// 使用类型别名避免递归调用
+		type Alias Request
+		aux := Alias(r)
+		return json.Marshal(aux)
+	}
+
+	// 2. 序列化已知字段到 map
+	type Alias Request
+	aux := Alias(r)
+	data, err := json.Marshal(aux)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 解析到 map
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	// 4. 合并未知字段
+	for key, value := range r.ExtraFields {
+		result[key] = value
+	}
+
+	// 5. 序列化最终结果
+	return json.Marshal(result)
 }

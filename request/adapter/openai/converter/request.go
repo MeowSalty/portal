@@ -147,6 +147,14 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 		}
 	}
 
+	// 转换额外字段
+	if request.ExtraFieldsFormat != nil && *request.ExtraFieldsFormat == "openai" && len(request.ExtraFields) > 0 {
+		openaiReq.ExtraFields = make(map[string]interface{})
+		for key, value := range request.ExtraFields {
+			openaiReq.ExtraFields[key] = value
+		}
+	}
+
 	return openaiReq
 }
 
@@ -313,6 +321,17 @@ func ConvertCoreRequest(openaiReq *types.Request) *coreTypes.Request {
 			}
 			coreReq.LogitBias[key] = float64(v)
 		}
+	}
+
+	// 转换额外字段
+	if len(openaiReq.ExtraFields) > 0 {
+		coreReq.ExtraFields = make(map[string]interface{})
+		for key, value := range openaiReq.ExtraFields {
+			coreReq.ExtraFields[key] = value
+		}
+		// 设置来源格式为 "openai"
+		format := "openai"
+		coreReq.ExtraFieldsFormat = &format
 	}
 
 	return coreReq
