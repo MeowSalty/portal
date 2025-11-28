@@ -65,6 +65,12 @@ func ConvertCoreResponse(openaiResp *types.Response) *coreTypes.Response {
 					coreChoice.Delta.ToolCalls[j] = coreToolCall
 				}
 			}
+
+			// 传递额外字段和来源格式
+			if choice.Delta.ExtraFields != nil {
+				coreChoice.Delta.ExtraFields = choice.Delta.ExtraFields
+			}
+			coreChoice.Delta.ExtraFieldsFormat = "openai"
 		} else if choice.Message != nil {
 			// 非流式响应：数据应放在 Message 中
 			coreChoice.Message = &coreTypes.ResponseMessage{
@@ -95,6 +101,12 @@ func ConvertCoreResponse(openaiResp *types.Response) *coreTypes.Response {
 					coreChoice.Message.ToolCalls[j] = coreToolCall
 				}
 			}
+
+			// 传递额外字段和来源格式
+			if choice.Message.ExtraFields != nil {
+				coreChoice.Message.ExtraFields = choice.Message.ExtraFields
+			}
+			coreChoice.Message.ExtraFieldsFormat = "openai"
 		}
 
 		result.Choices[i] = coreChoice
@@ -192,6 +204,13 @@ func ConvertResponse(resp *coreTypes.Response) *types.Response {
 					openaiChoice.Message.ToolCalls[j] = openaiToolCall
 				}
 			}
+		}
+
+		// 传递额外字段
+		if choice.Delta != nil && choice.Delta.ExtraFields != nil {
+			openaiChoice.Delta.ExtraFields = choice.Delta.ExtraFields
+		} else if choice.Message != nil && choice.Message.ExtraFields != nil {
+			openaiChoice.Message.ExtraFields = choice.Message.ExtraFields
 		}
 
 		result.Choices[i] = openaiChoice
