@@ -92,6 +92,14 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 			openaiMsg.Content = contentParts
 		}
 
+		// 转换消息额外字段
+		if msg.ExtraFieldsFormat != nil && *msg.ExtraFieldsFormat == "openai" && len(msg.ExtraFields) > 0 {
+			openaiMsg.ExtraFields = make(map[string]interface{})
+			for key, value := range msg.ExtraFields {
+				openaiMsg.ExtraFields[key] = value
+			}
+		}
+
 		openaiReq.Messages[i] = openaiMsg
 	}
 
@@ -243,6 +251,16 @@ func ConvertCoreRequest(openaiReq *types.Request) *coreTypes.Request {
 				}
 				coreMsg.Content.ContentParts = contentParts
 			}
+			// 转换消息额外字段
+			if len(msg.ExtraFields) > 0 {
+				coreMsg.ExtraFields = make(map[string]interface{})
+				for key, value := range msg.ExtraFields {
+					coreMsg.ExtraFields[key] = value
+				}
+				format := "openai"
+				coreMsg.ExtraFieldsFormat = &format
+			}
+
 			coreReq.Messages[i] = coreMsg
 		}
 	}

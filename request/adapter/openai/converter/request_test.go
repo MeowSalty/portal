@@ -426,3 +426,87 @@ func TestConvertCoreRequest_WithAdditionalParameters(t *testing.T) {
 		t.Errorf("期望用户参数为 'test-user'，实际为 '%s'", *result.User)
 	}
 }
+
+// TestConvertCoreRequest_MessageExtraFields 测试消息额外字段从 OpenAI 到核心类型的转换
+func TestConvertCoreRequest_MessageExtraFields(t *testing.T) {
+	// 构造带有额外字段的 OpenAI 请求
+	openaiReq := &types.Request{
+		Model: "gpt-4",
+		Messages: []types.RequestMessage{
+			{
+				Role:    "user",
+				Content: "Hello",
+				ExtraFields: map[string]interface{}{
+					"custom_field": "custom_value",
+					"priority":     1,
+				},
+			},
+		},
+	}
+
+	// 调用转换函数
+	result := converter.ConvertCoreRequest(openaiReq)
+
+	// 验证消息额外字段
+	if len(result.Messages) != 1 {
+		t.Fatalf("期望有 1 条消息，实际为 %d", len(result.Messages))
+	}
+
+	msg := result.Messages[0]
+	if msg.ExtraFields == nil {
+		t.Fatal("期望消息额外字段已设置")
+	}
+
+	if msg.ExtraFields["custom_field"] != "custom_value" {
+		t.Errorf("期望 custom_field 为 'custom_value'，实际为 '%v'", msg.ExtraFields["custom_field"])
+	}
+
+	if msg.ExtraFieldsFormat == nil || *msg.ExtraFieldsFormat != "openai" {
+		t.Error("期望消息额外字段格式为 'openai'")
+	}
+}
+
+// TestConvertRequest_MessageExtraFields 测试消息额外字段从核心类型到 OpenAI 的转换
+func TestConvertRequest_MessageExtraFields(t *testing.T) {
+	// 构造带有额外字段的核心请求
+	coreReq := &coreTypes.Request{
+		Model: "gpt-4",
+		Messages: []coreTypes.Message{
+			{
+				Role: "user",
+				Content: coreTypes.MessageContent{
+					StringValue: func() *string { s := "Test message"; return &s }(),
+				},
+				ExtraFields: map[string]interface{}{
+					"custom_param": "test_value",
+					"importance":   "high",
+				},
+				ExtraFieldsFormat: func() *string { s := "openai"; return &s }(),
+			}}}
+
+	// 创建通道信息
+	channel := &routing.Channel{
+		ModelName: "gpt-4",
+	}
+
+	// 调用转换函数
+	result := converter.ConvertRequest(coreReq, channel)
+	openaiReq, ok := result.(*types.Request)
+	if !ok {
+		t.Fatalf("期望结果类型为*types.Request，实际为 %T", result)
+	}
+
+	// 验证消息额外字段
+	if len(openaiReq.Messages) != 1 {
+		t.Fatalf("期望有 1 条消息，实际为 %d", len(openaiReq.Messages))
+	}
+
+	msg := openaiReq.Messages[0]
+	if msg.ExtraFields == nil {
+		t.Fatal("期望消息额外字段已设置")
+	}
+
+	if msg.ExtraFields["custom_param"] != "test_value" {
+		t.Errorf("期望 custom_param 为 'test_value'，实际为 '%v'", msg.ExtraFields["custom_param"])
+	}
+}

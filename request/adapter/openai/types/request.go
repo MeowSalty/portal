@@ -43,6 +43,14 @@ var requestKnownFields = map[string]bool{
 	"web_search_options":    true,
 }
 
+// requestMessageKnownFields 定义 RequestMessage 结构体的所有已知字段名称
+// 用于在反序列化时识别未知字段
+var requestMessageKnownFields = map[string]bool{
+	"role":    true,
+	"content": true,
+	"name":    true,
+}
+
 // Request 表示 OpenAI 聊天完成请求参数
 type Request struct {
 	Model    string           `json:"model"`            // 模型名称
@@ -91,6 +99,9 @@ type RequestMessage struct {
 	Role    string      `json:"role"`           // 角色
 	Content interface{} `json:"content"`        // 内容
 	Name    *string     `json:"name,omitempty"` // 名称
+
+	// ExtraFields 存储未知字段
+	ExtraFields map[string]interface{} `json:"-"`
 }
 
 // RequestAudio 表示音频参数
@@ -345,6 +356,67 @@ func (r Request) MarshalJSON() ([]byte, error) {
 
 	// 4. 合并未知字段
 	for key, value := range r.ExtraFields {
+		result[key] = value
+	}
+
+	// 5. 序列化最终结果
+	return json.Marshal(result)
+}
+
+// UnmarshalJSON 实现 RequestMessage 的自定义 JSON 反序列化
+// 捕获所有未知字段并存储到 ExtraFields
+func (m *RequestMessage) UnmarshalJSON(data []byte) error {
+	// 1. 解析到通用 map 以获取所有字段
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	// 2. 使用类型别名避免递归调用
+	type Alias RequestMessage
+	aux := &struct{ *Alias }{Alias: (*Alias)(m)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	// 3. 提取未知字段
+	m.ExtraFields = make(map[string]interface{})
+	for key, value := range raw {
+		if !requestMessageKnownFields[key] {
+			m.ExtraFields[key] = value
+		}
+	}
+
+	return nil
+}
+
+// MarshalJSON 实现 RequestMessage 的自定义 JSON 序列化
+// 合并已知字段和 ExtraFields 中的未知字段
+func (m RequestMessage) MarshalJSON() ([]byte, error) {
+	// 1. 如果没有未知字段，使用默认序列化
+	if len(m.ExtraFields) == 0 {
+		// 使用类型别名避免递归调用
+		type Alias RequestMessage
+		aux := Alias(m)
+		return json.Marshal(aux)
+	}
+
+	// 2. 序列化已知字段到 map
+	type Alias RequestMessage
+	aux := Alias(m)
+	data, err := json.Marshal(aux)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 解析到 map
+	var result map[string]interface{}
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, err
+	}
+
+	// 4. 合并未知字段
+	for key, value := range m.ExtraFields {
 		result[key] = value
 	}
 

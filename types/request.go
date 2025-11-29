@@ -162,6 +162,12 @@ type Message struct {
 	Name *string `json:"name,omitempty"`
 	// 仅适用于 'tool' 角色的工具调用 ID
 	ToolCallID *string `json:"tool_call_id,omitempty"`
+
+	// 额外字段存储，用于保存来自不同 API 格式的未知字段
+	ExtraFields map[string]interface{} `json:"-"`
+	// 额外字段的来源格式，如 "openai"、"anthropic"、"gemini" 等
+	// 用于在转换回原始格式时保持兼容性
+	ExtraFieldsFormat *string `json:"-"`
 }
 
 // MessageContent 处理字符串或 ContentPart 数组
