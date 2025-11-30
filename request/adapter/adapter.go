@@ -68,7 +68,7 @@ func (a *Adapter) ChatCompletion(
 
 	// 检查 HTTP 状态码
 	if httpResp.StatusCode != fasthttp.StatusOK {
-		err := a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.Body)
+		err := a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, httpResp.Body)
 		return nil, err
 	}
 

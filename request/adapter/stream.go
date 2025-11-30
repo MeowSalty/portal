@@ -44,7 +44,7 @@ func (a *Adapter) handleStreaming(
 		} else {
 			body = []byte{}
 		}
-		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, body)
+		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, body)
 	}
 
 	// 检查 BodyStream 是否为 nil

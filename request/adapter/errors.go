@@ -18,28 +18,39 @@ const (
 	HTTPErrorTypeServiceUnavailable
 )
 
+// isJSONContentType 检查 Content-Type 是否为 JSON 类型
+func isJSONContentType(contentType string) bool {
+	return strings.Contains(strings.ToLower(contentType), "application/json")
+}
+
 // handleHTTPError 处理 HTTP 错误
-func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) error {
+func (a *Adapter) handleHTTPError(message string, statusCode int, contentType string, body []byte) error {
 	if len(body) == 0 {
 		return a.createHTTPError(message, statusCode, "", HTTPErrorTypeServiceUnavailable)
 	}
 
-	// 只解析一次 JSON
-	var jsonData map[string]interface{}
-	err := json.Unmarshal(body, &jsonData)
-
-	// 根据解析结果分别处理
 	var bodyStr string
 	var errorType HTTPErrorType
 
-	if err != nil {
-		// JSON 解析失败，直接清理 HTML
+	// 根据 Content-Type 决定处理方式
+	if isJSONContentType(contentType) {
+		// Content-Type 表明是 JSON，尝试解析
+		var jsonData map[string]interface{}
+		err := json.Unmarshal(body, &jsonData)
+
+		if err != nil {
+			// JSON 解析失败，回退到 HTML/文本处理
+			bodyStr = stripHTML(string(body))
+			errorType = HTTPErrorTypeServiceUnavailable
+		} else {
+			// JSON 解析成功
+			bodyStr = a.processBodyHTML(jsonData)
+			errorType = a.classifyHTTPErrorType(jsonData)
+		}
+	} else {
+		// 非 JSON 类型，直接处理为 HTML/文本
 		bodyStr = stripHTML(string(body))
 		errorType = HTTPErrorTypeServiceUnavailable
-	} else {
-		// JSON 解析成功，处理 body 和分类错误类型
-		bodyStr = a.processBodyHTML(jsonData)
-		errorType = a.classifyHTTPErrorType(jsonData)
 	}
 
 	// 根据错误类型和状态码处理错误
@@ -107,32 +118,117 @@ func (a *Adapter) handleParseError(operation string, err error, body []byte) err
 		WithContext("response_body", string(body))
 }
 
-// stripHTML 移除字符串中的完整 HTML 页面，但保留其他文本内容
-// 对于混合内容（即包含完整 HTML 页面和普通文本），将只移除完整的 HTML 页面部分
+// extractHTMLError 从 HTML 页面中提取有效的错误信息
+//
+// 该函数会尝试从 HTML 内容中提取以下信息：
+// - 页面标题（<title> 标签）
+// - 主标题（<h1> 标签）
+// - 错误描述（<p> 标签中的文本）
+//
+// 如果内容不是 HTML 或无法提取有效信息，则返回原始内容（经过基本清理）
+//
+// 参数：
+//   - content: 可能包含 HTML 的字符串内容
+//
+// 返回：
+//   - string: 提取的错误信息，格式为 "标题：描述" 或清理后的原始内容
+func extractHTMLError(content string) string {
+	if content == "" {
+		return content
+	}
+
+	// 提取标题信息（按优先级）
+	title := extractTagContent(content, "title")
+	h1 := extractTagContent(content, "h1")
+	h2 := extractTagContent(content, "h2")
+
+	// 提取描述信息（按优先级）
+	pContent := extractTagContent(content, "p")
+	centerContent := extractTagContent(content, "center")
+
+	// 构建标题
+	var extractedTitle string
+	if h1 != "" {
+		extractedTitle = h1
+	} else if h2 != "" {
+		extractedTitle = h2
+	} else if title != "" {
+		extractedTitle = title
+	}
+
+	// 构建描述
+	var extractedDesc string
+	if pContent != "" {
+		extractedDesc = pContent
+	} else if centerContent != "" {
+		extractedDesc = centerContent
+	}
+
+	// 如果提取到了标题和描述，组合成格式化的错误信息
+	if extractedTitle != "" && extractedDesc != "" {
+		// 如果标题和描述相同，只返回标题
+		if extractedTitle == extractedDesc {
+			return extractedTitle
+		}
+		return extractedTitle + ": " + extractedDesc
+	} else if extractedTitle != "" {
+		return extractedTitle
+	} else if extractedDesc != "" {
+		return extractedDesc
+	}
+
+	// 如果没有提取到有效信息，返回原始内容（经过基本清理）
+	return cleanWhitespace(content)
+}
+
+// extractTagContent 提取指定标签的内容
+func extractTagContent(content, tagName string) string {
+	// 构建正则表达式匹配指定标签的内容
+	pattern := `(?i)<` + tagName + `(?:\s+[^>]*)?>(.*?)</` + tagName + `>`
+	regex := regexp.MustCompile(pattern)
+	matches := regex.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		// 提取内容后，移除其中可能存在的 HTML 标签
+		extracted := matches[1]
+		// 移除所有 HTML 标签
+		tagRegex := regexp.MustCompile(`<[^>]*>`)
+		cleaned := tagRegex.ReplaceAllString(extracted, "")
+		return strings.TrimSpace(cleaned)
+	}
+	return ""
+}
+
+// isHTMLContent 检查内容是否为 HTML
+func isHTMLContent(content string) bool {
+	// 检查是否包含 HTML 标签
+	htmlTagRegex := regexp.MustCompile(`(?i)<[^>]+>`)
+	return htmlTagRegex.MatchString(content)
+}
+
+// cleanWhitespace 清理多余的空白字符
+func cleanWhitespace(content string) string {
+	// 清理多余的空白字符，包括连续的空格、制表符、换行符等
+	spaceRegex := regexp.MustCompile(`\s+`)
+	result := spaceRegex.ReplaceAllString(content, " ")
+	return strings.TrimSpace(result)
+}
+
+// stripHTML 从字符串中提取有效的错误信息
+//
+// 对于 HTML 内容，会尝试提取标题和描述信息
+// 对于非 HTML 内容，会清理多余的空白字符
 func stripHTML(content string) string {
 	if content == "" {
 		return content
 	}
 
-	// 使用正则表达式匹配完整的 HTML 页面
-	// 匹配以<!DOCTYPE html>或<html>开头，以</html>结尾的内容
-	htmlPageRegex := regexp.MustCompile(`(?i)(?:<!DOCTYPE\s+html[^>]*>\s*)?<html\b[^>]*>.*?</html>`)
+	// 检查是否包含 HTML 内容
+	if isHTMLContent(content) {
+		return extractHTMLError(content)
+	}
 
-	// 替换所有完整的 HTML 页面为指定提示文本
-	result := htmlPageRegex.ReplaceAllString(content, "[HTML content filtered]")
-
-	// 同时移除可能存在的 HTML 标签
-	tagRegex := regexp.MustCompile(`<[^>]*>`)
-	result = tagRegex.ReplaceAllString(result, "")
-
-	// 清理多余的空白字符，包括连续的空格、制表符、换行符等
-	spaceRegex := regexp.MustCompile(`\s+`)
-	result = spaceRegex.ReplaceAllString(result, " ")
-
-	// 去除首尾空格
-	result = strings.TrimSpace(result)
-
-	return result
+	// 非 HTML 内容，只清理空白字符
+	return cleanWhitespace(content)
 }
 
 // stripErrorHTML 从错误消息中移除 HTML 内容

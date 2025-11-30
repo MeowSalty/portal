@@ -11,11 +11,12 @@ import (
 
 // httpResponse 统一的 HTTP 响应封装
 type httpResponse struct {
-	StatusCode int         // HTTP 状态码
-	Body       []byte      // 非流式响应的完整响应体（已读取）
-	BodyStream io.Reader   // 流式响应的响应体流（需持续读取）
-	IsStream   bool        // 标记是否为流式响应
-	userData   interface{} // 内部使用，用于存储原始响应对象（如*fasthttp.Response）以便正确释放资源
+	StatusCode  int         // HTTP 状态码
+	ContentType string      // 新增：响应的 Content-Type 头部
+	Body        []byte      // 非流式响应的完整响应体（已读取）
+	BodyStream  io.Reader   // 流式响应的响应体流（需持续读取）
+	IsStream    bool        // 标记是否为流式响应
+	userData    interface{} // 内部使用，用于存储原始响应对象（如*fasthttp.Response）以便正确释放资源
 }
 
 // newHTTPClient 创建新的 HTTP 客户端
@@ -90,9 +91,10 @@ func (a *Adapter) sendHTTPRequest(
 
 	// 根据是否流式请求返回不同的响应体
 	httpResp := &httpResponse{
-		StatusCode: resp.StatusCode(),
-		IsStream:   isStream,
-		userData:   resp, // 总是存储 resp 对象以便后续释放
+		StatusCode:  resp.StatusCode(),
+		ContentType: string(resp.Header.ContentType()), // 新增：提取 Content-Type 头部
+		IsStream:    isStream,
+		userData:    resp, // 总是存储 resp 对象以便后续释放
 	}
 
 	if isStream {
