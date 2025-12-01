@@ -125,8 +125,6 @@ func mapHTTPStatusToErrorCode(statusCode int) errors.ErrorCode {
 		return errors.ErrCodeNotFound
 	case 408:
 		return errors.ErrCodeDeadlineExceeded
-	case 409:
-		return errors.ErrCodeAlreadyExists
 	case 422:
 		return errors.ErrCodeInvalidArgument
 	case 429:

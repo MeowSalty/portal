@@ -30,8 +30,6 @@ const (
 	ErrCodeInvalidArgument ErrorCode = "INVALID_ARGUMENT"
 	// 资源未找到
 	ErrCodeNotFound ErrorCode = "NOT_FOUND"
-	// 资源已存在
-	ErrCodeAlreadyExists ErrorCode = "ALREADY_EXISTS"
 	// 权限拒绝
 	ErrCodePermissionDenied ErrorCode = "PERMISSION_DENIED"
 	// 认证失败
@@ -297,7 +295,6 @@ var (
 	ErrInternal             = New(ErrCodeInternal, "内部错误")
 	ErrInvalidArgument      = New(ErrCodeInvalidArgument, "无效参数")
 	ErrNotFound             = New(ErrCodeNotFound, "资源未找到")
-	ErrAlreadyExists        = New(ErrCodeAlreadyExists, "资源已存在")
 	ErrPermissionDenied     = New(ErrCodePermissionDenied, "权限被拒绝")
 	ErrAuthenticationFailed = New(ErrCodeAuthenticationFailed, "认证失败")
 	ErrResourceExhausted    = New(ErrCodeResourceExhausted, "资源耗尽")
