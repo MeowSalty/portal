@@ -85,25 +85,12 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 
 		// 检查错误是否可以重试
 		if err != nil {
-			// 网络错误
-			if errors.IsCode(err, errors.ErrCodeUnavailable) {
-				channelLogger.WarnContext(ctx, "通道不可用，尝试重试", "error", err)
-				channel.MarkFailure(ctx, err)
-				continue
-			}
-			// 请求失败
-			if errors.IsCode(err, errors.ErrCodeRequestFailed) {
+			if errors.IsRetryable(err) {
 				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
-			// 认证失败
-			if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
-				channelLogger.WarnContext(ctx, "认证失败，尝试重试", "error", err)
-				channel.MarkFailure(ctx, err)
-				continue
-			}
-			// 操作终止
+			// 特殊处理：操作终止时标记成功
 			if errors.IsCode(err, errors.ErrCodeAborted) {
 				channelLogger.InfoContext(ctx, "操作终止")
 				channel.MarkSuccess(ctx)
@@ -171,31 +158,12 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 
 			// 检查错误是否可以重试
 			if err != nil {
-				// 网络错误
-				if errors.IsCode(err, errors.ErrCodeUnavailable) {
-					channelLogger.WarnContext(ctx, "通道不可用，尝试重试", "error", err)
-					channel.MarkFailure(ctx, err)
-					continue
-				}
-				// 请求失败
-				if errors.IsCode(err, errors.ErrCodeRequestFailed) {
+				if errors.IsRetryable(err) {
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
-				// 认证失败
-				if errors.IsCode(err, errors.ErrCodeAuthenticationFailed) {
-					channelLogger.WarnContext(ctx, "认证失败，尝试重试", "error", err)
-					channel.MarkFailure(ctx, err)
-					continue
-				}
-				// 流处理失败
-				if errors.IsCode(err, errors.ErrCodeStreamError) {
-					channelLogger.WarnContext(ctx, "流处理失败，尝试重试", "error", err)
-					channel.MarkFailure(ctx, err)
-					continue
-				}
-				// 操作终止
+				// 特殊处理：操作终止时标记成功
 				if errors.IsCode(err, errors.ErrCodeAborted) {
 					channelLogger.InfoContext(ctx, "操作终止")
 					channel.MarkSuccess(ctx)

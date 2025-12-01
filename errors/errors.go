@@ -346,3 +346,20 @@ func GetErrorLevel(err error) ErrorLevel {
 		return ErrorLevelPlatform
 	}
 }
+
+// RetryableErrorCodes 定义可重试的错误码集合
+var RetryableErrorCodes = map[ErrorCode]bool{
+	ErrCodeUnavailable:          true, // 服务不可用（网络错误、HTTP 502/503）
+	ErrCodeStreamError:          true, // 流处理错误
+	ErrCodeAuthenticationFailed: true, // 认证失败（HTTP 401）
+	ErrCodePermissionDenied:     true, // 权限拒绝（HTTP 403）
+	ErrCodeDeadlineExceeded:     true, // 超时（HTTP 408/504）
+	ErrCodeRateLimitExceeded:    true, // 速率限制（HTTP 429）
+	ErrCodeRequestFailed:        true, // 请求失败（上游错误）
+}
+
+// IsRetryable 检查错误是否可重试
+func IsRetryable(err error) bool {
+	code := GetCode(err)
+	return RetryableErrorCodes[code]
+}
