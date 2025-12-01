@@ -3,6 +3,7 @@ package routing
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/routing/health"
@@ -17,6 +18,7 @@ type Routing struct {
 	modelRepo     ModelRepository
 	keyRepo       KeyRepository
 	healthService *health.Service
+	mu            sync.Mutex // 保护并发通道选择的互斥锁
 }
 
 // Config 通道服务配置
@@ -117,11 +119,22 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 		return nil, errors.New(errors.ErrCodeResourceExhausted, "没有可用的通道").WithHTTPStatus(fasthttp.StatusServiceUnavailable)
 	}
 
-	// 5. 使用 selector 选择一个通道
+	// 5. 使用互斥锁保护通道选择和时间更新操作
+	// 确保在并发环境下，选择通道和更新使用时间是原子操作
+	r.mu.Lock()
 	selectedID, err := r.selector.Select(channelInfos)
 	if err != nil {
+		r.mu.Unlock()
 		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
+
+	// 立即更新选中通道的最后使用时间
+	if updateErr := r.healthService.UpdateLastUsed(selectedID); updateErr != nil {
+		// 记录错误但不影响通道选择结果
+		// TODO: 添加日志记录
+		_ = updateErr
+	}
+	r.mu.Unlock()
 
 	// 找到对应的通道
 	for i, info := range channelInfos {

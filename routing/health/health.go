@@ -3,6 +3,8 @@ package health
 
 import (
 	"context"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
@@ -277,4 +279,57 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 		Status:      ChannelStatusAvailable,
 		LastCheckAt: lastCheckAt,
 	}
+}
+
+// UpdateLastUsed 更新通道的最后使用时间
+//
+// 该方法用于在通道被选择后立即更新其最后使用时间
+//
+// 参数：
+//   - channelID: 通道 ID，格式为 "platformID-modelID-apiKeyID"
+//
+// 返回值：
+//   - error: 错误信息
+func (m *Service) UpdateLastUsed(channelID string) error {
+	// 解析通道 ID
+	parts := strings.Split(channelID, "-")
+	if len(parts) != 3 {
+		return errors.New(errors.ErrCodeInvalidArgument, "无效的通道 ID 格式")
+	}
+
+	// 解析所有资源 ID
+	platformID, err := strconv.ParseUint(parts[0], 10, 32)
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析平台 ID 失败", err)
+	}
+	modelID, err := strconv.ParseUint(parts[1], 10, 32)
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析模型 ID 失败", err)
+	}
+	apiKeyID, err := strconv.ParseUint(parts[2], 10, 32)
+	if err != nil {
+		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析 API 密钥 ID 失败", err)
+	}
+
+	now := time.Now()
+
+	// 更新平台资源的最后使用时间
+	platformStatus := m.getStatus(ResourceTypePlatform, uint(platformID))
+	platformStatus.LastCheckAt = now
+	platformStatus.UpdatedAt = now
+	m.syncer.MarkDirty(ResourceTypePlatform, uint(platformID), platformStatus)
+
+	// 更新模型资源的最后使用时间
+	modelStatus := m.getStatus(ResourceTypeModel, uint(modelID))
+	modelStatus.LastCheckAt = now
+	modelStatus.UpdatedAt = now
+	m.syncer.MarkDirty(ResourceTypeModel, uint(modelID), modelStatus)
+
+	// 更新 API 密钥资源的最后使用时间
+	apiKeyStatus := m.getStatus(ResourceTypeAPIKey, uint(apiKeyID))
+	apiKeyStatus.LastCheckAt = now
+	apiKeyStatus.UpdatedAt = now
+	m.syncer.MarkDirty(ResourceTypeAPIKey, uint(apiKeyID), apiKeyStatus)
+
+	return nil
 }
