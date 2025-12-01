@@ -8,14 +8,15 @@ import (
 	"github.com/MeowSalty/portal/errors"
 )
 
-// HTTPErrorType 表示 HTTP 错误类型
-type HTTPErrorType int
+// ErrorFrom 表示错误来源
+// 网关 (A) → 服务器 (B) → 外部服务 (C)
+type ErrorFrom int
 
 const (
-	// HTTPErrorTypeAPIError API 服务器正常接收请求但返回错误
-	HTTPErrorTypeAPIError HTTPErrorType = iota
-	// HTTPErrorTypeServiceUnavailable API 服务器无法正常接收请求
-	HTTPErrorTypeServiceUnavailable
+	// ErrorFromServer B 产生的错误
+	ErrorFromServer ErrorFrom = iota
+	// ErrorFromUpstream C 产生的错误，经 B 转发
+	ErrorFromUpstream
 )
 
 // isJSONContentType 检查 Content-Type 是否为 JSON 类型
@@ -26,11 +27,11 @@ func isJSONContentType(contentType string) bool {
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, contentType string, body []byte) error {
 	if len(body) == 0 {
-		return a.createHTTPError(message, statusCode, "", HTTPErrorTypeServiceUnavailable)
+		return a.createHTTPError(message, statusCode, "", ErrorFromServer)
 	}
 
 	var bodyStr string
-	var errorType HTTPErrorType
+	var errorFrom ErrorFrom
 
 	// 根据 Content-Type 决定处理方式
 	if isJSONContentType(contentType) {
@@ -41,20 +42,20 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 		if err != nil {
 			// JSON 解析失败，回退到 HTML/文本处理
 			bodyStr = stripHTML(string(body))
-			errorType = HTTPErrorTypeServiceUnavailable
+			errorFrom = ErrorFromServer
 		} else {
 			// JSON 解析成功
 			bodyStr = a.processBodyHTML(jsonData)
-			errorType = a.classifyHTTPErrorType(jsonData)
+			errorFrom = a.classifyErrorFrom(jsonData)
 		}
 	} else {
 		// 非 JSON 类型，直接处理为 HTML/文本
 		bodyStr = stripHTML(string(body))
-		errorType = HTTPErrorTypeServiceUnavailable
+		errorFrom = ErrorFromServer
 	}
 
-	// 根据错误类型和状态码处理错误
-	return a.createHTTPError(message, statusCode, bodyStr, errorType)
+	// 根据错误来源和状态码处理错误
+	return a.createHTTPError(message, statusCode, bodyStr, errorFrom)
 }
 
 // processBodyHTML 处理已解析的 JSON 数据中的 HTML 内容
@@ -78,37 +79,74 @@ func (a *Adapter) processBodyHTML(jsonData map[string]interface{}) string {
 	return string(cleanedBody)
 }
 
-// classifyHTTPErrorType 根据已解析的 JSON 数据分类 HTTP 错误类型
-func (a *Adapter) classifyHTTPErrorType(jsonData map[string]interface{}) HTTPErrorType {
-	// 检查是否存在 error.type 字段
+// classifyErrorFrom 根据已解析的 JSON 数据分类错误来源
+func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) ErrorFrom {
 	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
-		if errorType, ok := errorObj["type"].(string); ok && errorType != "" {
-			return HTTPErrorTypeAPIError
+		if errorType, ok := errorObj["type"].(string); ok && errorType == "upstream_error" {
+			return ErrorFromUpstream
 		}
 	}
-
-	return HTTPErrorTypeServiceUnavailable
+	return ErrorFromServer
 }
 
-// createHTTPError 根据错误类型和状态码创建适当的错误
-func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string, errorType HTTPErrorType) error {
+// createHTTPError 根据错误来源和状态码创建适当的错误
+func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string, errorFrom ErrorFrom) error {
 	// 定义错误码
 	var errCode errors.ErrorCode
 
-	switch {
-	case statusCode == 401:
-		// 401 状态码表示认证失败 (密钥问题)
-		errCode = errors.ErrCodeAuthenticationFailed
-	case errorType == HTTPErrorTypeAPIError:
-		// API 服务器正常接收请求但返回错误
+	switch errorFrom {
+	case ErrorFromServer:
+		// B 产生的错误，根据 HTTP 状态码映射
+		errCode = mapHTTPStatusToErrorCode(statusCode)
+	case ErrorFromUpstream:
+		// C 产生的错误，经 B 转发，视为请求错误
 		errCode = errors.ErrCodeRequestFailed
 	default:
-		// API 服务器无法正常接收请求
-		errCode = errors.ErrCodeUnavailable
+		// 未知来源
+		errCode = errors.ErrCodeUnknown
 	}
 
 	return errors.NewWithHTTPStatus(errCode, message, statusCode).
-		WithContext("response_body", bodyStr)
+		WithContext("response_body", bodyStr).
+		WithContext("error_from", errorFromToString(errorFrom))
+}
+
+// mapHTTPStatusToErrorCode 将 HTTP 状态码映射到错误码
+func mapHTTPStatusToErrorCode(statusCode int) errors.ErrorCode {
+	switch statusCode {
+	// 4xx 客户端错误
+	case 400:
+		return errors.ErrCodeInvalidArgument
+	case 401:
+		return errors.ErrCodeAuthenticationFailed
+	case 403:
+		return errors.ErrCodePermissionDenied
+	case 404:
+		return errors.ErrCodeNotFound
+	case 408:
+		return errors.ErrCodeDeadlineExceeded
+	case 409:
+		return errors.ErrCodeAlreadyExists
+	case 422:
+		return errors.ErrCodeInvalidArgument
+	case 429:
+		return errors.ErrCodeRateLimitExceeded
+	// 5xx 服务端错误
+	case 500:
+		return errors.ErrCodeInternal
+	case 502, 503:
+		return errors.ErrCodeUnavailable
+	case 504:
+		return errors.ErrCodeDeadlineExceeded
+	default:
+		// 根据状态码范围判断
+		if statusCode >= 400 && statusCode < 500 {
+			return errors.ErrCodeInvalidArgument
+		} else if statusCode >= 500 && statusCode < 600 {
+			return errors.ErrCodeInternal
+		}
+		return errors.ErrCodeUnknown
+	}
 }
 
 // handleParseError 处理解析错误
@@ -247,4 +285,16 @@ func stripErrorHTML(err error) error {
 
 	// 否则创建一个新的错误，包含清理后的消息
 	return errors.New(errors.ErrCodeRequestFailed, cleanMsg)
+}
+
+// errorFromToString 将错误来源转换为字符串描述
+func errorFromToString(errorFrom ErrorFrom) string {
+	switch errorFrom {
+	case ErrorFromServer:
+		return "server"
+	case ErrorFromUpstream:
+		return "upstream"
+	default:
+		return "unknown"
+	}
 }
