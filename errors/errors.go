@@ -75,6 +75,18 @@ const (
 	ErrCodeCircuitBreakerOpen ErrorCode = "CIRCUIT_BREAKER_OPEN"
 )
 
+// ErrorLevel 定义错误层级类型
+type ErrorLevel int
+
+const (
+	// ErrorLevelPlatform 平台层级错误
+	ErrorLevelPlatform ErrorLevel = iota
+	// ErrorLevelKey 密钥层级错误
+	ErrorLevelKey
+	// ErrorLevelModel 模型层级错误
+	ErrorLevelModel
+)
+
 // Error 结构化错误类型
 type Error struct {
 	Code       ErrorCode              // 错误码
@@ -318,3 +330,19 @@ var (
 	ErrRateLimitExceeded  = New(ErrCodeRateLimitExceeded, "超出速率限制")
 	ErrCircuitBreakerOpen = New(ErrCodeCircuitBreakerOpen, "熔断器已开启")
 )
+
+// GetErrorLevel 根据错误码获取错误层级
+func GetErrorLevel(err error) ErrorLevel {
+	code := GetCode(err)
+	switch code {
+	// 密钥层级
+	case ErrCodeAuthenticationFailed:
+		return ErrorLevelKey
+	// 模型层级
+	case ErrCodeNotFound, ErrCodeDeadlineExceeded:
+		return ErrorLevelModel
+	// 平台层级（默认）
+	default:
+		return ErrorLevelPlatform
+	}
+}

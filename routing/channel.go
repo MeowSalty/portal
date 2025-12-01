@@ -68,17 +68,22 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	errorCode := errors.GetHTTPStatus(err)
 	errorMessage := errors.GetMessage(err)
 
-	// 根据错误类型确定资源类型和资源 ID
-	resourceType := health.ResourceTypeModel
-	resourceID := c.ModelID
+	// 根据错误层级确定资源类型和资源 ID
+	errorLevel := errors.GetErrorLevel(err)
 
-	switch errors.GetCode(err) {
-	case errors.ErrCodeUnavailable:
+	var resourceType health.ResourceType
+	var resourceID uint
+
+	switch errorLevel {
+	case errors.ErrorLevelPlatform:
 		resourceType = health.ResourceTypePlatform
 		resourceID = c.PlatformID
-	case errors.ErrCodeAuthenticationFailed:
+	case errors.ErrorLevelKey:
 		resourceType = health.ResourceTypeAPIKey
 		resourceID = c.APIKeyID
+	default:
+		resourceType = health.ResourceTypeModel
+		resourceID = c.ModelID
 	}
 
 	// 更新健康状态
