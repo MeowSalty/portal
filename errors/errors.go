@@ -367,10 +367,8 @@ func IsRetryable(err error) bool {
 	// 对于特定错误，需要额外检查错误来源
 	// 根据来源来判断是否允许重试
 	switch code {
-	case ErrCodeInternal:
+	case ErrCodeInternal, ErrCodeInvalidArgument:
 		return isRetryableFromUpstream(err, []string{"server", "upstream"})
-	case ErrCodeInvalidArgument:
-		return isRetryableFromUpstream(err, []string{"upstream"})
 	}
 
 	return RetryableErrorCodes[code]
