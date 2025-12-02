@@ -356,10 +356,42 @@ var RetryableErrorCodes = map[ErrorCode]bool{
 	ErrCodeDeadlineExceeded:     true, // 超时（HTTP 408/504）
 	ErrCodeRateLimitExceeded:    true, // 速率限制（HTTP 429）
 	ErrCodeRequestFailed:        true, // 请求失败（上游错误）
+	ErrCodeInternal:             true, // 内部错误
+	ErrCodeInvalidArgument:      true, // 无效参数
 }
 
 // IsRetryable 检查错误是否可重试
 func IsRetryable(err error) bool {
 	code := GetCode(err)
+
+	// 对于特定错误，需要额外检查错误来源
+	// 根据来源来判断是否允许重试
+	switch code {
+	case ErrCodeInternal:
+		return isRetryableFromUpstream(err, []string{"server", "upstream"})
+	case ErrCodeInvalidArgument:
+		return isRetryableFromUpstream(err, []string{"upstream"})
+	}
+
 	return RetryableErrorCodes[code]
+}
+
+// isRetryableFromUpstream 检查来自上游的错误是否可重试
+func isRetryableFromUpstream(err error, allowedSources []string) bool {
+	context := GetContext(err)
+	if context == nil {
+		return false
+	}
+
+	errorFrom, ok := context["error_from"].(string)
+	if !ok {
+		return false
+	}
+
+	for _, source := range allowedSources {
+		if errorFrom == source {
+			return true
+		}
+	}
+	return false
 }
