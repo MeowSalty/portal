@@ -14,7 +14,7 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) *anthr
 	systemMsg, nonSystemMessages := extractSystemMessageFromCore(request.Messages)
 
 	anthropicReq := &anthropicTypes.Request{
-		Model:     request.Model,
+		Model:     channel.ModelName,
 		Messages:  convertMessages(nonSystemMessages),
 		MaxTokens: getMaxTokens(request.MaxTokens),
 		Stream:    request.Stream,

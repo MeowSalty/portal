@@ -14,7 +14,7 @@ import (
 func TestConvertRequest_SimpleTextMessage(t *testing.T) {
 	// 准备测试数据：一个包含简单文本消息的 JSON
 	coreReqJSON := `{
-		"model": "claude-3-sonnet-20240229",
+		"model": "claude-sonnet-3",
 		"messages": [
 			{
 				"role": "user",
@@ -33,7 +33,9 @@ func TestConvertRequest_SimpleTextMessage(t *testing.T) {
 	}
 
 	// 创建一个模拟的通道对象
-	channel := &routing.Channel{}
+	channel := &routing.Channel{
+		ModelName: "claude-3-sonnet-20240229",
+	}
 
 	// 执行转换
 	anthropicReq := converter.ConvertRequest(&request, channel)
@@ -473,7 +475,7 @@ func TestConvertRequest_WithParameters(t *testing.T) {
 	userID := "user123"
 
 	coreReq := &coreTypes.Request{
-		Model:       "claude-3-opus-20240229",
+		Model:       "claude-opus-3",
 		Temperature: &temperature,
 		TopP:        &topP,
 		TopK:        &topK,
@@ -494,7 +496,9 @@ func TestConvertRequest_WithParameters(t *testing.T) {
 	}
 
 	// 创建一个模拟的通道对象
-	channel := &routing.Channel{}
+	channel := &routing.Channel{
+		ModelName: "claude-3-opus-20240229",
+	}
 
 	// 执行转换
 	anthropicReq := converter.ConvertRequest(coreReq, channel)
