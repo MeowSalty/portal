@@ -249,6 +249,25 @@ func (s StopUnion) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nil)
 }
 
+// UnmarshalJSON 实现 StopUnion 的自定义 JSON 反序列化
+func (s *StopUnion) UnmarshalJSON(data []byte) error {
+	// 首先尝试反序列化为字符串
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		s.StringValue = &str
+		return nil
+	}
+
+	// 尝试反序列化为字符串数组
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		s.StringArray = arr
+		return nil
+	}
+
+	return nil
+}
+
 // MarshalJSON 实现 FunctionCallUnion 的自定义 JSON 序列化
 func (f FunctionCallUnion) MarshalJSON() ([]byte, error) {
 	if f.Mode != nil {
@@ -258,6 +277,25 @@ func (f FunctionCallUnion) MarshalJSON() ([]byte, error) {
 		return json.Marshal(f.Function)
 	}
 	return json.Marshal(nil)
+}
+
+// UnmarshalJSON 实现 FunctionCallUnion 的自定义 JSON 反序列化
+func (f *FunctionCallUnion) UnmarshalJSON(data []byte) error {
+	// 首先尝试反序列化为字符串（如 "none", "auto"）
+	var mode string
+	if err := json.Unmarshal(data, &mode); err == nil {
+		f.Mode = &mode
+		return nil
+	}
+
+	// 尝试反序列化为 FunctionCallOption 对象
+	var funcOpt FunctionCallOption
+	if err := json.Unmarshal(data, &funcOpt); err == nil && funcOpt.Name != "" {
+		f.Function = &funcOpt
+		return nil
+	}
+
+	return nil
 }
 
 // MarshalJSON 实现 ResponseFormatUnion 的自定义 JSON 序列化
@@ -272,6 +310,43 @@ func (r FormatUnion) MarshalJSON() ([]byte, error) {
 		return json.Marshal(r.JSONObject)
 	}
 	return json.Marshal(nil)
+}
+
+// UnmarshalJSON 实现 FormatUnion 的自定义 JSON 反序列化
+func (r *FormatUnion) UnmarshalJSON(data []byte) error {
+	// 解析到通用 map 以检查 type 字段
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	typeVal, ok := raw["type"].(string)
+	if !ok {
+		return nil
+	}
+
+	switch typeVal {
+	case "text":
+		var text FormatText
+		if err := json.Unmarshal(data, &text); err == nil {
+			r.Text = &text
+			return nil
+		}
+	case "json_schema":
+		var jsonSchema FormatJSONSchema
+		if err := json.Unmarshal(data, &jsonSchema); err == nil {
+			r.JSONSchema = &jsonSchema
+			return nil
+		}
+	case "json_object":
+		var jsonObject FormatJSONObject
+		if err := json.Unmarshal(data, &jsonObject); err == nil {
+			r.JSONObject = &jsonObject
+			return nil
+		}
+	}
+
+	return nil
 }
 
 // MarshalJSON 实现 ToolChoiceUnion 的自定义 JSON 序列化
@@ -291,6 +366,51 @@ func (t ToolChoiceUnion) MarshalJSON() ([]byte, error) {
 	return json.Marshal(nil)
 }
 
+// UnmarshalJSON 实现 ToolChoiceUnion 的自定义 JSON 反序列化
+func (t *ToolChoiceUnion) UnmarshalJSON(data []byte) error {
+	// 首先尝试反序列化为字符串（如 "auto", "none", "required"）
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		t.Auto = &str
+		return nil
+	}
+
+	// 尝试反序列化为对象，先解析 type 字段判断类型
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	typeVal, ok := raw["type"].(string)
+	if !ok {
+		return nil
+	}
+
+	switch typeVal {
+	case "function":
+		var named ToolChoiceNamed
+		if err := json.Unmarshal(data, &named); err == nil {
+			t.Named = &named
+			return nil
+		}
+	case "custom":
+		var custom ToolChoiceNamedCustom
+		if err := json.Unmarshal(data, &custom); err == nil {
+			t.NamedCustom = &custom
+			return nil
+		}
+	default:
+		// 尝试 ToolChoiceAllowed
+		var allowed ToolChoiceAllowed
+		if err := json.Unmarshal(data, &allowed); err == nil {
+			t.Allowed = &allowed
+			return nil
+		}
+	}
+
+	return nil
+}
+
 // MarshalJSON 实现 ToolUnion 的自定义 JSON 序列化
 func (t ToolUnion) MarshalJSON() ([]byte, error) {
 	if t.Function != nil {
@@ -300,6 +420,37 @@ func (t ToolUnion) MarshalJSON() ([]byte, error) {
 		return json.Marshal(t.Custom)
 	}
 	return json.Marshal(nil)
+}
+
+// UnmarshalJSON 实现 ToolUnion 的自定义 JSON 反序列化
+func (t *ToolUnion) UnmarshalJSON(data []byte) error {
+	// 解析到通用 map 以检查 type 字段
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	typeVal, ok := raw["type"].(string)
+	if !ok {
+		return nil
+	}
+
+	switch typeVal {
+	case "function":
+		var function ToolFunction
+		if err := json.Unmarshal(data, &function); err == nil {
+			t.Function = &function
+			return nil
+		}
+	case "custom":
+		var custom ToolCustom
+		if err := json.Unmarshal(data, &custom); err == nil {
+			t.Custom = &custom
+			return nil
+		}
+	}
+
+	return nil
 }
 
 // UnmarshalJSON 实现 Request 的自定义 JSON 反序列化
