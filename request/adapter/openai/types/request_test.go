@@ -5,6 +5,11 @@ import (
 	"testing"
 )
 
+// stringPtr 是一个辅助函数，用于创建字符串指针
+func stringPtr(s string) *string {
+	return &s
+}
+
 // TestRequest_UnmarshalJSON_WithExtraFields 测试解析包含未知字段的 JSON
 func TestRequest_UnmarshalJSON_WithExtraFields(t *testing.T) {
 	jsonData := `{
@@ -508,6 +513,285 @@ func TestRequestMessage_RoundTrip(t *testing.T) {
 
 	if msg1.ExtraFields["custom_field"] != msg2.ExtraFields["custom_field"] {
 		t.Errorf("custom_field 不一致: %v vs %v", msg1.ExtraFields["custom_field"], msg2.ExtraFields["custom_field"])
-		t.Errorf("custom_field 不一致: %v vs %v", msg1.ExtraFields["custom_field"], msg2.ExtraFields["custom_field"])
+	}
+}
+
+// TestToolChoiceUnion_MarshalJSON_Auto 测试 ToolChoiceUnion 的 Auto 字符串模式序列化
+func TestToolChoiceUnion_MarshalJSON_Auto(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		expected string
+	}{
+		{
+			name:     "auto 模式",
+			value:    "auto",
+			expected: `"auto"`,
+		},
+		{
+			name:     "none 模式",
+			value:    "none",
+			expected: `"none"`,
+		},
+		{
+			name:     "required 模式",
+			value:    "required",
+			expected: `"required"`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			toolChoice := ToolChoiceUnion{
+				Auto: &tt.value,
+			}
+
+			data, err := json.Marshal(toolChoice)
+			if err != nil {
+				t.Fatalf("序列化失败: %v", err)
+			}
+
+			if string(data) != tt.expected {
+				t.Errorf("期望序列化结果为 %s, 实际为 %s", tt.expected, string(data))
+			}
+		})
+	}
+}
+
+// TestToolChoiceUnion_MarshalJSON_Named 测试 ToolChoiceUnion 的 Named 函数模式序列化
+func TestToolChoiceUnion_MarshalJSON_Named(t *testing.T) {
+	toolChoice := ToolChoiceUnion{
+		Named: &ToolChoiceNamed{
+			Type: "function",
+			Function: struct {
+				Name string `json:"name"`
+			}{
+				Name: "get_weather",
+			},
+		},
+	}
+
+	data, err := json.Marshal(toolChoice)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	// 反序列化以验证结构
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		t.Fatalf("验证序列化结果失败: %v", err)
+	}
+
+	// 验证 type 字段
+	if result["type"] != "function" {
+		t.Errorf("期望 type 为 'function', 实际为 %v", result["type"])
+	}
+
+	// 验证 function 字段
+	function, ok := result["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("期望 function 为 map, 实际类型为 %T", result["function"])
+	}
+
+	if function["name"] != "get_weather" {
+		t.Errorf("期望 function.name 为 'get_weather', 实际为 %v", function["name"])
+	}
+}
+
+// TestToolChoiceUnion_MarshalJSON_NamedCustom 测试 ToolChoiceUnion 的 NamedCustom 自定义模式序列化
+func TestToolChoiceUnion_MarshalJSON_NamedCustom(t *testing.T) {
+	toolChoice := ToolChoiceUnion{
+		NamedCustom: &ToolChoiceNamedCustom{
+			Type: "custom",
+			Custom: struct {
+				Name string `json:"name"`
+			}{
+				Name: "custom_tool",
+			},
+		},
+	}
+
+	data, err := json.Marshal(toolChoice)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	// 反序列化以验证结构
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		t.Fatalf("验证序列化结果失败: %v", err)
+	}
+
+	// 验证 type 字段
+	if result["type"] != "custom" {
+		t.Errorf("期望 type 为 'custom', 实际为 %v", result["type"])
+	}
+
+	// 验证 custom 字段
+	custom, ok := result["custom"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("期望 custom 为 map, 实际类型为 %T", result["custom"])
+	}
+
+	if custom["name"] != "custom_tool" {
+		t.Errorf("期望 custom.name 为 'custom_tool', 实际为 %v", custom["name"])
+	}
+}
+
+// TestToolChoiceUnion_MarshalJSON_Allowed 测试 ToolChoiceUnion 的 Allowed 允许模式序列化
+func TestToolChoiceUnion_MarshalJSON_Allowed(t *testing.T) {
+	toolChoice := ToolChoiceUnion{
+		Allowed: &ToolChoiceAllowed{
+			Type: "allowed",
+			Mode: "any",
+			Tools: []map[string]interface{}{
+				{
+					"type": "function",
+					"name": "tool1",
+				},
+				{
+					"type": "function",
+					"name": "tool2",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(toolChoice)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	// 反序列化以验证结构
+	var result map[string]interface{}
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		t.Fatalf("验证序列化结果失败: %v", err)
+	}
+
+	// 验证 type 字段
+	if result["type"] != "allowed" {
+		t.Errorf("期望 type 为 'allowed', 实际为 %v", result["type"])
+	}
+
+	// 验证 mode 字段
+	if result["mode"] != "any" {
+		t.Errorf("期望 mode 为 'any', 实际为 %v", result["mode"])
+	}
+
+	// 验证 tools 字段
+	tools, ok := result["tools"].([]interface{})
+	if !ok {
+		t.Fatalf("期望 tools 为 array, 实际类型为 %T", result["tools"])
+	}
+
+	if len(tools) != 2 {
+		t.Errorf("期望 tools 长度为 2, 实际为 %d", len(tools))
+	}
+}
+
+// TestToolChoiceUnion_MarshalJSON_Nil 测试 ToolChoiceUnion 的空值序列化
+func TestToolChoiceUnion_MarshalJSON_Nil(t *testing.T) {
+	toolChoice := ToolChoiceUnion{}
+
+	data, err := json.Marshal(toolChoice)
+	if err != nil {
+		t.Fatalf("序列化失败: %v", err)
+	}
+
+	expected := "null"
+	if string(data) != expected {
+		t.Errorf("期望序列化结果为 %s, 实际为 %s", expected, string(data))
+	}
+}
+
+// TestRequest_WithToolChoice 测试包含 tool_choice 字段的 Request 序列化
+func TestRequest_WithToolChoice(t *testing.T) {
+	tests := []struct {
+		name       string
+		toolChoice *ToolChoiceUnion
+		checkFunc  func(*testing.T, map[string]interface{})
+	}{
+		{
+			name: "auto 模式",
+			toolChoice: &ToolChoiceUnion{
+				Auto: stringPtr("auto"),
+			},
+			checkFunc: func(t *testing.T, result map[string]interface{}) {
+				if result["tool_choice"] != "auto" {
+					t.Errorf("期望 tool_choice 为 'auto', 实际为 %v", result["tool_choice"])
+				}
+			},
+		},
+		{
+			name: "named 函数模式",
+			toolChoice: &ToolChoiceUnion{
+				Named: &ToolChoiceNamed{
+					Type: "function",
+					Function: struct {
+						Name string `json:"name"`
+					}{
+						Name: "get_current_weather",
+					},
+				},
+			},
+			checkFunc: func(t *testing.T, result map[string]interface{}) {
+				toolChoice, ok := result["tool_choice"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("期望 tool_choice 为 map, 实际类型为 %T", result["tool_choice"])
+				}
+
+				if toolChoice["type"] != "function" {
+					t.Errorf("期望 tool_choice.type 为 'function', 实际为 %v", toolChoice["type"])
+				}
+
+				function, ok := toolChoice["function"].(map[string]interface{})
+				if !ok {
+					t.Fatalf("期望 tool_choice.function 为 map, 实际类型为 %T", toolChoice["function"])
+				}
+
+				if function["name"] != "get_current_weather" {
+					t.Errorf("期望 tool_choice.function.name 为 'get_current_weather', 实际为 %v", function["name"])
+				}
+			},
+		},
+		{
+			name:       "nil 值",
+			toolChoice: nil,
+			checkFunc: func(t *testing.T, result map[string]interface{}) {
+				if _, exists := result["tool_choice"]; exists {
+					t.Error("期望 tool_choice 不存在，但实际存在")
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := Request{
+				Model: "gpt-4",
+				Messages: []RequestMessage{
+					{Role: "user", Content: "What's the weather?"},
+				},
+				ToolChoice: tt.toolChoice,
+			}
+
+			data, err := json.Marshal(req)
+			if err != nil {
+				t.Fatalf("序列化失败: %v", err)
+			}
+
+			// 反序列化以验证
+			var result map[string]interface{}
+			err = json.Unmarshal(data, &result)
+			if err != nil {
+				t.Fatalf("验证序列化结果失败: %v", err)
+			}
+
+			// 执行检查函数
+			tt.checkFunc(t, result)
+		})
 	}
 }
