@@ -85,15 +85,15 @@ type FunctionCall struct {
 // ToolCall 表示工具调用
 type ToolCall struct {
 	Index    int               `json:"index"`
-	ID       string            `json:"id"`                 // 工具调用 ID
-	Type     string            `json:"type"`               // 类型
+	ID       *string           `json:"id,omitempty"`       // 工具调用 ID（流式响应中可选）
+	Type     *string           `json:"type,omitempty"`     // 类型（流式响应中可选）
 	Function *ToolCallFunction `json:"function,omitempty"` // 函数
 }
 
 // ToolCallFunction 表示工具调用函数
 type ToolCallFunction struct {
-	Arguments string `json:"arguments"` // 参数
-	Name      string `json:"name"`      // 名称
+	Arguments *string `json:"arguments,omitempty"` // 参数（流式响应中逐步累积）
+	Name      *string `json:"name,omitempty"`      // 名称（流式响应中可选）
 }
 
 // Usage 表示使用情况
