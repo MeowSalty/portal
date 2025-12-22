@@ -51,15 +51,25 @@ func ConvertCoreResponse(openaiResp *types.Response) *coreTypes.Response {
 			if len(choice.Delta.ToolCalls) > 0 {
 				coreChoice.Delta.ToolCalls = make([]coreTypes.ToolCall, len(choice.Delta.ToolCalls))
 				for j, toolCall := range choice.Delta.ToolCalls {
-					coreToolCall := coreTypes.ToolCall{
-						ID:   toolCall.ID,
-						Type: toolCall.Type,
+					coreToolCall := coreTypes.ToolCall{}
+
+					// 转换 ID（指针转字符串）
+					if toolCall.ID != nil {
+						coreToolCall.ID = *toolCall.ID
 					}
+
+					// 转换 Type（指针转字符串）
+					if toolCall.Type != nil {
+						coreToolCall.Type = *toolCall.Type
+					}
+
 					// 转换函数调用
 					if toolCall.Function != nil {
-						coreToolCall.Function = coreTypes.FunctionCall{
-							Name:      toolCall.Function.Name,
-							Arguments: toolCall.Function.Arguments,
+						if toolCall.Function.Name != nil {
+							coreToolCall.Function.Name = *toolCall.Function.Name
+						}
+						if toolCall.Function.Arguments != nil {
+							coreToolCall.Function.Arguments = *toolCall.Function.Arguments
 						}
 					}
 					coreChoice.Delta.ToolCalls[j] = coreToolCall
@@ -87,15 +97,25 @@ func ConvertCoreResponse(openaiResp *types.Response) *coreTypes.Response {
 			if len(choice.Message.ToolCalls) > 0 {
 				coreChoice.Message.ToolCalls = make([]coreTypes.ToolCall, len(choice.Message.ToolCalls))
 				for j, toolCall := range choice.Message.ToolCalls {
-					coreToolCall := coreTypes.ToolCall{
-						ID:   toolCall.ID,
-						Type: toolCall.Type,
+					coreToolCall := coreTypes.ToolCall{}
+
+					// 转换 ID（指针转字符串）
+					if toolCall.ID != nil {
+						coreToolCall.ID = *toolCall.ID
 					}
+
+					// 转换 Type（指针转字符串）
+					if toolCall.Type != nil {
+						coreToolCall.Type = *toolCall.Type
+					}
+
 					// 转换函数调用
 					if toolCall.Function != nil {
-						coreToolCall.Function = coreTypes.FunctionCall{
-							Name:      toolCall.Function.Name,
-							Arguments: toolCall.Function.Arguments,
+						if toolCall.Function.Name != nil {
+							coreToolCall.Function.Name = *toolCall.Function.Name
+						}
+						if toolCall.Function.Arguments != nil {
+							coreToolCall.Function.Arguments = *toolCall.Function.Arguments
 						}
 					}
 					coreChoice.Message.ToolCalls[j] = coreToolCall
@@ -162,14 +182,30 @@ func ConvertResponse(resp *coreTypes.Response) *types.Response {
 			if len(choice.Delta.ToolCalls) > 0 {
 				openaiChoice.Delta.ToolCalls = make([]types.ToolCall, len(choice.Delta.ToolCalls))
 				for j, toolCall := range choice.Delta.ToolCalls {
-					openaiToolCall := types.ToolCall{
-						ID:   toolCall.ID,
-						Type: toolCall.Type,
+					openaiToolCall := types.ToolCall{}
+
+					// 转换 ID（字符串转指针）
+					if toolCall.ID != "" {
+						id := toolCall.ID
+						openaiToolCall.ID = &id
 					}
-					if toolCall.Function.Name != "" {
-						openaiToolCall.Function = &types.ToolCallFunction{
-							Name:      toolCall.Function.Name,
-							Arguments: toolCall.Function.Arguments,
+
+					// 转换 Type（字符串转指针）
+					if toolCall.Type != "" {
+						typ := toolCall.Type
+						openaiToolCall.Type = &typ
+					}
+
+					// 转换函数调用
+					if toolCall.Function.Name != "" || toolCall.Function.Arguments != "" {
+						openaiToolCall.Function = &types.ToolCallFunction{}
+						if toolCall.Function.Name != "" {
+							name := toolCall.Function.Name
+							openaiToolCall.Function.Name = &name
+						}
+						if toolCall.Function.Arguments != "" {
+							args := toolCall.Function.Arguments
+							openaiToolCall.Function.Arguments = &args
 						}
 					}
 					openaiChoice.Delta.ToolCalls[j] = openaiToolCall
@@ -191,14 +227,30 @@ func ConvertResponse(resp *coreTypes.Response) *types.Response {
 			if len(choice.Message.ToolCalls) > 0 {
 				openaiChoice.Message.ToolCalls = make([]types.ToolCall, len(choice.Message.ToolCalls))
 				for j, toolCall := range choice.Message.ToolCalls {
-					openaiToolCall := types.ToolCall{
-						ID:   toolCall.ID,
-						Type: toolCall.Type,
+					openaiToolCall := types.ToolCall{}
+
+					// 转换 ID（字符串转指针）
+					if toolCall.ID != "" {
+						id := toolCall.ID
+						openaiToolCall.ID = &id
 					}
-					if toolCall.Function.Name != "" {
-						openaiToolCall.Function = &types.ToolCallFunction{
-							Name:      toolCall.Function.Name,
-							Arguments: toolCall.Function.Arguments,
+
+					// 转换 Type（字符串转指针）
+					if toolCall.Type != "" {
+						typ := toolCall.Type
+						openaiToolCall.Type = &typ
+					}
+
+					// 转换函数调用
+					if toolCall.Function.Name != "" || toolCall.Function.Arguments != "" {
+						openaiToolCall.Function = &types.ToolCallFunction{}
+						if toolCall.Function.Name != "" {
+							name := toolCall.Function.Name
+							openaiToolCall.Function.Name = &name
+						}
+						if toolCall.Function.Arguments != "" {
+							args := toolCall.Function.Arguments
+							openaiToolCall.Function.Arguments = &args
 						}
 					}
 					openaiChoice.Message.ToolCalls[j] = openaiToolCall
