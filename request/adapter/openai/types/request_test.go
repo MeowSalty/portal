@@ -795,3 +795,164 @@ func TestRequest_WithToolChoice(t *testing.T) {
 		})
 	}
 }
+
+// TestToolChoiceUnionUnmarshal 测试 ToolChoiceUnion 的 JSON 反序列化
+func TestToolChoiceUnionUnmarshal(t *testing.T) {
+	tests := []struct {
+		name    string
+		json    string
+		wantErr bool
+	}{
+		{
+			name:    "字符串值 - auto",
+			json:    `{"tool_choice": "auto"}`,
+			wantErr: false,
+		},
+		{
+			name:    "字符串值 - none",
+			json:    `{"tool_choice": "none"}`,
+			wantErr: false,
+		},
+		{
+			name:    "字符串值 - required",
+			json:    `{"tool_choice": "required"}`,
+			wantErr: false,
+		},
+		{
+			name:    "函数类型",
+			json:    `{"tool_choice": {"type": "function", "function": {"name": "测试函数"}}}`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req struct {
+				ToolChoice *ToolChoiceUnion `json:"tool_choice,omitempty"`
+			}
+			err := json.Unmarshal([]byte(tt.json), &req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && req.ToolChoice == nil {
+				t.Error("ToolChoice 不应为 nil")
+			}
+		})
+	}
+}
+
+// TestFullRequestUnmarshal 测试完整请求的反序列化（包含 tool_choice）
+func TestFullRequestUnmarshal(t *testing.T) {
+	jsonData := `{
+  "model": "deepseek-v3",
+  "messages": [
+    {
+      "role": "user",
+      "content": "测试消息"
+    }
+  ],
+  "stream": true,
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "apply_diff",
+        "description": "Apply precise modifications",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": ["path"]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}`
+
+	var req Request
+	err := json.Unmarshal([]byte(jsonData), &req)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if req.Model != "deepseek-v3" {
+		t.Errorf("Model = %v, want deepseek-v3", req.Model)
+	}
+
+	if req.ToolChoice == nil {
+		t.Fatal("ToolChoice 不应为 nil")
+	}
+
+	if req.ToolChoice.Auto == nil {
+		t.Error("ToolChoice.Auto 不应为 nil")
+	} else if *req.ToolChoice.Auto != "auto" {
+		t.Errorf("ToolChoice.Auto = %v, want auto", *req.ToolChoice.Auto)
+	}
+}
+
+// TestStopUnionUnmarshal 测试 StopUnion 的反序列化
+func TestStopUnionUnmarshal(t *testing.T) {
+	tests := []struct {
+		name    string
+		json    string
+		wantErr bool
+	}{
+		{
+			name:    "字符串值",
+			json:    `{"stop": "END"}`,
+			wantErr: false,
+		},
+		{
+			name:    "数组值",
+			json:    `{"stop": ["END", "STOP"]}`,
+			wantErr: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var req struct {
+				Stop *StopUnion `json:"stop,omitempty"`
+			}
+			err := json.Unmarshal([]byte(tt.json), &req)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Unmarshal() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestToolUnionUnmarshal 测试 ToolUnion 的反序列化
+func TestToolUnionUnmarshal(t *testing.T) {
+	jsonData := `{
+  "type": "function",
+  "function": {
+    "name": "test_function",
+    "description": "A test function",
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "param1": {"type": "string"}
+      }
+    }
+  }
+}`
+
+	var tool ToolUnion
+	err := json.Unmarshal([]byte(jsonData), &tool)
+	if err != nil {
+		t.Fatalf("Unmarshal() error = %v", err)
+	}
+
+	if tool.Function == nil {
+		t.Fatal("Function 不应为 nil")
+	}
+
+	if tool.Function.Function.Name != "test_function" {
+		t.Errorf("Function.Name = %v, 应该为 test_function", tool.Function.Function.Name)
+	}
+}
