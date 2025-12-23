@@ -191,6 +191,12 @@ func (e *Error) WithHTTPStatus(status int) *Error {
 	return e
 }
 
+// WithCause 设置原始错误
+func (e *Error) WithCause(cause error) *Error {
+	e.Cause = cause
+	return e
+}
+
 // New 创建新的错误
 func New(code ErrorCode, message string) *Error {
 	return &Error{
