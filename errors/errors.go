@@ -73,6 +73,8 @@ const (
 	ErrCodeRateLimitExceeded ErrorCode = "RATE_LIMIT_EXCEEDED"
 	// 熔断器开启
 	ErrCodeCircuitBreakerOpen ErrorCode = "CIRCUIT_BREAKER_OPEN"
+	// 响应为空
+	ErrCodeEmptyResponse ErrorCode = "EMPTY_RESPONSE"
 )
 
 // ErrorLevel 定义错误层级类型
@@ -329,6 +331,7 @@ var (
 	ErrConfigInvalid      = New(ErrCodeConfigInvalid, "配置无效")
 	ErrRateLimitExceeded  = New(ErrCodeRateLimitExceeded, "超出速率限制")
 	ErrCircuitBreakerOpen = New(ErrCodeCircuitBreakerOpen, "熔断器已开启")
+	ErrEmptyResponse      = New(ErrCodeEmptyResponse, "响应为空")
 )
 
 // GetErrorLevel 根据错误码获取错误层级
