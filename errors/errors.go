@@ -254,6 +254,9 @@ func WrapWithHTTPStatusAndContext(code ErrorCode, message string, cause error, s
 	}
 }
 
+// As 是标准库 errors.As 的别名，用于错误类型断言
+var As = errors.As
+
 // IsCode 检查错误是否为特定错误码
 func IsCode(err error, code ErrorCode) bool {
 	var e *Error
