@@ -15,6 +15,12 @@ import (
 func (p *Request) checkResponseError(response *types.Response) error {
 	log := p.logger
 
+	// 检查 Choices 是否为空
+	if len(response.Choices) == 0 {
+		log.Error("响应中 Choices 为空")
+		return errors.ErrEmptyResponse.WithContext("error_from", "upstream")
+	}
+
 	for i, choice := range response.Choices {
 		if choice.Error != nil && choice.Error.Code != fasthttp.StatusOK {
 			log.ErrorContext(context.Background(), "响应中检测到错误",
