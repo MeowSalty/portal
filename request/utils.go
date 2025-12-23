@@ -16,7 +16,7 @@ func (p *Request) checkResponseError(response *types.Response) error {
 	// 检查 Choices 是否为空
 	if len(response.Choices) == 0 {
 		log.Error("响应中 Choices 为空")
-		return errors.ErrEmptyResponse.WithContext("error_from", "upstream")
+		return errors.ErrEmptyResponse.WithContext("error_from", "upstream").WithContext("response", response)
 	}
 
 	for i, choice := range response.Choices {
