@@ -1,8 +1,6 @@
 package request
 
 import (
-	"context"
-
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/request/adapter"
 	"github.com/MeowSalty/portal/types"
@@ -23,7 +21,7 @@ func (p *Request) checkResponseError(response *types.Response) error {
 
 	for i, choice := range response.Choices {
 		if choice.Error != nil && choice.Error.Code != fasthttp.StatusOK {
-			log.ErrorContext(context.Background(), "响应中检测到错误",
+			log.Error("响应中检测到错误",
 				"choice_index", i,
 				"error_code", choice.Error.Code,
 				"error_message", choice.Error.Message,
@@ -35,7 +33,7 @@ func (p *Request) checkResponseError(response *types.Response) error {
 		}
 	}
 
-	log.DebugContext(context.Background(), "响应检查通过", "choices_count", len(response.Choices))
+	log.Debug("响应检查通过", "choices_count", len(response.Choices))
 	return nil
 }
 
@@ -43,19 +41,18 @@ func (p *Request) checkResponseError(response *types.Response) error {
 func (p *Request) getAdapter(format string) (*adapter.Adapter, error) {
 	log := p.logger
 
-	log.DebugContext(context.Background(), "获取适配器", "format", format)
+	log.Debug("获取适配器", "format", format)
 
 	adapter, err := adapter.GetAdapter(format)
 	if err != nil {
-		log.ErrorContext(context.Background(), "适配器未找到",
+		log.Error("适配器未找到",
 			"format", format,
 			"error", err,
 		)
-		return nil, errors.Wrap(errors.ErrCodeAdapterNotFound, "适配器未找到", err).
-			WithContext("format", format)
+		return nil, errors.ErrAdapterNotFound.WithContext("format", format).WithCause(err)
 	}
 
-	log.DebugContext(context.Background(), "适配器获取成功",
+	log.Debug("适配器获取成功",
 		"format", format,
 		"adapter_name", adapter.Name(),
 	)

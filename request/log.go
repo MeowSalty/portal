@@ -58,13 +58,13 @@ func (p *Request) recordRequestLog(
 		firstByteDuration := firstByteTime.Sub(requestLog.Timestamp)
 		requestLog.FirstByteTime = &firstByteDuration
 
-		log.DebugContext(context.Background(), "记录请求统计信息",
+		log.Debug("记录请求统计信息",
 			"duration", requestDuration.String(),
 			"first_byte_time", firstByteDuration.String(),
 			"success", success,
 		)
 	} else {
-		log.DebugContext(context.Background(), "记录请求统计信息",
+		log.Debug("记录请求统计信息",
 			"duration", requestDuration.String(),
 			"success", success,
 		)
@@ -72,7 +72,7 @@ func (p *Request) recordRequestLog(
 
 	// 记录 Token 使用情况
 	if requestLog.PromptTokens != nil && requestLog.CompletionTokens != nil && requestLog.TotalTokens != nil {
-		log.DebugContext(context.Background(), "Token 使用统计",
+		log.Debug("Token 使用统计",
 			"prompt_tokens", *requestLog.PromptTokens,
 			"completion_tokens", *requestLog.CompletionTokens,
 			"total_tokens", *requestLog.TotalTokens,
@@ -81,7 +81,7 @@ func (p *Request) recordRequestLog(
 
 	// 记录错误信息
 	if !success && requestLog.ErrorMsg != nil {
-		log.ErrorContext(context.Background(), "请求失败",
+		log.Error("请求失败",
 			"error", *requestLog.ErrorMsg,
 		)
 	}
@@ -91,8 +91,8 @@ func (p *Request) recordRequestLog(
 	// 保存到数据库
 	err := p.repo.CreateRequestLog(context.Background(), requestLog)
 	if err != nil {
-		log.ErrorContext(context.Background(), "保存请求日志失败", "error", err)
+		log.Error("保存请求日志失败", "error", err)
 	} else {
-		log.DebugContext(context.Background(), "请求日志保存成功")
+		log.Debug("请求日志保存成功")
 	}
 }
