@@ -2,8 +2,8 @@ package request
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/request/adapter"
 	"github.com/MeowSalty/portal/types"
 	"github.com/valyala/fasthttp"
@@ -22,7 +22,10 @@ func (p *Request) checkResponseError(response *types.Response) error {
 				"error_code", choice.Error.Code,
 				"error_message", choice.Error.Message,
 			)
-			return fmt.Errorf("stream error: code=%d, message=%s", choice.Error.Code, choice.Error.Message)
+			return errors.NewWithHTTPStatus(errors.ErrCodeStreamError, "流处理错误", choice.Error.Code).
+				WithContext("error_from", "upstream").
+				WithContext("choice_index", i).
+				WithContext("error_message", choice.Error.Message)
 		}
 	}
 
@@ -42,7 +45,8 @@ func (p *Request) getAdapter(format string) (*adapter.Adapter, error) {
 			"format", format,
 			"error", err,
 		)
-		return nil, fmt.Errorf("适配器未找到：%s", format)
+		return nil, errors.Wrap(errors.ErrCodeAdapterNotFound, "适配器未找到", err).
+			WithContext("format", format)
 	}
 
 	log.DebugContext(context.Background(), "适配器获取成功",
