@@ -103,14 +103,23 @@ func (p *Request) handleStreamData(
 
 		// 检查错误
 		if err := p.checkResponseError(response); err != nil {
+			var portalError *errors.Error
+			if errors.As(err, &portalError) {
+				switch errors.GetCode(portalError) {
+				case errors.ErrCodeEmptyResponse:
+					log.ErrorContext(ctx, "响应中 Choices 为空", "error", portalError.Error())
+				case errors.ErrCodeStreamError:
+					log.ErrorContext(ctx, "流处理错误", "error", portalError.Error())
+				default:
+					// 兜底：处理其他错误码
+					log.ErrorContext(ctx, "流数据错误", "error", portalError.Error(), "code", portalError.Code)
+				}
+			}
+
 			msg := err.Error()
 			requestLog.ErrorMsg = &msg
 			p.recordRequestLog(requestLog, nil, false)
 
-			log.ErrorContext(ctx, "流数据包含错误",
-				"error", err,
-				"message_count", messageCount,
-			)
 			return err
 		}
 
