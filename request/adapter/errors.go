@@ -82,8 +82,10 @@ func (a *Adapter) processBodyHTML(jsonData map[string]interface{}) string {
 // classifyErrorFrom 根据已解析的 JSON 数据分类错误来源
 func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) ErrorFrom {
 	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
-		if errorType, ok := errorObj["type"].(string); ok && errorType == "upstream_error" {
-			return ErrorFromUpstream
+		if errorType, ok := errorObj["type"].(string); ok {
+			if errorType == "upstream_error" || errorType == "openai_error" {
+				return ErrorFromUpstream
+			}
 		}
 	}
 	return ErrorFromServer
