@@ -393,6 +393,10 @@ func isFromUpstream(err error) bool {
 		return false
 	}
 
-	_, ok := context["error_from"]
-	return ok
+	errorFrom, ok := context["error_from"]
+	if !ok {
+		return false
+	}
+
+	return errorFrom == "upstream"
 }
