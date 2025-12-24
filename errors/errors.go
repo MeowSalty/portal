@@ -343,8 +343,13 @@ var (
 	ErrEmptyResponse      = New(ErrCodeEmptyResponse, "响应为空")
 )
 
-// GetErrorLevel 根据错误码获取错误层级
+// GetErrorLevel 根据错误获取错误层级
 func GetErrorLevel(err error) ErrorLevel {
+	// 如果错误来自上游，归类为模型层级
+	if isFromUpstream(err) {
+		return ErrorLevelModel
+	}
+
 	code := GetCode(err)
 	switch code {
 	// 密钥层级
