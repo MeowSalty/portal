@@ -373,17 +373,28 @@ var RetryableErrorCodes = map[ErrorCode]bool{
 
 // IsRetryable 检查错误是否可重试
 // 策略：
-// - 如果错误来源于上游 (具有 error_from 字段)，全都允许重试
+// - 如果错误来源于供应商或上游 (具有 error_from 字段)，全都允许重试
 // - 如果来源于网关自身 (不存在 error_from 字段)，按照可重试的白名单进行返回
 func IsRetryable(err error) bool {
-	// 检查是否来自上游
-	if isFromUpstream(err) {
+	// 检查是否来自供应商或上游
+	if hasErrorFrom(err) {
 		return true
 	}
 
 	// 网关自身的错误，按白名单判断
 	code := GetCode(err)
 	return RetryableErrorCodes[code]
+}
+
+// hasErrorFrom 检查错误是否具有 error_from 字段（来自供应商或上游）
+func hasErrorFrom(err error) bool {
+	context := GetContext(err)
+	if context == nil {
+		return false
+	}
+
+	_, ok := context["error_from"]
+	return ok
 }
 
 // isFromUpstream 检查错误是否来自上游
