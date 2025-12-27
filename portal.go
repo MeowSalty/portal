@@ -96,6 +96,7 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 				channel.MarkSuccess(ctx)
 			}
 			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
+			channel.MarkFailure(ctx, err)
 			break
 		}
 		channel.MarkSuccess(ctx)
