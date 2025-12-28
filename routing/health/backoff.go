@@ -24,13 +24,13 @@ func (b *baseBackoff) applyBackoff(status *Health, delay time.Duration) {
 	// 增加重试次数
 	status.RetryCount++
 
-	// 检查是否达到最大退避时间
-	reachedMax := delay >= b.maxDelay
-
-	// 限制最大延迟
-	if delay > b.maxDelay {
+	// 溢出保护：负数或异常值直接使用最大延迟
+	if delay <= 0 || delay > b.maxDelay {
 		delay = b.maxDelay
 	}
+
+	// 检查是否达到最大退避时间
+	reachedMax := delay >= b.maxDelay
 
 	// 转换为秒存储
 	status.BackoffDuration = int64(delay.Seconds())
