@@ -24,6 +24,7 @@ type Config struct {
 	Repo         HealthRepository // 数据仓库接口（必需）
 	SyncInterval time.Duration    // 同步间隔（可选，默认 1 分钟）
 	Backoff      BackoffStrategy  // 退避策略（可选）
+	AllowProbing bool             // 是否允许对 Unavailable 状态的资源进行探测（可选，默认 false）
 }
 
 // New 创建一个新的健康状态管理器
@@ -53,7 +54,7 @@ func New(ctx context.Context, cfg Config) (*Service, error) {
 	// 创建各个组件
 	cache := NewCache()
 	syncer := NewSyncer(cfg.Repo, cache, cfg.SyncInterval)
-	filter := NewFilter(cache)
+	filter := NewFilter(cache, cfg.AllowProbing)
 
 	m := &Service{
 		repo:    cfg.Repo,
@@ -332,4 +333,38 @@ func (m *Service) UpdateLastUsed(channelID string) error {
 	m.syncer.MarkDirty(ResourceTypeAPIKey, uint(apiKeyID), apiKeyStatus)
 
 	return nil
+}
+
+// ResetHealth 手动重置指定资源的健康状态
+//
+// 该方法用于将处于 Unavailable 状态的资源重置为可用状态
+//
+// 参数：
+//   - resourceType: 资源类型
+//   - resourceID: 资源 ID
+func (m *Service) ResetHealth(resourceType ResourceType, resourceID uint) {
+	status := m.getStatus(resourceType, resourceID)
+	now := time.Now()
+	status.UpdatedAt = now
+	m.backoff.Reset(status)
+	m.syncer.MarkDirty(resourceType, resourceID, status)
+}
+
+// DisableHealth 手动将指定资源设置为不可用状态
+//
+// 该方法用于手动禁用资源，将其状态设置为 Unavailable
+//
+// 参数：
+//   - resourceType: 资源类型
+//   - resourceID: 资源 ID
+//   - reason: 禁用原因
+func (m *Service) DisableHealth(resourceType ResourceType, resourceID uint, reason string) {
+	status := m.getStatus(resourceType, resourceID)
+	now := time.Now()
+	status.Status = HealthStatusUnavailable
+	status.LastError = reason
+	status.LastCheckAt = now
+	status.UpdatedAt = now
+	status.NextAvailableAt = nil // 手动禁用不设置自动恢复时间
+	m.syncer.MarkDirty(resourceType, resourceID, status)
 }

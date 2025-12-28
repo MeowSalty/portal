@@ -24,6 +24,9 @@ func (b *baseBackoff) applyBackoff(status *Health, delay time.Duration) {
 	// 增加重试次数
 	status.RetryCount++
 
+	// 检查是否达到最大退避时间
+	reachedMax := delay >= b.maxDelay
+
 	// 限制最大延迟
 	if delay > b.maxDelay {
 		delay = b.maxDelay
@@ -36,8 +39,12 @@ func (b *baseBackoff) applyBackoff(status *Health, delay time.Duration) {
 	nextAvailable := time.Now().Add(delay)
 	status.NextAvailableAt = &nextAvailable
 
-	// 更新状态为警告（使用退避策略）
-	status.Status = HealthStatusWarning
+	// 根据是否达到最大值设置状态
+	if reachedMax {
+		status.Status = HealthStatusUnavailable
+	} else {
+		status.Status = HealthStatusWarning
+	}
 }
 
 // resetBackoff 重置退避状态的公共逻辑

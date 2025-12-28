@@ -13,13 +13,21 @@ type Filter interface {
 
 // filter 实现了健康状态过滤器
 type filter struct {
-	cache Cache
+	cache        Cache
+	allowProbing bool // 是否允许对 Unavailable 状态的资源进行探测
 }
 
 // NewFilter 创建一个新的过滤器实例
-func NewFilter(cache Cache) Filter {
+//
+// 参数：
+//   - cache: 健康状态缓存
+//   - allowProbing: 是否允许对 Unavailable 状态的资源进行探测
+//     如果为 true，当 Unavailable 状态的资源退避时间结束后，允许进行探测尝试
+//     如果为 false，Unavailable 状态的资源将永久不可用，需要手动重置
+func NewFilter(cache Cache, allowProbing bool) Filter {
 	return &filter{
-		cache: cache,
+		cache:        cache,
+		allowProbing: allowProbing,
 	}
 }
 
@@ -39,19 +47,30 @@ func (f *filter) IsHealthy(resourceType ResourceType, resourceID uint, now time.
 		return true
 	}
 
-	// 检查状态是否为可用或未知（未知状态表示尚未进行健康检查）
-	if status.Status == HealthStatusAvailable || status.Status == HealthStatusUnknown {
+	switch status.Status {
+	case HealthStatusAvailable, HealthStatusUnknown:
+		// 可用或未知状态，认为是健康的
 		return true
-	}
 
-	// 对于警告状态，检查是否已到下次可用时间
-	if status.Status == HealthStatusWarning && status.NextAvailableAt != nil {
-		if now.After(*status.NextAvailableAt) {
+	case HealthStatusWarning:
+		// 警告状态，检查是否已到下次可用时间
+		if status.NextAvailableAt != nil && now.After(*status.NextAvailableAt) {
 			// 退避时间已过，可以认为是健康的
 			return true
 		}
-	}
+		return false
 
-	// 不可用状态或者还在退避期内
-	return false
+	case HealthStatusUnavailable:
+		// 不可用状态
+		if f.allowProbing && status.NextAvailableAt != nil && now.After(*status.NextAvailableAt) {
+			// 允许探测且退避时间已过，可以进行探测尝试
+			return true
+		}
+		// 不允许探测或退避时间未到，认为是不健康的
+		return false
+
+	default:
+		// 未知的状态类型，认为是不健康的
+		return false
+	}
 }
