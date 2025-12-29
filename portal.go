@@ -6,6 +6,7 @@ import (
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/logger"
+	"github.com/MeowSalty/portal/middleware"
 	"github.com/MeowSalty/portal/request"
 	"github.com/MeowSalty/portal/routing"
 	"github.com/MeowSalty/portal/routing/health"
@@ -15,10 +16,11 @@ import (
 )
 
 type Portal struct {
-	session *session.Session
-	routing *routing.Routing
-	request *request.Request
-	logger  logger.Logger
+	session    *session.Session
+	routing    *routing.Routing
+	request    *request.Request
+	logger     logger.Logger
+	middleware *middleware.Chain
 }
 
 type Config struct {
@@ -27,7 +29,8 @@ type Config struct {
 	KeyRepo      routing.KeyRepository
 	HealthRepo   health.HealthRepository
 	LogRepo      request.RequestLogRepository
-	Logger       logger.Logger // 可选的日志记录器，如果为 nil 则使用默认的空操作日志记录器
+	Logger       logger.Logger           // 可选的日志记录器，如果为 nil 则使用默认的空操作日志记录器
+	Middlewares  []middleware.Middleware // 可选的中间件列表
 }
 
 func New(cfg Config) (*Portal, error) {
@@ -48,10 +51,11 @@ func New(cfg Config) (*Portal, error) {
 		return nil, err
 	}
 	portal := &Portal{
-		session: session.New(),
-		routing: routing,
-		request: request.New(cfg.LogRepo, log.WithGroup("request")),
-		logger:  log,
+		session:    session.New(),
+		routing:    routing,
+		request:    request.New(cfg.LogRepo, log.WithGroup("request")),
+		logger:     log,
+		middleware: middleware.NewChain(cfg.Middlewares...),
 	}
 	return portal, nil
 }
@@ -103,14 +107,23 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 		channelLogger.InfoContext(ctx, "请求处理成功")
 		break
 	}
+
+	// 通过中间件链处理响应
+	if response != nil && p.middleware != nil {
+		response, err = p.middleware.Process(ctx, request, response)
+		if err != nil {
+			p.logger.ErrorContext(ctx, "中间件处理失败", "error", err)
+		}
+	}
+
 	return response, err
 }
 
 func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
 	p.logger.DebugContext(ctx, "开始处理流式聊天完成请求", "model", request.Model)
 
-	// 创建用于返回给函数调用方的流
-	clientStream := make(chan *types.Response, 1024)
+	// 创建内部流（用于接收原始响应）
+	internalStream := make(chan *types.Response, 1024)
 
 	var channel *routing.Channel
 	var err error
@@ -136,11 +149,10 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				case <-ctx.Done():
 				default:
 					select {
-					case clientStream <- errorResponse:
+					case internalStream <- errorResponse:
 					default:
 					}
 				}
-				close(clientStream)
 				break
 			}
 
@@ -154,7 +166,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 
 			err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 				defer reqCancel()
-				return p.request.ChatCompletionStream(reqCtx, request, clientStream, channel)
+				return p.request.ChatCompletionStream(reqCtx, request, internalStream, channel)
 			})
 
 			// 检查错误是否可以重试
@@ -171,7 +183,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				}
 				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
 				channel.MarkFailure(ctx, err)
-				close(clientStream)
+				close(internalStream)
 				break
 			}
 			channel.MarkSuccess(ctx)
@@ -180,7 +192,10 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 		}
 	}()
 
-	return clientStream, err
+	// 通过中间件链处理流式响应
+	outputStream := p.middleware.ProcessStream(ctx, request, internalStream)
+
+	return outputStream, err
 }
 
 func (p *Portal) Close(timeout time.Duration) error {
