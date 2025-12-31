@@ -173,13 +173,13 @@ const (
 // ChannelHealthResult 通道健康检查结果
 type ChannelHealthResult struct {
 	Status      ChannelStatus // 通道状态
-	LastCheckAt time.Time     // 最后检查时间（基于模型）
+	LastCheckAt time.Time     // 最后检查时间（从平台、密钥、模型中取最新值）
 }
 
 // CheckChannelHealth 检查通道的可用性
 //
 // 使用平台 ID、模型 ID、密钥 ID 来检查通道的可用性
-// 返回通道的状态：可用、不可用、未知，以及模型的最后检查时间
+// 返回通道的状态：可用、不可用、未知，以及最后检查时间（从平台、密钥、模型中取最新值）
 //
 // 规则：
 //   - 如果平台、模型、密钥中有任意一个不健康，则返回不可用
@@ -201,12 +201,23 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	modelHealthy := m.filter.IsHealthy(ResourceTypeModel, modelID, now)
 	apiKeyHealthy := m.filter.IsHealthy(ResourceTypeAPIKey, apiKeyID, now)
 
-	// 获取模型的最后检查时间
-	modelStatus, err := m.storage.Get(ResourceTypeModel, modelID)
-	lastCheckAt := now
-	if err == nil && modelStatus != nil {
-		lastCheckAt = modelStatus.LastCheckAt
+	// 获取所有资源的健康状态
+	// 如果存储层出现错误，将状态视为 nil（未知）
+	platformStatus, err := m.storage.Get(ResourceTypePlatform, platformID)
+	if err != nil {
+		platformStatus = nil
 	}
+	modelStatus, err := m.storage.Get(ResourceTypeModel, modelID)
+	if err != nil {
+		modelStatus = nil
+	}
+	apiKeyStatus, err := m.storage.Get(ResourceTypeAPIKey, apiKeyID)
+	if err != nil {
+		apiKeyStatus = nil
+	}
+
+	// 计算最后检查时间：从平台、密钥、模型中取最新的值
+	lastCheckAt := getLatestCheckTime(now, platformStatus, modelStatus, apiKeyStatus)
 
 	// 如果任何资源不健康，则通道状态为不可用
 	if !platformHealthy || !modelHealthy || !apiKeyHealthy {
@@ -217,13 +228,7 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	}
 
 	// 所有资源都健康，检查是否有未知状态的资源
-	platformStatus, platformErr := m.storage.Get(ResourceTypePlatform, platformID)
-	apiKeyStatus, apiKeyErr := m.storage.Get(ResourceTypeAPIKey, apiKeyID)
-
-	// 如果所有资源都健康但存在未知状态的资源，则通道状态为未知
-	if (platformErr != nil || platformStatus == nil || platformStatus.Status == HealthStatusUnknown) ||
-		(err != nil || modelStatus == nil || modelStatus.Status == HealthStatusUnknown) ||
-		(apiKeyErr != nil || apiKeyStatus == nil || apiKeyStatus.Status == HealthStatusUnknown) {
+	if isUnknownStatus(platformStatus) || isUnknownStatus(modelStatus) || isUnknownStatus(apiKeyStatus) {
 		return ChannelHealthResult{
 			Status:      ChannelStatusUnknown,
 			LastCheckAt: lastCheckAt,
@@ -235,6 +240,48 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 		Status:      ChannelStatusAvailable,
 		LastCheckAt: lastCheckAt,
 	}
+}
+
+// getLatestCheckTime 从多个健康状态中获取最新的检查时间
+//
+// 如果所有状态都为 nil 或未知，则返回当前时间
+//
+// 参数：
+//   - now: 当前时间
+//   - statuses: 健康状态列表
+//
+// 返回值：
+//   - time.Time: 最新的检查时间
+func getLatestCheckTime(now time.Time, statuses ...*Health) time.Time {
+	var latest time.Time
+	hasKnownStatus := false
+
+	for _, status := range statuses {
+		if status != nil && status.Status != HealthStatusUnknown {
+			hasKnownStatus = true
+			if status.LastCheckAt.After(latest) {
+				latest = status.LastCheckAt
+			}
+		}
+	}
+
+	// 如果所有状态都是未知或不存在，返回当前时间
+	if !hasKnownStatus {
+		return now
+	}
+
+	return latest
+}
+
+// isUnknownStatus 检查健康状态是否为未知
+//
+// 参数：
+//   - status: 健康状态
+//
+// 返回值：
+//   - bool: 如果状态为 nil 或状态为未知，返回 true
+func isUnknownStatus(status *Health) bool {
+	return status == nil || status.Status == HealthStatusUnknown
 }
 
 // UpdateLastUsed 更新通道的最后使用时间
