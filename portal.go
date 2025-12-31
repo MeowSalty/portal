@@ -24,13 +24,13 @@ type Portal struct {
 }
 
 type Config struct {
-	PlatformRepo routing.PlatformRepository
-	ModelRepo    routing.ModelRepository
-	KeyRepo      routing.KeyRepository
-	HealthRepo   health.HealthRepository
-	LogRepo      request.RequestLogRepository
-	Logger       logger.Logger           // 可选的日志记录器，如果为 nil 则使用默认的空操作日志记录器
-	Middlewares  []middleware.Middleware // 可选的中间件列表
+	PlatformRepo  routing.PlatformRepository
+	ModelRepo     routing.ModelRepository
+	KeyRepo       routing.KeyRepository
+	HealthStorage health.Storage // 健康状态存储
+	LogRepo       request.RequestLogRepository
+	Logger        logger.Logger           // 可选的日志记录器，如果为 nil 则使用默认的空操作日志记录器
+	Middlewares   []middleware.Middleware // 可选的中间件列表
 }
 
 func New(cfg Config) (*Portal, error) {
@@ -41,11 +41,11 @@ func New(cfg Config) (*Portal, error) {
 	}
 
 	routing, err := routing.New(context.TODO(), routing.Config{
-		PlatformRepo: cfg.PlatformRepo,
-		ModelRepo:    cfg.ModelRepo,
-		KeyRepo:      cfg.KeyRepo,
-		HealthRepo:   cfg.HealthRepo,
-		Selector:     selector.NewLRUSelector(),
+		PlatformRepo:  cfg.PlatformRepo,
+		ModelRepo:     cfg.ModelRepo,
+		KeyRepo:       cfg.KeyRepo,
+		HealthStorage: cfg.HealthStorage,
+		Selector:      selector.NewLRUSelector(),
 	})
 	if err != nil {
 		return nil, err
@@ -199,5 +199,5 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 }
 
 func (p *Portal) Close(timeout time.Duration) error {
-	return p.session.Shutdown(timeout, p.routing)
+	return p.session.Shutdown(timeout)
 }
