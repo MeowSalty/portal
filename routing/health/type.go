@@ -23,8 +23,6 @@ const (
 
 // Health 健康状态表 (health_status)
 type Health struct {
-	ID uint
-
 	ResourceType ResourceType // 资源类型
 	ResourceID   uint         // 资源 ID
 

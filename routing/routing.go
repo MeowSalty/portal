@@ -23,11 +23,11 @@ type Routing struct {
 
 // Config 通道服务配置
 type Config struct {
-	Selector     selector.Selector
-	PlatformRepo PlatformRepository
-	ModelRepo    ModelRepository
-	KeyRepo      KeyRepository
-	HealthRepo   health.HealthRepository // 健康状态仓库
+	Selector      selector.Selector
+	PlatformRepo  PlatformRepository
+	ModelRepo     ModelRepository
+	KeyRepo       KeyRepository
+	HealthStorage health.Storage // 健康状态存储
 }
 
 // New 创建一个新的通道服务
@@ -45,15 +45,15 @@ func New(ctx context.Context, cfg Config) (*Routing, error) {
 	if cfg.KeyRepo == nil {
 		return nil, errors.New(errors.ErrCodeInvalidArgument, "密钥仓库不能为空")
 	}
-	if cfg.HealthRepo == nil {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "健康状态仓库不能为空")
+	if cfg.HealthStorage == nil {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "健康状态存储不能为空")
 	}
 
 	// 创建健康服务
 	healthConfig := health.Config{
-		Repo: cfg.HealthRepo,
+		Storage: cfg.HealthStorage,
 	}
-	healthService, err := health.New(ctx, healthConfig)
+	healthService, err := health.New(healthConfig)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInternal, "初始化健康服务失败", err)
 	}
@@ -178,11 +178,4 @@ func (r *Routing) buildChannelsForModel(ctx context.Context, model Model) ([]*Ch
 	}
 
 	return channels, nil
-}
-
-// Shutdown 关闭服务
-func (r *Routing) Shutdown() {
-	if r.healthService != nil {
-		r.healthService.Shutdown()
-	}
 }

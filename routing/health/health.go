@@ -2,7 +2,6 @@
 package health
 
 import (
-	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -12,96 +11,51 @@ import (
 
 // Service 管理所有资源的健康状态
 type Service struct {
-	repo    HealthRepository // 数据仓库接口
-	cache   Cache            // 健康状态缓存
-	syncer  Syncer           // 后台同步器
-	backoff BackoffStrategy  // 退避策略
-	filter  Filter           // 健康状态过滤器
+	storage Storage         // 存储接口
+	backoff BackoffStrategy // 退避策略
+	filter  Filter          // 健康状态过滤器
 }
 
 // Config 管理器配置
 type Config struct {
-	Repo         HealthRepository // 数据仓库接口（必需）
-	SyncInterval time.Duration    // 同步间隔（可选，默认 1 分钟）
-	Backoff      BackoffStrategy  // 退避策略（可选）
-	AllowProbing bool             // 是否允许对 Unavailable 状态的资源进行探测（可选，默认 false）
+	Storage      Storage         // 存储接口（必需）
+	Backoff      BackoffStrategy // 退避策略（可选）
+	AllowProbing bool            // 是否允许对 Unavailable 状态的资源进行探测（可选，默认 false）
 }
 
 // New 创建一个新的健康状态管理器
 //
-// 它从仓库加载初始数据并启动后台同步进程
-//
 // 参数：
-//   - ctx: 上下文
 //   - cfg: 管理器配置
 //
 // 返回值：
-//   - *Manager: 健康状态管理器实例
+//   - *Service: 健康状态管理器实例
 //   - error: 错误信息
-func New(ctx context.Context, cfg Config) (*Service, error) {
+func New(cfg Config) (*Service, error) {
 	// 验证必需参数
-	if cfg.Repo == nil {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "数据仓库不能为空")
+	if cfg.Storage == nil {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "存储接口不能为空")
 	}
 
-	if cfg.SyncInterval <= 0 {
-		cfg.SyncInterval = time.Minute
-	}
 	if cfg.Backoff == nil {
 		cfg.Backoff = DefaultBackoffStrategy()
 	}
 
-	// 创建各个组件
-	cache := NewCache()
-	syncer := NewSyncer(cfg.Repo, cache, cfg.SyncInterval)
-	filter := NewFilter(cache, cfg.AllowProbing)
+	// 创建过滤器
+	filter := NewFilter(cfg.Storage, cfg.AllowProbing)
 
 	m := &Service{
-		repo:    cfg.Repo,
-		cache:   cache,
-		syncer:  syncer,
+		storage: cfg.Storage,
 		backoff: cfg.Backoff,
 		filter:  filter,
 	}
 
-	// 加载初始数据
-	if err := m.loadInitialData(ctx); err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "加载初始健康数据失败", err)
-	}
-
-	// 启动后台同步器
-	m.syncer.Start()
-
 	return m, nil
 }
 
-// loadInitialData 从仓库获取所有健康状态并填充缓存
+// GetStatus 获取指定资源的健康状态
 //
-// 参数：
-//   - ctx: 上下文
-//
-// 返回值：
-//   - error: 错误信息
-func (m *Service) loadInitialData(ctx context.Context) error {
-	statuses, err := m.repo.GetAllHealth(ctx)
-	if err != nil {
-		return err
-	}
-
-	m.cache.LoadAll(statuses)
-	return nil
-}
-
-// Shutdown 关闭健康状态管理器
-//
-// 此方法会停止后台同步进程并等待所有操作完成
-func (m *Service) Shutdown() {
-	m.syncer.Stop()
-}
-
-// getStatus 获取指定资源的健康状态
-//
-// 如果缓存中不存在该资源的健康状态，则会创建一个新的健康状态对象
+// 如果存储中不存在该资源的健康状态，则会创建一个新的健康状态对象
 //
 // 参数：
 //   - resourceType: 资源类型
@@ -109,14 +63,19 @@ func (m *Service) Shutdown() {
 //
 // 返回值：
 //   - *Health: 健康状态对象
-func (m *Service) getStatus(resourceType ResourceType, resourceID uint) *Health {
-	if status, exists := m.cache.Get(resourceType, resourceID); exists {
-		return status
+//   - error: 错误信息
+func (m *Service) GetStatus(resourceType ResourceType, resourceID uint) (*Health, error) {
+	status, err := m.storage.Get(resourceType, resourceID)
+	if err != nil {
+		return nil, err
+	}
+	if status != nil {
+		return status, nil
 	}
 
-	// 如果缓存中不存在，创建一个新的健康状态对象
+	// 如果存储中不存在，创建一个新的健康状态对象
 	now := time.Now()
-	status := &Health{
+	status = &Health{
 		ResourceType: resourceType,
 		ResourceID:   resourceID,
 		Status:       HealthStatusUnknown,
@@ -125,11 +84,12 @@ func (m *Service) getStatus(resourceType ResourceType, resourceID uint) *Health 
 		UpdatedAt:    now,
 	}
 
-	// 存储到缓存并标记为脏数据
-	m.cache.Set(resourceType, resourceID, status)
-	m.syncer.MarkDirty(resourceType, resourceID, status)
+	// 存储到存储接口
+	if err := m.storage.Set(status); err != nil {
+		return nil, err
+	}
 
-	return status
+	return status, nil
 }
 
 // UpdateStatus 更新指定资源的健康状态
@@ -140,15 +100,21 @@ func (m *Service) getStatus(resourceType ResourceType, resourceID uint) *Health 
 //   - success: 是否成功
 //   - errorMessage: 错误信息（如果失败）
 //   - errorCode: 错误代码（如果失败）
+//
+// 返回值：
+//   - error: 错误信息
 func (m *Service) UpdateStatus(
 	resourceType ResourceType,
 	resourceID uint,
 	success bool,
 	errorMessage string,
 	errorCode int,
-) {
+) error {
 	// 获取或创建健康状态
-	status := m.getStatus(resourceType, resourceID)
+	status, err := m.GetStatus(resourceType, resourceID)
+	if err != nil {
+		return err
+	}
 
 	// 更新基础信息
 	now := time.Now()
@@ -175,8 +141,8 @@ func (m *Service) UpdateStatus(
 		m.backoff.Apply(status)
 	}
 
-	// 标记为脏数据以便后续同步
-	m.syncer.MarkDirty(resourceType, resourceID, status)
+	// 保存到存储
+	return m.storage.Set(status)
 }
 
 // IsHealthy 检查指定资源是否健康
@@ -193,17 +159,6 @@ func (m *Service) IsHealthy(resourceType ResourceType, resourceID uint, now time
 		now = time.Now()
 	}
 	return m.filter.IsHealthy(resourceType, resourceID, now)
-}
-
-// ForceSync 强制立即执行同步
-//
-// 参数：
-//   - ctx: 上下文
-//
-// 返回值：
-//   - error: 错误信息
-func (m *Service) ForceSync(ctx context.Context) error {
-	return m.syncer.Sync(ctx)
 }
 
 // ChannelStatus 通道健康状态
@@ -247,9 +202,9 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	apiKeyHealthy := m.filter.IsHealthy(ResourceTypeAPIKey, apiKeyID, now)
 
 	// 获取模型的最后检查时间
-	modelStatus, modelExists := m.cache.Get(ResourceTypeModel, modelID)
+	modelStatus, err := m.storage.Get(ResourceTypeModel, modelID)
 	lastCheckAt := now
-	if modelExists {
+	if err == nil && modelStatus != nil {
 		lastCheckAt = modelStatus.LastCheckAt
 	}
 
@@ -262,13 +217,13 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	}
 
 	// 所有资源都健康，检查是否有未知状态的资源
-	platformStatus, platformExists := m.cache.Get(ResourceTypePlatform, platformID)
-	apiKeyStatus, apiKeyExists := m.cache.Get(ResourceTypeAPIKey, apiKeyID)
+	platformStatus, platformErr := m.storage.Get(ResourceTypePlatform, platformID)
+	apiKeyStatus, apiKeyErr := m.storage.Get(ResourceTypeAPIKey, apiKeyID)
 
 	// 如果所有资源都健康但存在未知状态的资源，则通道状态为未知
-	if (!platformExists || platformStatus.Status == HealthStatusUnknown) ||
-		(!modelExists || modelStatus.Status == HealthStatusUnknown) ||
-		(!apiKeyExists || apiKeyStatus.Status == HealthStatusUnknown) {
+	if (platformErr != nil || platformStatus == nil || platformStatus.Status == HealthStatusUnknown) ||
+		(err != nil || modelStatus == nil || modelStatus.Status == HealthStatusUnknown) ||
+		(apiKeyErr != nil || apiKeyStatus == nil || apiKeyStatus.Status == HealthStatusUnknown) {
 		return ChannelHealthResult{
 			Status:      ChannelStatusUnknown,
 			LastCheckAt: lastCheckAt,
@@ -315,24 +270,35 @@ func (m *Service) UpdateLastUsed(channelID string) error {
 	now := time.Now()
 
 	// 更新平台资源的最后使用时间
-	platformStatus := m.getStatus(ResourceTypePlatform, uint(platformID))
+	platformStatus, err := m.GetStatus(ResourceTypePlatform, uint(platformID))
+	if err != nil {
+		return err
+	}
 	platformStatus.LastCheckAt = now
 	platformStatus.UpdatedAt = now
-	m.syncer.MarkDirty(ResourceTypePlatform, uint(platformID), platformStatus)
+	if err := m.storage.Set(platformStatus); err != nil {
+		return err
+	}
 
 	// 更新模型资源的最后使用时间
-	modelStatus := m.getStatus(ResourceTypeModel, uint(modelID))
+	modelStatus, err := m.GetStatus(ResourceTypeModel, uint(modelID))
+	if err != nil {
+		return err
+	}
 	modelStatus.LastCheckAt = now
 	modelStatus.UpdatedAt = now
-	m.syncer.MarkDirty(ResourceTypeModel, uint(modelID), modelStatus)
+	if err := m.storage.Set(modelStatus); err != nil {
+		return err
+	}
 
 	// 更新 API 密钥资源的最后使用时间
-	apiKeyStatus := m.getStatus(ResourceTypeAPIKey, uint(apiKeyID))
+	apiKeyStatus, err := m.GetStatus(ResourceTypeAPIKey, uint(apiKeyID))
+	if err != nil {
+		return err
+	}
 	apiKeyStatus.LastCheckAt = now
 	apiKeyStatus.UpdatedAt = now
-	m.syncer.MarkDirty(ResourceTypeAPIKey, uint(apiKeyID), apiKeyStatus)
-
-	return nil
+	return m.storage.Set(apiKeyStatus)
 }
 
 // ResetHealth 手动重置指定资源的健康状态
@@ -342,12 +308,18 @@ func (m *Service) UpdateLastUsed(channelID string) error {
 // 参数：
 //   - resourceType: 资源类型
 //   - resourceID: 资源 ID
-func (m *Service) ResetHealth(resourceType ResourceType, resourceID uint) {
-	status := m.getStatus(resourceType, resourceID)
+//
+// 返回值：
+//   - error: 错误信息
+func (m *Service) ResetHealth(resourceType ResourceType, resourceID uint) error {
+	status, err := m.GetStatus(resourceType, resourceID)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	status.UpdatedAt = now
 	m.backoff.Reset(status)
-	m.syncer.MarkDirty(resourceType, resourceID, status)
+	return m.storage.Set(status)
 }
 
 // DisableHealth 手动将指定资源设置为不可用状态
@@ -358,13 +330,19 @@ func (m *Service) ResetHealth(resourceType ResourceType, resourceID uint) {
 //   - resourceType: 资源类型
 //   - resourceID: 资源 ID
 //   - reason: 禁用原因
-func (m *Service) DisableHealth(resourceType ResourceType, resourceID uint, reason string) {
-	status := m.getStatus(resourceType, resourceID)
+//
+// 返回值：
+//   - error: 错误信息
+func (m *Service) DisableHealth(resourceType ResourceType, resourceID uint, reason string) error {
+	status, err := m.GetStatus(resourceType, resourceID)
+	if err != nil {
+		return err
+	}
 	now := time.Now()
 	status.Status = HealthStatusUnavailable
 	status.LastError = reason
 	status.LastCheckAt = now
 	status.UpdatedAt = now
 	status.NextAvailableAt = nil // 手动禁用不设置自动恢复时间
-	m.syncer.MarkDirty(resourceType, resourceID, status)
+	return m.storage.Set(status)
 }

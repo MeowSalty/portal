@@ -13,20 +13,20 @@ type Filter interface {
 
 // filter 实现了健康状态过滤器
 type filter struct {
-	cache        Cache
+	storage      Storage
 	allowProbing bool // 是否允许对 Unavailable 状态的资源进行探测
 }
 
 // NewFilter 创建一个新的过滤器实例
 //
 // 参数：
-//   - cache: 健康状态缓存
+//   - storage: 健康状态存储接口
 //   - allowProbing: 是否允许对 Unavailable 状态的资源进行探测
 //     如果为 true，当 Unavailable 状态的资源退避时间结束后，允许进行探测尝试
 //     如果为 false，Unavailable 状态的资源将永久不可用，需要手动重置
-func NewFilter(cache Cache, allowProbing bool) Filter {
+func NewFilter(storage Storage, allowProbing bool) Filter {
 	return &filter{
-		cache:        cache,
+		storage:      storage,
 		allowProbing: allowProbing,
 	}
 }
@@ -41,9 +41,9 @@ func NewFilter(cache Cache, allowProbing bool) Filter {
 // 返回值：
 //   - bool: 如果资源健康返回 true，否则返回 false
 func (f *filter) IsHealthy(resourceType ResourceType, resourceID uint, now time.Time) bool {
-	status, exists := f.cache.Get(resourceType, resourceID)
-	if !exists {
-		// 如果缓存中不存在，认为是未知状态（可以尝试）
+	status, err := f.storage.Get(resourceType, resourceID)
+	if err != nil || status == nil {
+		// 如果存储中不存在或发生错误，认为是未知状态（可以尝试）
 		return true
 	}
 
