@@ -77,7 +77,7 @@ func (sm *Session) WithSession(ctx context.Context, fn func(reqCtx context.Conte
 //
 // 返回值：
 //   - error: 如果等待超时返回 ErrShutdownTimeout，否则返回 nil
-func (s *Session) Shutdown(timeout time.Duration, routingShutdown interface{ Shutdown() }) error {
+func (s *Session) Shutdown(timeout time.Duration) error {
 	// 1. 标记服务正在停机，拒绝新请求
 	s.isShuttingDown.Store(true)
 
@@ -104,12 +104,6 @@ func (s *Session) Shutdown(timeout time.Duration, routingShutdown interface{ Shu
 		// 无超时限制，无限等待
 		<-done
 		// 所有活动会话已正常完成
-	}
-
-	// 3. 关闭路由
-	if routingShutdown != nil {
-		// 正在关闭路由
-		routingShutdown.Shutdown()
 	}
 
 	// 服务已成功停机
