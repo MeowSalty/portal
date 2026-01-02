@@ -46,7 +46,7 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 		} else {
 			// JSON 解析成功
 			bodyStr = a.processBodyHTML(jsonData)
-			errorFrom = a.classifyErrorFrom(jsonData)
+			errorFrom = a.classifyErrorFrom(jsonData, statusCode)
 		}
 	} else {
 		// 非 JSON 类型，直接处理为 HTML/文本
@@ -80,10 +80,14 @@ func (a *Adapter) processBodyHTML(jsonData map[string]interface{}) string {
 }
 
 // classifyErrorFrom 根据已解析的 JSON 数据分类错误来源
-func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) ErrorFrom {
+func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}, statusCode int) ErrorFrom {
 	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
 		if errorType, ok := errorObj["type"].(string); ok {
 			if errorType == "upstream_error" || errorType == "openai_error" {
+				return ErrorFromUpstream
+			}
+			// 当状态码为 503 且错误类型为 one_hub_error 或 new_api_error 时也视为上游错误
+			if statusCode == 503 && (errorType == "one_hub_error" || errorType == "new_api_error") {
 				return ErrorFromUpstream
 			}
 		}
