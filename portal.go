@@ -119,19 +119,16 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.Request) (*t
 	return response, err
 }
 
-func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Request) (<-chan *types.Response, error) {
+func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Request) <-chan *types.Response {
 	p.logger.DebugContext(ctx, "开始处理流式聊天完成请求", "model", request.Model)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *types.Response, 1024)
 
-	var channel *routing.Channel
-	var err error
-
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err = p.routing.GetChannel(ctx, request.Model)
+			channel, err := p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", request.Model, "error", err)
 				// 创建错误响应并发送到流中
@@ -195,7 +192,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 	// 通过中间件链处理流式响应
 	outputStream := p.middleware.ProcessStream(ctx, request, internalStream)
 
-	return outputStream, err
+	return outputStream
 }
 
 func (p *Portal) Close(timeout time.Duration) error {
