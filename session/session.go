@@ -51,11 +51,11 @@ func (sm *Session) WithSession(ctx context.Context, fn func(reqCtx context.Conte
 	// 这个 goroutine 会在流结束时自动清理
 	go func() {
 		defer sm.activeSessions.Done()
+		defer reqCancel()
 
 		select {
 		case <-sm.shutdownCtx.Done():
-			// 服务关闭，取消请求上下文
-			reqCancel()
+			// 服务关闭
 		case <-reqCtx.Done():
 			// 请求完成或被客户端取消
 		}
