@@ -1,10 +1,10 @@
-package types_test
+package chat_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
 )
 
 // TestMessage_UnmarshalJSON_ExtraFields 测试 Message 反序列化时捕获未知字段
@@ -18,7 +18,7 @@ func TestMessage_UnmarshalJSON_ExtraFields(t *testing.T) {
 		"unknown_field3": true
 	}`
 
-	var msg types.Message
+	var msg openaiChat.Message
 	err := json.Unmarshal([]byte(jsonData), &msg)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -55,9 +55,9 @@ func TestMessage_UnmarshalJSON_ExtraFields(t *testing.T) {
 // TestMessage_MarshalJSON_ExtraFields 测试 Message 序列化时包含未知字段
 func TestMessage_MarshalJSON_ExtraFields(t *testing.T) {
 	// 构造包含未知字段的 Message
-	msg := types.Message{
+	msg := openaiChat.Message{
 		Role:    "assistant",
-		Content: stringPtr("Hello!"),
+		Content: stringPtrResp("Hello!"),
 		ExtraFields: map[string]interface{}{
 			"custom_field1": "custom_value1",
 			"custom_field2": 456,
@@ -107,7 +107,7 @@ func TestDelta_UnmarshalJSON_ExtraFields(t *testing.T) {
 		"stream_field2": 789
 	}`
 
-	var delta types.Delta
+	var delta openaiChat.Delta
 	err := json.Unmarshal([]byte(jsonData), &delta)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -136,9 +136,9 @@ func TestDelta_UnmarshalJSON_ExtraFields(t *testing.T) {
 // TestDelta_MarshalJSON_ExtraFields 测试 Delta 序列化时包含未知字段
 func TestDelta_MarshalJSON_ExtraFields(t *testing.T) {
 	// 构造包含未知字段的 Delta
-	delta := types.Delta{
-		Role:    stringPtr("assistant"),
-		Content: stringPtr("Streaming content"),
+	delta := openaiChat.Delta{
+		Role:    stringPtrResp("assistant"),
+		Content: stringPtrResp("Streaming content"),
 		ExtraFields: map[string]interface{}{
 			"delta_field1": "delta_value1",
 			"delta_field2": 999,
@@ -180,9 +180,9 @@ func TestDelta_MarshalJSON_ExtraFields(t *testing.T) {
 // TestMessage_MarshalJSON_NoExtraFields 测试没有未知字段时的序列化
 func TestMessage_MarshalJSON_NoExtraFields(t *testing.T) {
 	// 构造没有未知字段的 Message
-	msg := types.Message{
+	msg := openaiChat.Message{
 		Role:    "assistant",
-		Content: stringPtr("Test message"),
+		Content: stringPtrResp("Test message"),
 	}
 
 	// 序列化
@@ -207,9 +207,9 @@ func TestMessage_MarshalJSON_NoExtraFields(t *testing.T) {
 // TestDelta_MarshalJSON_NoExtraFields 测试没有未知字段时的序列化
 func TestDelta_MarshalJSON_NoExtraFields(t *testing.T) {
 	// 构造没有未知字段的 Delta
-	delta := types.Delta{
-		Role:    stringPtr("assistant"),
-		Content: stringPtr("Streaming test"),
+	delta := openaiChat.Delta{
+		Role:    stringPtrResp("assistant"),
+		Content: stringPtrResp("Streaming test"),
 	}
 
 	// 序列化
@@ -232,6 +232,6 @@ func TestDelta_MarshalJSON_NoExtraFields(t *testing.T) {
 }
 
 // 辅助函数：创建字符串指针
-func stringPtr(s string) *string {
+func stringPtrResp(s string) *string {
 	return &s
 }

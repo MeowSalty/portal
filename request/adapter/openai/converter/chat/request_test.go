@@ -1,11 +1,11 @@
-package converter_test
+package chat_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/request/adapter/openai/converter"
-	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	openaiChatConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/chat"
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
 	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
@@ -42,10 +42,10 @@ func TestConvertRequest_TextMessage(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertRequest(&coreRequest, channel)
+	result := openaiChatConverter.ConvertRequest(&coreRequest, channel)
 
 	// 将结果转换为 OpenAI 请求类型
-	openaiReq, ok := result.(*types.Request)
+	openaiReq, ok := result.(*openaiChat.Request)
 	if !ok {
 		t.Fatalf("期望结果类型为*types.Request，实际为 %T", result)
 	}
@@ -134,10 +134,10 @@ func TestConvertRequest_TextMessageWithStream(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertRequest(&coreRequest, channel)
+	result := openaiChatConverter.ConvertRequest(&coreRequest, channel)
 
 	// 将结果转换为 OpenAI 请求类型
-	openaiReq, ok := result.(*types.Request)
+	openaiReq, ok := result.(*openaiChat.Request)
 	if !ok {
 		t.Fatalf("期望结果类型为*types.Request，实际为 %T", result)
 	}
@@ -208,14 +208,14 @@ func TestConvertCoreRequest_TextMessage(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 请求
-	var openaiRequest types.Request
+	var openaiRequest openaiChat.Request
 	err := json.Unmarshal([]byte(openaiReqJSON), &openaiRequest)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreRequest(&openaiRequest)
+	result := openaiChatConverter.ConvertCoreRequest(&openaiRequest)
 
 	// 验证结果不为空
 	if result == nil {
@@ -288,14 +288,14 @@ func TestConvertCoreRequest_TextMessageWithStream(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 请求
-	var openaiRequest types.Request
+	var openaiRequest openaiChat.Request
 	err := json.Unmarshal([]byte(openaiReqJSON), &openaiRequest)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreRequest(&openaiRequest)
+	result := openaiChatConverter.ConvertCoreRequest(&openaiRequest)
 
 	// 验证结果不为空
 	if result == nil {
@@ -363,14 +363,14 @@ func TestConvertCoreRequest_WithAdditionalParameters(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 请求
-	var openaiRequest types.Request
+	var openaiRequest openaiChat.Request
 	err := json.Unmarshal([]byte(openaiReqJSON), &openaiRequest)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreRequest(&openaiRequest)
+	result := openaiChatConverter.ConvertCoreRequest(&openaiRequest)
 
 	// 验证结果不为空
 	if result == nil {
@@ -430,9 +430,9 @@ func TestConvertCoreRequest_WithAdditionalParameters(t *testing.T) {
 // TestConvertCoreRequest_MessageExtraFields 测试消息额外字段从 OpenAI 到核心类型的转换
 func TestConvertCoreRequest_MessageExtraFields(t *testing.T) {
 	// 构造带有额外字段的 OpenAI 请求
-	openaiReq := &types.Request{
+	openaiReq := &openaiChat.Request{
 		Model: "gpt-4",
-		Messages: []types.RequestMessage{
+		Messages: []openaiChat.RequestMessage{
 			{
 				Role:    "user",
 				Content: "Hello",
@@ -445,7 +445,7 @@ func TestConvertCoreRequest_MessageExtraFields(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreRequest(openaiReq)
+	result := openaiChatConverter.ConvertCoreRequest(openaiReq)
 
 	// 验证消息额外字段
 	if len(result.Messages) != 1 {
@@ -482,7 +482,9 @@ func TestConvertRequest_MessageExtraFields(t *testing.T) {
 					"importance":   "high",
 				},
 				ExtraFieldsFormat: func() *string { s := "openai"; return &s }(),
-			}}}
+			},
+		},
+	}
 
 	// 创建通道信息
 	channel := &routing.Channel{
@@ -490,8 +492,8 @@ func TestConvertRequest_MessageExtraFields(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertRequest(coreReq, channel)
-	openaiReq, ok := result.(*types.Request)
+	result := openaiChatConverter.ConvertRequest(coreReq, channel)
+	openaiReq, ok := result.(*openaiChat.Request)
 	if !ok {
 		t.Fatalf("期望结果类型为*types.Request，实际为 %T", result)
 	}

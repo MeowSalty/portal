@@ -1,19 +1,20 @@
-package converter
+package chat
 
 import (
 	"encoding/json"
 	"strconv"
 
-	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
+	openaiShared "github.com/MeowSalty/portal/request/adapter/openai/types/shared"
 	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // ConvertRequest 将核心请求转换为 OpenAI 请求
 func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interface{} {
-	openaiReq := &types.Request{
+	openaiReq := &openaiChat.Request{
 		Model:    channel.ModelName,
-		Messages: make([]types.RequestMessage, len(request.Messages)),
+		Messages: make([]openaiChat.RequestMessage, len(request.Messages)),
 	}
 
 	// 处理流参数
@@ -22,7 +23,7 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 		// 当开启流式传输时，默认开启 include_usage
 		if *request.Stream {
 			trueValue := true
-			openaiReq.StreamOptions = &types.StreamOptions{
+			openaiReq.StreamOptions = &openaiChat.StreamOptions{
 				IncludeUsage: &trueValue,
 			}
 		}
@@ -45,18 +46,18 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 
 	// 处理停止序列
 	if request.Stop.StringValue != nil {
-		openaiReq.Stop = &types.StopUnion{
+		openaiReq.Stop = &openaiChat.StopUnion{
 			StringValue: request.Stop.StringValue,
 		}
 	} else if len(request.Stop.StringArray) > 0 {
-		openaiReq.Stop = &types.StopUnion{
+		openaiReq.Stop = &openaiChat.StopUnion{
 			StringArray: request.Stop.StringArray,
 		}
 	}
 
 	// 转换消息
 	for i, msg := range request.Messages {
-		openaiMsg := types.RequestMessage{
+		openaiMsg := openaiChat.RequestMessage{
 			Role: msg.Role,
 			Name: msg.Name,
 		}
@@ -105,7 +106,7 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 
 	// 转换工具（如果存在）
 	if len(request.Tools) > 0 {
-		openaiReq.Tools = make([]types.ToolUnion, len(request.Tools))
+		openaiReq.Tools = make([]openaiShared.ToolUnion, len(request.Tools))
 		for i, tool := range request.Tools {
 			// 将参数转换为 JSON schema
 			var parameters json.RawMessage
@@ -115,14 +116,14 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 				}
 			}
 
-			functionDef := types.FunctionDefinition{
+			functionDef := openaiShared.FunctionDefinition{
 				Name:        tool.Function.Name,
 				Description: tool.Function.Description,
 				Parameters:  parameters,
 			}
 
-			openaiReq.Tools[i] = types.ToolUnion{
-				Function: &types.ToolFunction{
+			openaiReq.Tools[i] = openaiShared.ToolUnion{
+				Function: &openaiShared.ToolFunction{
 					Type:     "function",
 					Function: functionDef,
 				},
@@ -134,17 +135,17 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 	if request.ToolChoice.Mode != nil {
 		switch *request.ToolChoice.Mode {
 		case "none":
-			openaiReq.ToolChoice = &types.ToolChoiceUnion{
+			openaiReq.ToolChoice = &openaiShared.ToolChoiceUnion{
 				Auto: func() *string { s := "none"; return &s }(),
 			}
 		case "auto":
-			openaiReq.ToolChoice = &types.ToolChoiceUnion{
+			openaiReq.ToolChoice = &openaiShared.ToolChoiceUnion{
 				Auto: func() *string { s := "auto"; return &s }(),
 			}
 		}
 	} else if request.ToolChoice.Function != nil {
-		openaiReq.ToolChoice = &types.ToolChoiceUnion{
-			Named: &types.ToolChoiceNamed{
+		openaiReq.ToolChoice = &openaiShared.ToolChoiceUnion{
+			Named: &openaiShared.ToolChoiceNamed{
 				Type: "function",
 				Function: struct {
 					Name string `json:"name"`
@@ -167,7 +168,7 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 }
 
 // ConvertCoreRequest 将 OpenAI 请求转换为核心请求
-func ConvertCoreRequest(openaiReq *types.Request) *coreTypes.Request {
+func ConvertCoreRequest(openaiReq *openaiChat.Request) *coreTypes.Request {
 	coreReq := &coreTypes.Request{
 		Model: openaiReq.Model,
 	}

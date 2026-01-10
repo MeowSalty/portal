@@ -1,11 +1,11 @@
-package converter_test
+package chat_test
 
 import (
 	"encoding/json"
 	"testing"
 
-	"github.com/MeowSalty/portal/request/adapter/openai/converter"
-	"github.com/MeowSalty/portal/request/adapter/openai/types"
+	openaiChatConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/chat"
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
@@ -35,14 +35,14 @@ func TestConvertCoreResponse_TextMessage(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -132,14 +132,14 @@ func TestConvertCoreResponse_TextMessageWithoutUsage(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -187,14 +187,14 @@ func TestConvertCoreResponse_EmptyContent(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -211,7 +211,7 @@ func TestConvertCoreResponse_EmptyContent(t *testing.T) {
 // TestConvertCoreResponse_NilInput 测试空输入的处理
 func TestConvertCoreResponse_NilInput(t *testing.T) {
 	// 调用转换函数，传入 nil
-	result := converter.ConvertCoreResponse(nil)
+	result := openaiChatConverter.ConvertCoreResponse(nil)
 
 	// 验证返回结果为 nil
 	if result != nil {
@@ -242,14 +242,14 @@ func TestConvertCoreResponse_ExtraFields_Streaming(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -311,14 +311,14 @@ func TestConvertCoreResponse_ExtraFields_NonStreaming(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -377,7 +377,7 @@ func TestConvertResponse_ExtraFields_Streaming(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertResponse(coreResp)
+	result := openaiChatConverter.ConvertResponse(coreResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -440,7 +440,7 @@ func TestConvertResponse_ExtraFields_NonStreaming(t *testing.T) {
 	}
 
 	// 调用转换函数
-	result := converter.ConvertResponse(coreResp)
+	result := openaiChatConverter.ConvertResponse(coreResp)
 
 	// 验证结果不为空
 	if result == nil {
@@ -494,14 +494,14 @@ func TestConvertCoreResponse_ExtraFields_Empty(t *testing.T) {
 	}`
 
 	// 解析 OpenAI 响应
-	var openaiResp types.Response
+	var openaiResp openaiChat.Response
 	err := json.Unmarshal([]byte(openaiRespJSON), &openaiResp)
 	if err != nil {
 		t.Fatalf("解析输入JSON失败: %v", err)
 	}
 
 	// 调用转换函数
-	result := converter.ConvertCoreResponse(&openaiResp)
+	result := openaiChatConverter.ConvertCoreResponse(&openaiResp)
 
 	// 验证结果不为空
 	if result == nil {

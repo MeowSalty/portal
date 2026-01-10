@@ -1,12 +1,15 @@
-package types
+package chat_test
 
 import (
 	"encoding/json"
 	"testing"
+
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
+	openaiShared "github.com/MeowSalty/portal/request/adapter/openai/types/shared"
 )
 
-// stringPtr 是一个辅助函数，用于创建字符串指针
-func stringPtr(s string) *string {
+// stringPtrReq 是一个辅助函数，用于创建字符串指针
+func stringPtrReq(s string) *string {
 	return &s
 }
 
@@ -25,7 +28,7 @@ func TestRequest_UnmarshalJSON_WithExtraFields(t *testing.T) {
 		}
 	}`
 
-	var req Request
+	var req openaiChat.Request
 	err := json.Unmarshal([]byte(jsonData), &req)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -76,7 +79,7 @@ func TestRequest_UnmarshalJSON_WithoutExtraFields(t *testing.T) {
 		"temperature": 0.7
 	}`
 
-	var req Request
+	var req openaiChat.Request
 	err := json.Unmarshal([]byte(jsonData), &req)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -95,9 +98,9 @@ func TestRequest_UnmarshalJSON_WithoutExtraFields(t *testing.T) {
 
 // TestRequest_MarshalJSON_WithExtraFields 测试序列化包含未知字段的请求
 func TestRequest_MarshalJSON_WithExtraFields(t *testing.T) {
-	req := Request{
+	req := openaiChat.Request{
 		Model: "gpt-4",
-		Messages: []RequestMessage{
+		Messages: []openaiChat.RequestMessage{
 			{Role: "user", Content: "Hello"},
 		},
 		ExtraFields: map[string]interface{}{
@@ -145,9 +148,9 @@ func TestRequest_MarshalJSON_WithExtraFields(t *testing.T) {
 // TestRequest_MarshalJSON_WithoutExtraFields 测试序列化不包含未知字段的请求
 func TestRequest_MarshalJSON_WithoutExtraFields(t *testing.T) {
 	temp := 0.7
-	req := Request{
+	req := openaiChat.Request{
 		Model: "gpt-4",
-		Messages: []RequestMessage{
+		Messages: []openaiChat.RequestMessage{
 			{Role: "user", Content: "Hello"},
 		},
 		Temperature: &temp,
@@ -196,7 +199,7 @@ func TestRequest_RoundTrip(t *testing.T) {
 	}`
 
 	// 第一次反序列化
-	var req1 Request
+	var req1 openaiChat.Request
 	err := json.Unmarshal([]byte(originalJSON), &req1)
 	if err != nil {
 		t.Fatalf("第一次反序列化失败: %v", err)
@@ -209,7 +212,7 @@ func TestRequest_RoundTrip(t *testing.T) {
 	}
 
 	// 第二次反序列化
-	var req2 Request
+	var req2 openaiChat.Request
 	err = json.Unmarshal(data, &req2)
 	if err != nil {
 		t.Fatalf("第二次反序列化失败: %v", err)
@@ -249,7 +252,7 @@ func TestRequest_ExtraFields_VariousTypes(t *testing.T) {
 		"object_field": {"nested": "value"}
 	}`
 
-	var req Request
+	var req openaiChat.Request
 	err := json.Unmarshal([]byte(jsonData), &req)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -325,7 +328,7 @@ func TestRequestMessage_UnmarshalJSON_WithExtraFields(t *testing.T) {
 		}
 	}`
 
-	var msg RequestMessage
+	var msg openaiChat.RequestMessage
 	err := json.Unmarshal([]byte(jsonData), &msg)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -370,7 +373,7 @@ func TestRequestMessage_UnmarshalJSON_WithoutExtraFields(t *testing.T) {
 		"content": "Hello"
 	}`
 
-	var msg RequestMessage
+	var msg openaiChat.RequestMessage
 	err := json.Unmarshal([]byte(jsonData), &msg)
 	if err != nil {
 		t.Fatalf("反序列化失败: %v", err)
@@ -392,7 +395,7 @@ func TestRequestMessage_UnmarshalJSON_WithoutExtraFields(t *testing.T) {
 
 // TestRequestMessage_MarshalJSON_WithExtraFields 测试 RequestMessage 序列化包含未知字段的请求
 func TestRequestMessage_MarshalJSON_WithExtraFields(t *testing.T) {
-	msg := RequestMessage{
+	msg := openaiChat.RequestMessage{
 		Role:    "user",
 		Content: "Hello",
 		ExtraFields: map[string]interface{}{
@@ -439,7 +442,7 @@ func TestRequestMessage_MarshalJSON_WithExtraFields(t *testing.T) {
 
 // TestRequestMessage_MarshalJSON_WithoutExtraFields 测试 RequestMessage 序列化不包含未知字段的请求
 func TestRequestMessage_MarshalJSON_WithoutExtraFields(t *testing.T) {
-	msg := RequestMessage{
+	msg := openaiChat.RequestMessage{
 		Role:    "user",
 		Content: "Hello",
 	}
@@ -479,7 +482,7 @@ func TestRequestMessage_RoundTrip(t *testing.T) {
 	}`
 
 	// 第一次反序列化
-	var msg1 RequestMessage
+	var msg1 openaiChat.RequestMessage
 	err := json.Unmarshal([]byte(originalJSON), &msg1)
 	if err != nil {
 		t.Fatalf("第一次反序列化失败: %v", err)
@@ -492,7 +495,7 @@ func TestRequestMessage_RoundTrip(t *testing.T) {
 	}
 
 	// 第二次反序列化
-	var msg2 RequestMessage
+	var msg2 openaiChat.RequestMessage
 	err = json.Unmarshal(data, &msg2)
 	if err != nil {
 		t.Fatalf("第二次反序列化失败: %v", err)
@@ -542,7 +545,7 @@ func TestToolChoiceUnion_MarshalJSON_Auto(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			toolChoice := ToolChoiceUnion{
+			toolChoice := openaiShared.ToolChoiceUnion{
 				Auto: &tt.value,
 			}
 
@@ -560,8 +563,8 @@ func TestToolChoiceUnion_MarshalJSON_Auto(t *testing.T) {
 
 // TestToolChoiceUnion_MarshalJSON_Named 测试 ToolChoiceUnion 的 Named 函数模式序列化
 func TestToolChoiceUnion_MarshalJSON_Named(t *testing.T) {
-	toolChoice := ToolChoiceUnion{
-		Named: &ToolChoiceNamed{
+	toolChoice := openaiShared.ToolChoiceUnion{
+		Named: &openaiShared.ToolChoiceNamed{
 			Type: "function",
 			Function: struct {
 				Name string `json:"name"`
@@ -601,8 +604,8 @@ func TestToolChoiceUnion_MarshalJSON_Named(t *testing.T) {
 
 // TestToolChoiceUnion_MarshalJSON_NamedCustom 测试 ToolChoiceUnion 的 NamedCustom 自定义模式序列化
 func TestToolChoiceUnion_MarshalJSON_NamedCustom(t *testing.T) {
-	toolChoice := ToolChoiceUnion{
-		NamedCustom: &ToolChoiceNamedCustom{
+	toolChoice := openaiShared.ToolChoiceUnion{
+		NamedCustom: &openaiShared.ToolChoiceNamedCustom{
 			Type: "custom",
 			Custom: struct {
 				Name string `json:"name"`
@@ -642,8 +645,8 @@ func TestToolChoiceUnion_MarshalJSON_NamedCustom(t *testing.T) {
 
 // TestToolChoiceUnion_MarshalJSON_Allowed 测试 ToolChoiceUnion 的 Allowed 允许模式序列化
 func TestToolChoiceUnion_MarshalJSON_Allowed(t *testing.T) {
-	toolChoice := ToolChoiceUnion{
-		Allowed: &ToolChoiceAllowed{
+	toolChoice := openaiShared.ToolChoiceUnion{
+		Allowed: &openaiShared.ToolChoiceAllowed{
 			Type: "allowed",
 			Mode: "any",
 			Tools: []map[string]interface{}{
@@ -694,7 +697,7 @@ func TestToolChoiceUnion_MarshalJSON_Allowed(t *testing.T) {
 
 // TestToolChoiceUnion_MarshalJSON_Nil 测试 ToolChoiceUnion 的空值序列化
 func TestToolChoiceUnion_MarshalJSON_Nil(t *testing.T) {
-	toolChoice := ToolChoiceUnion{}
+	toolChoice := openaiShared.ToolChoiceUnion{}
 
 	data, err := json.Marshal(toolChoice)
 	if err != nil {
@@ -711,13 +714,13 @@ func TestToolChoiceUnion_MarshalJSON_Nil(t *testing.T) {
 func TestRequest_WithToolChoice(t *testing.T) {
 	tests := []struct {
 		name       string
-		toolChoice *ToolChoiceUnion
+		toolChoice *openaiShared.ToolChoiceUnion
 		checkFunc  func(*testing.T, map[string]interface{})
 	}{
 		{
 			name: "auto 模式",
-			toolChoice: &ToolChoiceUnion{
-				Auto: stringPtr("auto"),
+			toolChoice: &openaiShared.ToolChoiceUnion{
+				Auto: stringPtrReq("auto"),
 			},
 			checkFunc: func(t *testing.T, result map[string]interface{}) {
 				if result["tool_choice"] != "auto" {
@@ -727,8 +730,8 @@ func TestRequest_WithToolChoice(t *testing.T) {
 		},
 		{
 			name: "named 函数模式",
-			toolChoice: &ToolChoiceUnion{
-				Named: &ToolChoiceNamed{
+			toolChoice: &openaiShared.ToolChoiceUnion{
+				Named: &openaiShared.ToolChoiceNamed{
 					Type: "function",
 					Function: struct {
 						Name string `json:"name"`
@@ -770,9 +773,9 @@ func TestRequest_WithToolChoice(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := Request{
+			req := openaiChat.Request{
 				Model: "gpt-4",
-				Messages: []RequestMessage{
+				Messages: []openaiChat.RequestMessage{
 					{Role: "user", Content: "What's the weather?"},
 				},
 				ToolChoice: tt.toolChoice,
@@ -828,7 +831,7 @@ func TestToolChoiceUnionUnmarshal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var req struct {
-				ToolChoice *ToolChoiceUnion `json:"tool_choice,omitempty"`
+				ToolChoice *openaiShared.ToolChoiceUnion `json:"tool_choice,omitempty"`
 			}
 			err := json.Unmarshal([]byte(tt.json), &req)
 			if (err != nil) != tt.wantErr {
@@ -873,7 +876,7 @@ func TestFullRequestUnmarshal(t *testing.T) {
   "tool_choice": "auto"
 }`
 
-	var req Request
+	var req openaiChat.Request
 	err := json.Unmarshal([]byte(jsonData), &req)
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
@@ -916,7 +919,7 @@ func TestStopUnionUnmarshal(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var req struct {
-				Stop *StopUnion `json:"stop,omitempty"`
+				Stop *openaiChat.StopUnion `json:"stop,omitempty"`
 			}
 			err := json.Unmarshal([]byte(tt.json), &req)
 			if (err != nil) != tt.wantErr {
@@ -942,7 +945,7 @@ func TestToolUnionUnmarshal(t *testing.T) {
   }
 }`
 
-	var tool ToolUnion
+	var tool openaiShared.ToolUnion
 	err := json.Unmarshal([]byte(jsonData), &tool)
 	if err != nil {
 		t.Fatalf("Unmarshal() error = %v", err)
