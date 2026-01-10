@@ -2,15 +2,20 @@ package adapter
 
 import (
 	"encoding/json"
+	"strings"
 
-	converter "github.com/MeowSalty/portal/request/adapter/openai/converter"
-	openaiTypes "github.com/MeowSalty/portal/request/adapter/openai/types"
+	openaiChatConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/chat"
+	openaiResponsesConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/responses"
+	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
+	openaiResponses "github.com/MeowSalty/portal/request/adapter/openai/types/responses"
 	"github.com/MeowSalty/portal/routing"
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // OpenAI OpenAI 提供商实现
-type OpenAI struct{}
+type OpenAI struct {
+	apiVariant string
+}
 
 // init 函数注册 OpenAI 提供商
 func init() {
@@ -31,29 +36,52 @@ func (p *OpenAI) Name() string {
 
 // CreateRequest 创建 OpenAI 请求
 func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
-	return converter.ConvertRequest(request, channel), nil
+	style := p.setAPIStyle(channel)
+	if style == "responses" {
+		return openaiResponsesConverter.ConvertResponsesRequest(request, channel), nil
+	}
+	return openaiChatConverter.ConvertRequest(request, channel), nil
 }
 
 // ParseResponse 解析 OpenAI 响应
 func (p *OpenAI) ParseResponse(responseData []byte) (*coreTypes.Response, error) {
-	var response openaiTypes.Response
+	if p.apiVariant == "responses" {
+		var response openaiResponses.Response
+		if err := json.Unmarshal(responseData, &response); err != nil {
+			return nil, err
+		}
+		return openaiResponsesConverter.ConvertResponsesCoreResponse(&response), nil
+	}
+
+	var response openaiChat.Response
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		return nil, err
 	}
-	return converter.ConvertCoreResponse(&response), nil
+	return openaiChatConverter.ConvertCoreResponse(&response), nil
 }
 
 // ParseStreamResponse 解析 OpenAI 流式响应
 func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, error) {
-	var chunk openaiTypes.Response
+	if p.apiVariant == "responses" {
+		var event openaiResponses.ResponsesStreamEvent
+		if err := json.Unmarshal(responseData, &event); err != nil {
+			return nil, err
+		}
+		return openaiResponsesConverter.ConvertResponsesStreamEvent(&event), nil
+	}
+
+	var chunk openaiChat.Response
 	if err := json.Unmarshal(responseData, &chunk); err != nil {
 		return nil, err
 	}
-	return converter.ConvertCoreResponse(&chunk), nil
+	return openaiChatConverter.ConvertCoreResponse(&chunk), nil
 }
 
 // APIEndpoint 返回 API 端点
 func (p *OpenAI) APIEndpoint(model string, stream bool) string {
+	if p.apiVariant == "responses" {
+		return "/v1/responses"
+	}
 	return "/v1/chat/completions"
 }
 
@@ -70,4 +98,19 @@ func (p *OpenAI) Headers(key string) map[string]string {
 // SupportsStreaming 是否支持流式传输
 func (p *OpenAI) SupportsStreaming() bool {
 	return true
+}
+
+func (p *OpenAI) setAPIStyle(channel *routing.Channel) string {
+	if channel == nil {
+		p.apiVariant = "chat_completions"
+		return p.apiVariant
+	}
+
+	style := strings.ToLower(strings.TrimSpace(channel.APIVariant))
+	if style == "" {
+		style = "chat_completions"
+	}
+
+	p.apiVariant = style
+	return p.apiVariant
 }

@@ -18,6 +18,7 @@ type Channel struct {
 	APIEndpoint  string // API 端点
 	ModelName    string // 模型名称
 	APIKey       string // API 密钥
+	APIVariant   string // API 变体
 
 	CustomHeaders map[string]string // 通道级别的自定义 HTTP 头部（优先级高于请求级别）
 
