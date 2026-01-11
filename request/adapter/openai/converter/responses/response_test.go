@@ -38,7 +38,7 @@ func TestConvertResponsesCoreResponse_TextOutput(t *testing.T) {
 		},
 	}
 
-	result := openaiResponsesConverter.ConvertResponsesCoreResponse(resp)
+	result := openaiResponsesConverter.ConvertCoreResponse(resp)
 	if result == nil {
 		t.Fatal("期望返回非空响应")
 	}
@@ -75,7 +75,7 @@ func TestConvertResponsesStreamEvent_Delta(t *testing.T) {
 		t.Fatalf("反序列化失败: %v", err)
 	}
 
-	resp := openaiResponsesConverter.ConvertResponsesStreamEvent(&event)
+	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
 	if resp == nil {
 		t.Fatal("期望返回非空响应")
 	}
@@ -96,7 +96,7 @@ func TestConvertResponsesStreamEvent_CompletedUsageOnly(t *testing.T) {
 		t.Fatalf("反序列化失败: %v", err)
 	}
 
-	resp := openaiResponsesConverter.ConvertResponsesStreamEvent(&event)
+	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
 	if resp == nil {
 		t.Fatal("期望返回非空响应")
 	}
@@ -121,7 +121,7 @@ func TestConvertResponsesStreamEvent_Error(t *testing.T) {
 		t.Fatalf("反序列化失败: %v", err)
 	}
 
-	resp := openaiResponsesConverter.ConvertResponsesStreamEvent(&event)
+	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
 	if resp == nil {
 		t.Fatal("期望返回非空响应")
 	}

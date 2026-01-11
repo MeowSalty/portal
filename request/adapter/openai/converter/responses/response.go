@@ -7,8 +7,8 @@ import (
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
-// ConvertResponsesCoreResponse 将 Responses 响应转换为核心响应
-func ConvertResponsesCoreResponse(resp *openaiResponses.Response) *coreTypes.Response {
+// ConvertCoreResponse 将 Responses 响应转换为核心响应
+func ConvertCoreResponse(resp *openaiResponses.Response) *coreTypes.Response {
 	if resp == nil {
 		return nil
 	}
@@ -59,8 +59,69 @@ func ConvertResponsesCoreResponse(resp *openaiResponses.Response) *coreTypes.Res
 	return coreResp
 }
 
-// ConvertResponsesStreamEvent 将 Responses SSE 事件转换为核心响应
-func ConvertResponsesStreamEvent(event *openaiResponses.ResponsesStreamEvent) *coreTypes.Response {
+// ConvertResponse 将核心响应转换为 Responses 响应
+func ConvertResponse(resp *coreTypes.Response) *openaiResponses.Response {
+	if resp == nil {
+		return nil
+	}
+
+	openaiResp := &openaiResponses.Response{
+		ID:        resp.ID,
+		Object:    resp.Object,
+		CreatedAt: resp.Created,
+		Model:     resp.Model,
+	}
+
+	if resp.Usage != nil {
+		openaiResp.Usage = &openaiResponses.Usage{
+			InputTokens:  resp.Usage.PromptTokens,
+			OutputTokens: resp.Usage.CompletionTokens,
+			TotalTokens:  resp.Usage.TotalTokens,
+		}
+	}
+
+	if len(resp.Choices) == 0 {
+		return openaiResp
+	}
+
+	openaiResp.Output = make([]openaiResponses.OutputItem, 0, len(resp.Choices))
+	for _, choice := range resp.Choices {
+		item := openaiResponses.OutputItem{
+			Type: "message",
+		}
+
+		var content *string
+		if choice.Message != nil {
+			item.Role = choice.Message.Role
+			content = choice.Message.Content
+		} else if choice.Delta != nil {
+			if choice.Delta.Role != nil {
+				item.Role = *choice.Delta.Role
+			}
+			content = choice.Delta.Content
+		}
+
+		if item.Role == "" {
+			item.Role = "assistant"
+		}
+
+		if content != nil {
+			item.Content = []openaiResponses.OutputPart{
+				{
+					Type: "output_text",
+					Text: *content,
+				},
+			}
+		}
+
+		openaiResp.Output = append(openaiResp.Output, item)
+	}
+
+	return openaiResp
+}
+
+// ConvertStreamEvent 将 Responses SSE 事件转换为核心响应
+func ConvertStreamEvent(event *openaiResponses.ResponsesStreamEvent) *coreTypes.Response {
 	if event == nil {
 		return nil
 	}
