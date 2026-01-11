@@ -38,7 +38,7 @@ func (p *OpenAI) Name() string {
 func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
 	style := p.setAPIStyle(channel)
 	if style == "responses" {
-		return openaiResponsesConverter.ConvertResponsesRequest(request, channel), nil
+		return openaiResponsesConverter.ConvertRequest(request, channel), nil
 	}
 	return openaiChatConverter.ConvertRequest(request, channel), nil
 }
@@ -50,7 +50,7 @@ func (p *OpenAI) ParseResponse(responseData []byte) (*coreTypes.Response, error)
 		if err := json.Unmarshal(responseData, &response); err != nil {
 			return nil, err
 		}
-		return openaiResponsesConverter.ConvertResponsesCoreResponse(&response), nil
+		return openaiResponsesConverter.ConvertCoreResponse(&response), nil
 	}
 
 	var response openaiChat.Response
@@ -67,7 +67,7 @@ func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, 
 		if err := json.Unmarshal(responseData, &event); err != nil {
 			return nil, err
 		}
-		return openaiResponsesConverter.ConvertResponsesStreamEvent(&event), nil
+		return openaiResponsesConverter.ConvertStreamEvent(&event), nil
 	}
 
 	var chunk openaiChat.Response

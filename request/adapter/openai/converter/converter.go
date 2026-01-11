@@ -31,15 +31,15 @@ func ConvertResponse(resp *coreTypes.Response) *openaiChat.Response {
 
 // Deprecated: 请使用 request/adapter/openai/converter/responses 包。
 func ConvertResponsesRequest(request *coreTypes.Request, channel *routing.Channel) interface{} {
-	return openaiResponsesConverter.ConvertResponsesRequest(request, channel)
+	return openaiResponsesConverter.ConvertRequest(request, channel)
 }
 
 // Deprecated: 请使用 request/adapter/openai/converter/responses 包。
 func ConvertResponsesCoreResponse(resp *openaiResponses.Response) *coreTypes.Response {
-	return openaiResponsesConverter.ConvertResponsesCoreResponse(resp)
+	return openaiResponsesConverter.ConvertCoreResponse(resp)
 }
 
 // Deprecated: 请使用 request/adapter/openai/converter/responses 包。
 func ConvertResponsesStreamEvent(event *openaiResponses.ResponsesStreamEvent) *coreTypes.Response {
-	return openaiResponsesConverter.ConvertResponsesStreamEvent(event)
+	return openaiResponsesConverter.ConvertStreamEvent(event)
 }
