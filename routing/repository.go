@@ -14,7 +14,8 @@ type RateLimitConfig struct {
 type Platform struct {
 	ID            uint
 	Name          string
-	Format        string
+	Provider      string
+	Variant       string
 	BaseURL       string
 	RateLimit     RateLimitConfig
 	CustomHeaders map[string]string // 平台级别的自定义 HTTP 头部

@@ -25,7 +25,7 @@ func (p *Request) ChatCompletionStream(
 ) error {
 	// 创建带有请求上下文的日志记录器
 	log := p.logger.With(
-		"platform_type", channel.PlatformType,
+		"platform_type", channel.Provider,
 		"platform_id", channel.PlatformID,
 		"model_id", channel.ModelID,
 		"api_key_id", channel.APIKeyID,
@@ -36,13 +36,13 @@ func (p *Request) ChatCompletionStream(
 	log.DebugContext(ctx, "开始处理流式聊天完成请求")
 
 	// 获取适配器
-	log.DebugContext(ctx, "获取适配器", "format", channel.PlatformType)
-	adapter, err := p.getAdapter(channel.PlatformType)
+	log.DebugContext(ctx, "获取适配器", "format", channel.Provider)
+	adapter, err := p.getAdapter(channel.Provider)
 	if err != nil {
-		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.PlatformType)
+		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithHTTPStatus(fasthttp.StatusInternalServerError).
-			WithContext("format", channel.PlatformType)
+			WithContext("format", channel.Provider)
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 

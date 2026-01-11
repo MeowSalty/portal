@@ -167,8 +167,9 @@ func (r *Routing) buildChannelsForModel(ctx context.Context, model Model) ([]*Ch
 			PlatformID:    platform.ID,
 			ModelID:       model.ID,
 			APIKeyID:      apiKey.ID,
-			PlatformType:  platform.Format,
-			APIEndpoint:   platform.BaseURL,
+			Provider:      platform.Provider,
+			APIVariant:    platform.Variant,
+			BaseURL:       platform.BaseURL,
 			ModelName:     model.Name,
 			APIKey:        apiKey.Value,
 			CustomHeaders: platform.CustomHeaders, // 传递平台自定义头部给通道

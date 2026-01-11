@@ -43,7 +43,7 @@ func (a *Adapter) sendHTTPRequest(
 	}
 
 	// 构建 URL
-	url := channel.APIEndpoint + a.provider.APIEndpoint(channel.ModelName, isStream)
+	url := channel.BaseURL + a.provider.APIEndpoint(channel.ModelName, isStream)
 
 	// 创建请求和响应对象
 	req := fasthttp.AcquireRequest()

@@ -14,11 +14,11 @@ type Channel struct {
 	ModelID    uint
 	APIKeyID   uint
 
-	PlatformType string // 平台类型（如 "openai", "anthropic"）
-	APIEndpoint  string // API 端点
-	ModelName    string // 模型名称
-	APIKey       string // API 密钥
-	APIVariant   string // API 变体
+	Provider   string // 供应商类型（如 "openai", "anthropic"）
+	BaseURL    string // 基础 URL
+	ModelName  string // 模型名称
+	APIKey     string // API 密钥
+	APIVariant string // API 变体
 
 	CustomHeaders map[string]string // 通道级别的自定义 HTTP 头部（优先级高于请求级别）
 
