@@ -14,7 +14,7 @@ func TestConvertResponsesRequest_Prompt(t *testing.T) {
 	coreReq := &coreTypes.Request{Prompt: &prompt}
 	channel := &routing.Channel{ModelName: "gpt-4o-mini"}
 
-	result := openaiResponsesConverter.ConvertResponsesRequest(coreReq, channel)
+	result := openaiResponsesConverter.ConvertRequest(coreReq, channel)
 	respReq, ok := result.(*openaiResponses.Request)
 	if !ok {
 		t.Fatalf("期望返回 ResponsesRequest，实际为 %T", result)
@@ -49,7 +49,7 @@ func TestConvertResponsesRequest_Messages(t *testing.T) {
 	}
 	channel := &routing.Channel{ModelName: "gpt-4o-mini"}
 
-	result := openaiResponsesConverter.ConvertResponsesRequest(coreReq, channel)
+	result := openaiResponsesConverter.ConvertRequest(coreReq, channel)
 	respReq, ok := result.(*openaiResponses.Request)
 	if !ok {
 		t.Fatalf("期望返回 ResponsesRequest，实际为 %T", result)
