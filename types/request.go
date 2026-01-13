@@ -146,9 +146,63 @@ type ImageURL struct {
 
 // ContentPart 表示内容部分，可以是文本或图像
 type ContentPart struct {
-	Type     string    `json:"type"`
-	Text     *string   `json:"text,omitempty"`
-	ImageURL *ImageURL `json:"image_url,omitempty"`
+	Type              string                 `json:"type"`
+	Text              *string                `json:"text,omitempty"`
+	ImageURL          *ImageURL              `json:"image_url,omitempty"`
+	ExtraFields       map[string]interface{} `json:"-"`
+	ExtraFieldsFormat *string                `json:"-"`
+}
+
+// MarshalJSON 实现 ContentPart 的自定义 JSON 序列化
+func (cp ContentPart) MarshalJSON() ([]byte, error) {
+	if len(cp.ExtraFields) == 0 {
+		type Alias ContentPart
+		aux := Alias(cp)
+		return json.Marshal(aux)
+	}
+
+	result := make(map[string]interface{})
+	for key, value := range cp.ExtraFields {
+		result[key] = value
+	}
+
+	if cp.Type != "" {
+		result["type"] = cp.Type
+	}
+	if cp.Text != nil {
+		result["text"] = *cp.Text
+	}
+	if cp.ImageURL != nil {
+		imageURL := map[string]interface{}{
+			"url": cp.ImageURL.URL,
+		}
+		if cp.ImageURL.Detail != nil {
+			imageURL["detail"] = *cp.ImageURL.Detail
+		}
+		result["image_url"] = imageURL
+	}
+
+	return json.Marshal(result)
+}
+
+// UnmarshalJSON 实现 ContentPart 的自定义 JSON 反序列化
+func (cp *ContentPart) UnmarshalJSON(data []byte) error {
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+
+	type Alias ContentPart
+	aux := &struct{ *Alias }{Alias: (*Alias)(cp)}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+
+	if len(raw) > 0 {
+		cp.ExtraFields = raw
+	}
+
+	return nil
 }
 
 // Message 表示聊天消息，具有不同的角色

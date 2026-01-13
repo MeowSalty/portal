@@ -137,6 +137,31 @@ func convertContentParts(parts []coreTypes.ContentPart) []anthropicTypes.Content
 			// 转换图像 URL 为 Anthropic 格式
 			block.Type = "image"
 			block.Source = convertImageURL(part.ImageURL)
+		} else if len(part.ExtraFields) > 0 {
+			if rawType, ok := part.ExtraFields["type"].(string); ok && rawType != "" {
+				block.Type = rawType
+			}
+			if textValue, ok := part.ExtraFields["text"].(string); ok {
+				block.Text = &textValue
+			}
+			if nameValue, ok := part.ExtraFields["name"].(string); ok {
+				block.Name = &nameValue
+			}
+			if idValue, ok := part.ExtraFields["id"].(string); ok {
+				block.ID = &idValue
+			}
+			if inputValue, ok := part.ExtraFields["input"]; ok {
+				block.Input = inputValue
+			}
+			if toolUseID, ok := part.ExtraFields["tool_use_id"].(string); ok {
+				block.ToolUseID = &toolUseID
+			}
+			if contentValue, ok := part.ExtraFields["content"]; ok {
+				block.Content = contentValue
+			}
+			if isError, ok := part.ExtraFields["is_error"].(bool); ok {
+				block.IsError = &isError
+			}
 		}
 
 		blocks = append(blocks, block)

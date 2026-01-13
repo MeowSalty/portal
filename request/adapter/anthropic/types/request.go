@@ -350,6 +350,10 @@ func (blocks ContentBlocks) convertAnthropicContentBlocks() []coreTypes.ContentP
 				contentParts = append(contentParts, coreTypes.ContentPart{
 					Type: "text",
 					Text: block.Text,
+					ExtraFields: map[string]interface{}{
+						"type": "text",
+						"text": *block.Text,
+					},
 				})
 			}
 		case "image":
@@ -361,13 +365,78 @@ func (blocks ContentBlocks) convertAnthropicContentBlocks() []coreTypes.ContentP
 					ImageURL: &coreTypes.ImageURL{
 						URL: url,
 					},
+					ExtraFields: map[string]interface{}{
+						"type":   "image",
+						"source": block.Source,
+					},
 				})
 			}
 		case "tool_use":
-			// 工具使用内容暂不处理，因为核心 ContentPart 不支持
-			// 可能需要在未来扩展核心类型
+			raw := map[string]interface{}{
+				"type": "tool_use",
+			}
+			if block.ID != nil {
+				raw["id"] = *block.ID
+			}
+			if block.Name != nil {
+				raw["name"] = *block.Name
+			}
+			if block.Input != nil {
+				raw["input"] = block.Input
+			}
+			contentParts = append(contentParts, coreTypes.ContentPart{
+				Type:        "tool_call",
+				ExtraFields: raw,
+			})
 		case "tool_result":
-			// 工具结果内容暂不处理
+			raw := map[string]interface{}{
+				"type": "tool_result",
+			}
+			if block.ToolUseID != nil {
+				raw["tool_use_id"] = *block.ToolUseID
+			}
+			if block.Content != nil {
+				raw["content"] = block.Content
+			}
+			if block.IsError != nil {
+				raw["is_error"] = *block.IsError
+			}
+			contentParts = append(contentParts, coreTypes.ContentPart{
+				Type:        "tool_result",
+				ExtraFields: raw,
+			})
+		default:
+			raw := map[string]interface{}{
+				"type": block.Type,
+			}
+			if block.Text != nil {
+				raw["text"] = *block.Text
+			}
+			if block.Source != nil {
+				raw["source"] = block.Source
+			}
+			if block.ID != nil {
+				raw["id"] = *block.ID
+			}
+			if block.Name != nil {
+				raw["name"] = *block.Name
+			}
+			if block.Input != nil {
+				raw["input"] = block.Input
+			}
+			if block.ToolUseID != nil {
+				raw["tool_use_id"] = *block.ToolUseID
+			}
+			if block.Content != nil {
+				raw["content"] = block.Content
+			}
+			if block.IsError != nil {
+				raw["is_error"] = *block.IsError
+			}
+			contentParts = append(contentParts, coreTypes.ContentPart{
+				Type:        block.Type,
+				ExtraFields: raw,
+			})
 		}
 	}
 

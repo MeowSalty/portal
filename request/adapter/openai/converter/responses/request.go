@@ -187,13 +187,21 @@ func convertInput(request *coreTypes.Request) interface{} {
 						Type: "input_text",
 						Text: *part.Text,
 					})
-				} else if part.ImageURL != nil {
+					continue
+				}
+				if part.ImageURL != nil {
 					item.Content = append(item.Content, openaiResponses.InputPart{
 						Type: "input_image",
 						ImageURL: &openaiResponses.ImageURL{
 							URL:    part.ImageURL.URL,
 							Detail: part.ImageURL.Detail,
 						},
+					})
+					continue
+				}
+				if len(part.ExtraFields) > 0 {
+					item.Content = append(item.Content, openaiResponses.InputPart{
+						Raw: part.ExtraFields,
 					})
 				}
 			}
@@ -230,8 +238,9 @@ func convertInputItemsToCoreMessages(items []openaiResponses.InputItem) []coreTy
 			case "input_text":
 				text := part.Text
 				parts = append(parts, coreTypes.ContentPart{
-					Type: "text",
-					Text: &text,
+					Type:        "text",
+					Text:        &text,
+					ExtraFields: part.Raw,
 				})
 			case "input_image":
 				if part.ImageURL == nil {
@@ -243,6 +252,12 @@ func convertInputItemsToCoreMessages(items []openaiResponses.InputItem) []coreTy
 						URL:    part.ImageURL.URL,
 						Detail: part.ImageURL.Detail,
 					},
+					ExtraFields: part.Raw,
+				})
+			default:
+				parts = append(parts, coreTypes.ContentPart{
+					Type:        part.Type,
+					ExtraFields: part.Raw,
 				})
 			}
 		}
@@ -284,8 +299,9 @@ func convertRawInputItemsToCoreMessages(items []interface{}) []coreTypes.Message
 				case "input_text":
 					text, _ := partMap["text"].(string)
 					parts = append(parts, coreTypes.ContentPart{
-						Type: "text",
-						Text: &text,
+						Type:        "text",
+						Text:        &text,
+						ExtraFields: partMap,
 					})
 				case "input_image":
 					imageURL, ok := partMap["image_url"].(map[string]interface{})
@@ -303,6 +319,12 @@ func convertRawInputItemsToCoreMessages(items []interface{}) []coreTypes.Message
 							URL:    url,
 							Detail: detail,
 						},
+						ExtraFields: partMap,
+					})
+				default:
+					parts = append(parts, coreTypes.ContentPart{
+						Type:        partType,
+						ExtraFields: partMap,
 					})
 				}
 			}

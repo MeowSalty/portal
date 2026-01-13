@@ -68,16 +68,16 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 			openaiMsg.Content = *msg.Content.StringValue
 		} else if len(msg.Content.ContentParts) > 0 {
 			// 内容部分数组 - OpenAI 使用字符串数组或结构化内容
-			contentParts := make([]interface{}, len(msg.Content.ContentParts))
-			for j, part := range msg.Content.ContentParts {
+			contentParts := make([]interface{}, 0, len(msg.Content.ContentParts))
+			for _, part := range msg.Content.ContentParts {
 				if part.Text != nil {
-					// 文本内容部分
-					contentParts[j] = map[string]interface{}{
+					contentParts = append(contentParts, map[string]interface{}{
 						"type": "text",
 						"text": *part.Text,
-					}
-				} else if part.ImageURL != nil {
-					// 图像内容部分
+					})
+					continue
+				}
+				if part.ImageURL != nil {
 					imageContent := map[string]interface{}{
 						"type": "image_url",
 						"image_url": map[string]interface{}{
@@ -87,7 +87,11 @@ func ConvertRequest(request *coreTypes.Request, channel *routing.Channel) interf
 					if part.ImageURL.Detail != nil {
 						imageContent["image_url"].(map[string]interface{})["detail"] = *part.ImageURL.Detail
 					}
-					contentParts[j] = imageContent
+					contentParts = append(contentParts, imageContent)
+					continue
+				}
+				if len(part.ExtraFields) > 0 {
+					contentParts = append(contentParts, part.ExtraFields)
 				}
 			}
 			openaiMsg.Content = contentParts
@@ -221,34 +225,68 @@ func ConvertCoreRequest(openaiReq *openaiChat.Request) *coreTypes.Request {
 				// 结构化内容部分
 				contentParts := make([]coreTypes.ContentPart, 0, len(content))
 				for _, part := range content {
-					if partMap, ok := part.(map[string]interface{}); ok {
-						if partType, ok := partMap["type"].(string); ok {
-							switch partType {
-							case "text":
-								if text, ok := partMap["text"].(string); ok {
-									contentParts = append(contentParts, coreTypes.ContentPart{
-										Type: "text",
-										Text: &text,
-									})
+					partMap, ok := part.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					partType, _ := partMap["type"].(string)
+					switch partType {
+					case "text":
+						if text, ok := partMap["text"].(string); ok {
+							contentParts = append(contentParts, coreTypes.ContentPart{
+								Type:        "text",
+								Text:        &text,
+								ExtraFields: partMap,
+							})
+							continue
+						}
+					case "image_url":
+						if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
+							if url, ok := imageURL["url"].(string); ok {
+								imagePart := coreTypes.ContentPart{
+									Type: "image_url",
+									ImageURL: &coreTypes.ImageURL{
+										URL: url,
+									},
+									ExtraFields: partMap,
 								}
-							case "image_url":
-								if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
-									if url, ok := imageURL["url"].(string); ok {
-										imagePart := coreTypes.ContentPart{
-											Type: "image_url",
-											ImageURL: &coreTypes.ImageURL{
-												URL: url,
-											},
-										}
-										if detail, ok := imageURL["detail"].(string); ok {
-											imagePart.ImageURL.Detail = &detail
-										}
-										contentParts = append(contentParts, imagePart)
-									}
+								if detail, ok := imageURL["detail"].(string); ok {
+									imagePart.ImageURL.Detail = &detail
 								}
+								contentParts = append(contentParts, imagePart)
+								continue
 							}
 						}
+					case "input_text":
+						text, _ := partMap["text"].(string)
+						contentParts = append(contentParts, coreTypes.ContentPart{
+							Type:        "text",
+							Text:        &text,
+							ExtraFields: partMap,
+						})
+						continue
+					case "input_image":
+						if imageURL, ok := partMap["image_url"].(map[string]interface{}); ok {
+							url, _ := imageURL["url"].(string)
+							var detail *string
+							if detailValue, ok := imageURL["detail"].(string); ok {
+								detail = &detailValue
+							}
+							contentParts = append(contentParts, coreTypes.ContentPart{
+								Type: "image_url",
+								ImageURL: &coreTypes.ImageURL{
+									URL:    url,
+									Detail: detail,
+								},
+								ExtraFields: partMap,
+							})
+							continue
+						}
 					}
+					contentParts = append(contentParts, coreTypes.ContentPart{
+						Type:        partType,
+						ExtraFields: partMap,
+					})
 				}
 				coreMsg.Content.ContentParts = contentParts
 			}

@@ -150,10 +150,49 @@ func convertMessageToParts(msg coreTypes.Message) []types.Part {
 				parts = append(parts, types.Part{
 					Text: &text,
 				})
-			} else if part.ImageURL != nil {
+				continue
+			}
+			if part.ImageURL != nil {
 				// 图像部分 - 注意：Gemini 需要 base64 编码的内联数据
 				// 这里只处理文本，图像需要额外处理
 				// 可以添加日志或错误处理
+				continue
+			}
+			if len(part.ExtraFields) > 0 {
+				if textValue, ok := part.ExtraFields["text"].(string); ok {
+					parts = append(parts, types.Part{
+						Text: &textValue,
+					})
+					continue
+				}
+				if functionCall, ok := part.ExtraFields["functionCall"].(map[string]interface{}); ok {
+					if name, ok := functionCall["name"].(string); ok {
+						args, _ := functionCall["args"].(map[string]interface{})
+						parts = append(parts, types.Part{
+							FunctionCall: &types.FunctionCall{
+								Name: name,
+								Args: args,
+							},
+						})
+						continue
+					}
+				}
+				if functionResponse, ok := part.ExtraFields["functionResponse"].(map[string]interface{}); ok {
+					if name, ok := functionResponse["name"].(string); ok {
+						response, _ := functionResponse["response"].(string)
+						id, _ := functionResponse["id"].(string)
+						errorText, _ := functionResponse["error"].(string)
+						parts = append(parts, types.Part{
+							FunctionResponse: &types.FunctionResponse{
+								Name:     name,
+								Response: response,
+								ID:       id,
+								Error:    errorText,
+							},
+						})
+						continue
+					}
+				}
 			}
 		}
 	}
@@ -249,19 +288,67 @@ func ConvertCoreRequest(geminiReq *types.Request) *coreTypes.Request {
 	// 转换消息内容
 	if len(geminiReq.Contents) > 0 {
 		for _, content := range geminiReq.Contents {
-			if content.Role == "user" {
-				for _, part := range content.Parts {
-					if part.Text != nil {
-						message := coreTypes.Message{
-							Role: "user",
-							Content: coreTypes.MessageContent{
-								StringValue: part.Text,
+			role := "user"
+			if content.Role == "model" {
+				role = "assistant"
+			}
+
+			if len(content.Parts) == 0 {
+				coreReq.Messages = append(coreReq.Messages, coreTypes.Message{Role: role})
+				continue
+			}
+
+			parts := make([]coreTypes.ContentPart, 0, len(content.Parts))
+			for _, part := range content.Parts {
+				if part.Text != nil {
+					text := *part.Text
+					parts = append(parts, coreTypes.ContentPart{
+						Type: "text",
+						Text: &text,
+						ExtraFields: map[string]interface{}{
+							"text": text,
+						},
+					})
+					continue
+				}
+				if part.FunctionCall != nil {
+					parts = append(parts, coreTypes.ContentPart{
+						Type: "tool_call",
+						ExtraFields: map[string]interface{}{
+							"functionCall": map[string]interface{}{
+								"name": part.FunctionCall.Name,
+								"args": part.FunctionCall.Args,
 							},
-						}
-						coreReq.Messages = append(coreReq.Messages, message)
+						},
+					})
+					continue
+				}
+				if part.FunctionResponse != nil {
+					raw := map[string]interface{}{
+						"functionResponse": map[string]interface{}{
+							"name":     part.FunctionResponse.Name,
+							"response": part.FunctionResponse.Response,
+							"id":       part.FunctionResponse.ID,
+						},
 					}
+					if part.FunctionResponse.Error != "" {
+						raw["functionResponse"].(map[string]interface{})["error"] = part.FunctionResponse.Error
+					}
+					parts = append(parts, coreTypes.ContentPart{
+						Type:        "tool_result",
+						ExtraFields: raw,
+					})
+					continue
 				}
 			}
+
+			msg := coreTypes.Message{Role: role}
+			if len(parts) == 1 && parts[0].Type == "text" && parts[0].Text != nil {
+				msg.Content.StringValue = parts[0].Text
+			} else {
+				msg.Content.ContentParts = parts
+			}
+			coreReq.Messages = append(coreReq.Messages, msg)
 		}
 	}
 
