@@ -40,12 +40,21 @@ type Choice struct {
 
 // Message 表示非流式选择中的消息
 type ResponseMessage struct {
-	Content   *string    `json:"content,omitempty"`    // 消息内容
-	Role      string     `json:"role"`                 // 角色
-	ToolCalls []ToolCall `json:"tool_calls,omitempty"` // 工具调用
+	ID           *string               `json:"id,omitempty"`            // 消息 ID（兼容 Responses 输出）
+	Content      *string               `json:"content,omitempty"`       // 消息内容
+	ContentParts []ResponseContentPart `json:"content_parts,omitempty"` // 结构化内容片段（兼容 Responses 输出）
+	Role         string                `json:"role"`                    // 角色
+	ToolCalls    []ToolCall            `json:"tool_calls,omitempty"`    // 工具调用
 
 	ExtraFields       map[string]interface{} `json:"-"` // 额外字段
 	ExtraFieldsFormat string                 `json:"-"` // 来源格式
+}
+
+// ResponseContentPart 表示结构化内容片段（兼容 Responses 输出）
+type ResponseContentPart struct {
+	Type        string        `json:"type"`                  // 内容类型
+	Text        string        `json:"text,omitempty"`        // 文本内容
+	Annotations []interface{} `json:"annotations,omitempty"` // 注释或标注
 }
 
 // Delta 表示流式选择中的增量内容
@@ -320,9 +329,11 @@ func (d *Delta) UnmarshalJSON(data []byte) error {
 // responseMessageKnownFields 定义 ResponseMessage 结构体的所有已知字段名称
 // 用于在反序列化时识别未知字段
 var responseMessageKnownFields = map[string]bool{
-	"content":    true,
-	"role":       true,
-	"tool_calls": true,
+	"id":            true,
+	"content":       true,
+	"content_parts": true,
+	"role":          true,
+	"tool_calls":    true,
 }
 
 // deltaKnownFields 定义 Delta 结构体的所有已知字段名称

@@ -25,7 +25,7 @@ type OutputItem struct {
 type OutputPart struct {
 	Type        string        `json:"type"`
 	Text        string        `json:"text,omitempty"`
-	Annotations []interface{} `json:"annotations,omitempty"`
+	Annotations []interface{} `json:"annotations"`
 }
 
 // Usage 表示 Responses 使用情况

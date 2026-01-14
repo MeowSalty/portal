@@ -28,16 +28,31 @@ func ConvertCoreResponse(resp *openaiResponses.Response) *coreTypes.Response {
 		}
 	}
 
-	// 聚合 output 中的文本
+	// 聚合 output 中的文本，并记录结构化内容
 	var contentParts []string
+	var contentItems []coreTypes.ResponseContentPart
+	var messageID *string
+	var messageRole string
 	for _, item := range resp.Output {
 		if item.Type != "message" {
 			continue
+		}
+		if item.ID != "" {
+			id := item.ID
+			messageID = &id
+		}
+		if item.Role != "" {
+			messageRole = item.Role
 		}
 		for _, part := range item.Content {
 			if part.Type == "output_text" {
 				contentParts = append(contentParts, part.Text)
 			}
+			contentItems = append(contentItems, coreTypes.ResponseContentPart{
+				Type:        part.Type,
+				Text:        part.Text,
+				Annotations: part.Annotations,
+			})
 		}
 	}
 
@@ -47,11 +62,17 @@ func ConvertCoreResponse(resp *openaiResponses.Response) *coreTypes.Response {
 		content = &joined
 	}
 
+	if messageRole == "" {
+		messageRole = "assistant"
+	}
+
 	coreResp.Choices = []coreTypes.Choice{
 		{
 			Message: &coreTypes.ResponseMessage{
-				Role:    "assistant",
-				Content: content,
+				ID:           messageID,
+				Role:         messageRole,
+				Content:      content,
+				ContentParts: contentItems,
 			},
 		},
 	}
@@ -91,9 +112,14 @@ func ConvertResponse(resp *coreTypes.Response) *openaiResponses.Response {
 		}
 
 		var content *string
+		var contentParts []coreTypes.ResponseContentPart
 		if choice.Message != nil {
 			item.Role = choice.Message.Role
 			content = choice.Message.Content
+			contentParts = choice.Message.ContentParts
+			if choice.Message.ID != nil {
+				item.ID = *choice.Message.ID
+			}
 		} else if choice.Delta != nil {
 			if choice.Delta.Role != nil {
 				item.Role = *choice.Delta.Role
@@ -105,7 +131,16 @@ func ConvertResponse(resp *coreTypes.Response) *openaiResponses.Response {
 			item.Role = "assistant"
 		}
 
-		if content != nil {
+		if len(contentParts) > 0 {
+			item.Content = make([]openaiResponses.OutputPart, 0, len(contentParts))
+			for _, part := range contentParts {
+				item.Content = append(item.Content, openaiResponses.OutputPart{
+					Type:        part.Type,
+					Text:        part.Text,
+					Annotations: part.Annotations,
+				})
+			}
+		} else if content != nil {
 			item.Content = []openaiResponses.OutputPart{
 				{
 					Type: "output_text",
