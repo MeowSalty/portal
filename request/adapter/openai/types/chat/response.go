@@ -2,7 +2,7 @@ package chat
 
 import "encoding/json"
 
-// Response 表示 OpenAI 聊天完成响应
+// Response 表示 OpenAI 聊天完成响应（非流式）
 type Response struct {
 	ID                string   `json:"id"`                           // 聊天完成 ID
 	Choices           []Choice `json:"choices"`                      // 选择列表
@@ -14,13 +14,12 @@ type Response struct {
 	Usage             *Usage   `json:"usage"`                        // 使用情况
 }
 
-// Choice 表示聊天完成选择
+// Choice 表示聊天完成选择（非流式）
 type Choice struct {
 	FinishReason *string   `json:"finish_reason"`     // 完成原因
 	Index        int       `json:"index"`             // 索引
 	Logprobs     *Logprobs `json:"logprobs"`          // 对数概率
-	Message      *Message  `json:"message,omitempty"` // 消息（非流式响应）
-	Delta        *Delta    `json:"delta,omitempty"`   // 增量消息（流式响应）
+	Message      *Message  `json:"message,omitempty"` // 消息
 }
 
 // Logprobs 表示对数概率信息

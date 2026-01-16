@@ -70,11 +70,11 @@ func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, 
 		return openaiResponsesConverter.ConvertStreamEvent(&event), nil
 	}
 
-	var chunk openaiChat.Response
+	var chunk openaiChat.ResponseChunk
 	if err := json.Unmarshal(responseData, &chunk); err != nil {
 		return nil, err
 	}
-	return openaiChatConverter.ConvertCoreResponse(&chunk), nil
+	return openaiChatConverter.ConvertCoreStreamResponse(&chunk), nil
 }
 
 // APIEndpoint 返回 API 端点

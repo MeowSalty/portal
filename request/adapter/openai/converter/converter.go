@@ -25,8 +25,18 @@ func ConvertCoreResponse(openaiResp *openaiChat.Response) *coreTypes.Response {
 }
 
 // Deprecated: 请使用 request/adapter/openai/converter/chat 包。
+func ConvertCoreStreamResponse(openaiResp *openaiChat.ResponseChunk) *coreTypes.Response {
+	return openaiChatConverter.ConvertCoreStreamResponse(openaiResp)
+}
+
+// Deprecated: 请使用 request/adapter/openai/converter/chat 包。
 func ConvertResponse(resp *coreTypes.Response) *openaiChat.Response {
 	return openaiChatConverter.ConvertResponse(resp)
+}
+
+// Deprecated: 请使用 request/adapter/openai/converter/chat 包。
+func ConvertStreamResponse(resp *coreTypes.Response) *openaiChat.ResponseChunk {
+	return openaiChatConverter.ConvertStreamResponse(resp)
 }
 
 // Deprecated: 请使用 request/adapter/openai/converter/responses 包。

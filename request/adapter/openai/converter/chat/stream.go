@@ -5,8 +5,8 @@ import (
 	coreTypes "github.com/MeowSalty/portal/types"
 )
 
-// ConvertCoreResponse 将 OpenAI 非流式响应转换为核心响应
-func ConvertCoreResponse(openaiResp *openaiChat.Response) *coreTypes.Response {
+// ConvertCoreStreamResponse 将 OpenAI 流式响应转换为核心响应
+func ConvertCoreStreamResponse(openaiResp *openaiChat.ResponseChunk) *coreTypes.Response {
 	if openaiResp == nil {
 		return nil
 	}
@@ -34,22 +34,22 @@ func ConvertCoreResponse(openaiResp *openaiChat.Response) *coreTypes.Response {
 			FinishReason: choice.FinishReason,
 		}
 
-		if choice.Message != nil {
-			// 非流式响应：数据应放在 Message 中
-			coreChoice.Message = &coreTypes.ResponseMessage{
-				Role: choice.Message.Role,
+		if choice.Delta != nil {
+			// 流式响应：数据应放在 Delta 中
+			coreChoice.Delta = &coreTypes.Delta{
+				Role: choice.Delta.Role,
 			}
 
 			// 转换消息内容
-			if choice.Message.Content != nil {
-				content := *choice.Message.Content
-				coreChoice.Message.Content = &content
+			if choice.Delta.Content != nil {
+				content := *choice.Delta.Content
+				coreChoice.Delta.Content = &content
 			}
 
 			// 转换工具调用
-			if len(choice.Message.ToolCalls) > 0 {
-				coreChoice.Message.ToolCalls = make([]coreTypes.ToolCall, len(choice.Message.ToolCalls))
-				for j, toolCall := range choice.Message.ToolCalls {
+			if len(choice.Delta.ToolCalls) > 0 {
+				coreChoice.Delta.ToolCalls = make([]coreTypes.ToolCall, len(choice.Delta.ToolCalls))
+				for j, toolCall := range choice.Delta.ToolCalls {
 					coreToolCall := coreTypes.ToolCall{}
 
 					// 转换 ID（指针转字符串）
@@ -71,15 +71,15 @@ func ConvertCoreResponse(openaiResp *openaiChat.Response) *coreTypes.Response {
 							coreToolCall.Function.Arguments = *toolCall.Function.Arguments
 						}
 					}
-					coreChoice.Message.ToolCalls[j] = coreToolCall
+					coreChoice.Delta.ToolCalls[j] = coreToolCall
 				}
 			}
 
 			// 传递额外字段和来源格式
-			if choice.Message.ExtraFields != nil {
-				coreChoice.Message.ExtraFields = choice.Message.ExtraFields
+			if choice.Delta.ExtraFields != nil {
+				coreChoice.Delta.ExtraFields = choice.Delta.ExtraFields
 			}
-			coreChoice.Message.ExtraFieldsFormat = "openai"
+			coreChoice.Delta.ExtraFieldsFormat = "openai"
 		}
 
 		result.Choices[i] = coreChoice
@@ -88,18 +88,18 @@ func ConvertCoreResponse(openaiResp *openaiChat.Response) *coreTypes.Response {
 	return result
 }
 
-// ConvertResponse 将核心响应转换为 OpenAI 非流式响应
-func ConvertResponse(resp *coreTypes.Response) *openaiChat.Response {
+// ConvertStreamResponse 将核心响应转换为 OpenAI 流式响应
+func ConvertStreamResponse(resp *coreTypes.Response) *openaiChat.ResponseChunk {
 	if resp == nil {
 		return nil
 	}
 
-	result := &openaiChat.Response{
+	result := &openaiChat.ResponseChunk{
 		ID:      resp.ID,
 		Model:   resp.Model,
 		Object:  resp.Object,
 		Created: resp.Created,
-		Choices: make([]openaiChat.Choice, len(resp.Choices)),
+		Choices: make([]openaiChat.StreamChoice, len(resp.Choices)),
 	}
 
 	// 转换使用情况
@@ -113,27 +113,27 @@ func ConvertResponse(resp *coreTypes.Response) *openaiChat.Response {
 
 	// 转换每个选择
 	for i, choice := range resp.Choices {
-		openaiChoice := openaiChat.Choice{
+		openaiChoice := openaiChat.StreamChoice{
 			FinishReason: choice.FinishReason,
 			Index:        i,
 		}
 
-		if choice.Message != nil {
-			// 非流式响应：数据在 Message 中
-			openaiChoice.Message = &openaiChat.Message{
-				Role: choice.Message.Role,
+		if choice.Delta != nil {
+			// 流式响应：数据在 Delta 中
+			openaiChoice.Delta = &openaiChat.Delta{
+				Role: choice.Delta.Role,
 			}
 
 			// 转换消息内容
-			if choice.Message.Content != nil {
-				content := *choice.Message.Content
-				openaiChoice.Message.Content = &content
+			if choice.Delta.Content != nil {
+				content := *choice.Delta.Content
+				openaiChoice.Delta.Content = &content
 			}
 
 			// 转换工具调用
-			if len(choice.Message.ToolCalls) > 0 {
-				openaiChoice.Message.ToolCalls = make([]openaiChat.ToolCall, len(choice.Message.ToolCalls))
-				for j, toolCall := range choice.Message.ToolCalls {
+			if len(choice.Delta.ToolCalls) > 0 {
+				openaiChoice.Delta.ToolCalls = make([]openaiChat.ToolCall, len(choice.Delta.ToolCalls))
+				for j, toolCall := range choice.Delta.ToolCalls {
 					openaiToolCall := openaiChat.ToolCall{}
 
 					// 转换 ID（字符串转指针）
@@ -160,13 +160,13 @@ func ConvertResponse(resp *coreTypes.Response) *openaiChat.Response {
 							openaiToolCall.Function.Arguments = &args
 						}
 					}
-					openaiChoice.Message.ToolCalls[j] = openaiToolCall
+					openaiChoice.Delta.ToolCalls[j] = openaiToolCall
 				}
 			}
 
 			// 传递额外字段
-			if choice.Message.ExtraFields != nil {
-				openaiChoice.Message.ExtraFields = choice.Message.ExtraFields
+			if choice.Delta.ExtraFields != nil {
+				openaiChoice.Delta.ExtraFields = choice.Delta.ExtraFields
 			}
 		}
 
