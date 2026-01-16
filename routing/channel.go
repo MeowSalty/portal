@@ -67,7 +67,7 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	}
 
 	errorCode := errors.GetHTTPStatus(err)
-	errorMessage := errors.GetMessage(err)
+	errorMessage := err.(*errors.Error).Error()
 
 	// 根据错误层级确定资源类型和资源 ID
 	errorLevel := errors.GetErrorLevel(err)
