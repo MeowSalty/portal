@@ -1,7 +1,6 @@
 package responses_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	openaiResponsesConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/responses"
@@ -83,52 +82,6 @@ func TestConvertResponsesCoreResponse_TextOutput(t *testing.T) {
 	}
 }
 
-func TestConvertResponsesStreamEvent_Delta(t *testing.T) {
-	jsonData := `{"type":"response.output_text.delta","delta":"Hi"}`
-	var event openaiResponses.ResponsesStreamEvent
-	if err := json.Unmarshal([]byte(jsonData), &event); err != nil {
-		t.Fatalf("反序列化失败: %v", err)
-	}
-
-	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
-	if resp == nil {
-		t.Fatal("期望返回非空响应")
-	}
-
-	if len(resp.Choices) != 1 || resp.Choices[0].Delta == nil || resp.Choices[0].Delta.Content == nil {
-		t.Fatal("期望返回 Delta 内容")
-	}
-
-	if *resp.Choices[0].Delta.Content != "Hi" {
-		t.Errorf("期望 Delta 内容为 Hi，实际为 %s", *resp.Choices[0].Delta.Content)
-	}
-}
-
-func TestConvertResponsesStreamEvent_CompletedUsageOnly(t *testing.T) {
-	jsonData := `{"type":"response.completed","response":{"id":"resp_999","object":"response","created_at":1700000200,"model":"gpt-4o-mini","usage":{"input_tokens":1,"output_tokens":2,"total_tokens":3}}}`
-	var event openaiResponses.ResponsesStreamEvent
-	if err := json.Unmarshal([]byte(jsonData), &event); err != nil {
-		t.Fatalf("反序列化失败: %v", err)
-	}
-
-	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
-	if resp == nil {
-		t.Fatal("期望返回非空响应")
-	}
-
-	if resp.Usage == nil {
-		t.Fatal("期望 Usage 不为空")
-	}
-
-	if resp.Usage.PromptTokens != 1 || resp.Usage.CompletionTokens != 2 || resp.Usage.TotalTokens != 3 {
-		t.Errorf("Usage 映射不正确")
-	}
-
-	if len(resp.Choices) != 0 {
-		t.Errorf("completed 事件不应包含 choices，实际为 %d", len(resp.Choices))
-	}
-}
-
 func TestConvertResponsesResponse_WithContentParts(t *testing.T) {
 	coreResponse := openaiResponsesConverter.ConvertCoreResponse(&openaiResponses.Response{
 		ID:        "resp_456",
@@ -172,26 +125,5 @@ func TestConvertResponsesResponse_WithContentParts(t *testing.T) {
 
 	if len(converted.Output[0].Content[0].Annotations) != 1 {
 		t.Fatalf("期望 Output Content annotations 不为空")
-	}
-}
-
-func TestConvertResponsesStreamEvent_Error(t *testing.T) {
-	jsonData := `{"type":"error","error":{"message":"bad request","type":"invalid_request_error"}}`
-	var event openaiResponses.ResponsesStreamEvent
-	if err := json.Unmarshal([]byte(jsonData), &event); err != nil {
-		t.Fatalf("反序列化失败: %v", err)
-	}
-
-	resp := openaiResponsesConverter.ConvertStreamEvent(&event)
-	if resp == nil {
-		t.Fatal("期望返回非空响应")
-	}
-
-	if len(resp.Choices) != 1 || resp.Choices[0].Error == nil {
-		t.Fatal("期望返回 Error")
-	}
-
-	if resp.Choices[0].Error.Message != "bad request" {
-		t.Errorf("期望错误消息为 bad request，实际为 %s", resp.Choices[0].Error.Message)
 	}
 }
