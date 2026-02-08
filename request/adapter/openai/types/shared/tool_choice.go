@@ -2,19 +2,16 @@ package shared
 
 import "encoding/json"
 
-// FunctionDefinition 表示函数定义
-type FunctionDefinition struct {
-	Name        string      `json:"name"`                  // 函数名称
-	Description *string     `json:"description,omitempty"` // 描述
-	Parameters  interface{} `json:"parameters"`            // 参数
-}
-
 // ToolChoiceUnion 表示工具选择联合类型
 type ToolChoiceUnion struct {
 	Auto        *string
 	Allowed     *ToolChoiceAllowed
 	Named       *ToolChoiceNamed
 	NamedCustom *ToolChoiceNamedCustom
+	NamedMCP    *ToolChoiceNamedMCP
+	Hosted      *ToolChoiceHosted
+	ApplyPatch  *ToolChoiceApplyPatch
+	Shell       *ToolChoiceShell
 }
 
 // ToolChoiceAllowed 表示允许的工具选择
@@ -24,12 +21,13 @@ type ToolChoiceAllowed struct {
 	Tools []map[string]interface{} `json:"tools"` // 工具列表
 }
 
-// ToolChoiceNamed 表示命名的工具选择
+// ToolChoiceNamed 表示命名的工具选择（函数）
 type ToolChoiceNamed struct {
 	Type     string `json:"type"` // 类型
 	Function struct {
 		Name string `json:"name"` // 函数名称
-	} `json:"function"` // 函数
+	} `json:"function,omitempty"` // 函数
+	Name *string `json:"name,omitempty"`
 }
 
 // ToolChoiceNamedCustom 表示命名的自定义工具选择
@@ -37,25 +35,30 @@ type ToolChoiceNamedCustom struct {
 	Type   string `json:"type"` // 类型
 	Custom struct {
 		Name string `json:"name"` // 名称
-	} `json:"custom"` // 自定义
+	} `json:"custom,omitempty"` // 自定义
+	Name *string `json:"name,omitempty"`
 }
 
-// ToolUnion 表示工具联合类型
-type ToolUnion struct {
-	Function *ToolFunction
-	Custom   *ToolCustom
+// ToolChoiceNamedMCP 表示命名的 MCP 工具选择
+type ToolChoiceNamedMCP struct {
+	Type        string  `json:"type"`
+	ServerLabel string  `json:"server_label"`
+	Name        *string `json:"name,omitempty"`
 }
 
-// ToolFunction 表示函数工具
-type ToolFunction struct {
-	Type     string             `json:"type"`     // 类型
-	Function FunctionDefinition `json:"function"` // 函数定义
+// ToolChoiceHosted 表示内置工具选择
+type ToolChoiceHosted struct {
+	Type string `json:"type"`
 }
 
-// ToolCustom 表示自定义工具
-type ToolCustom struct {
-	Type   string      `json:"type"`   // 类型
-	Custom interface{} `json:"custom"` // 自定义内容
+// ToolChoiceApplyPatch 表示 apply_patch 工具选择
+type ToolChoiceApplyPatch struct {
+	Type string `json:"type"`
+}
+
+// ToolChoiceShell 表示 shell 工具选择
+type ToolChoiceShell struct {
+	Type string `json:"type"`
 }
 
 // MarshalJSON 实现 ToolChoiceUnion 的自定义 JSON 序列化
@@ -71,6 +74,18 @@ func (t ToolChoiceUnion) MarshalJSON() ([]byte, error) {
 	}
 	if t.NamedCustom != nil {
 		return json.Marshal(t.NamedCustom)
+	}
+	if t.NamedMCP != nil {
+		return json.Marshal(t.NamedMCP)
+	}
+	if t.Hosted != nil {
+		return json.Marshal(t.Hosted)
+	}
+	if t.ApplyPatch != nil {
+		return json.Marshal(t.ApplyPatch)
+	}
+	if t.Shell != nil {
+		return json.Marshal(t.Shell)
 	}
 	return json.Marshal(nil)
 }
@@ -108,53 +123,40 @@ func (t *ToolChoiceUnion) UnmarshalJSON(data []byte) error {
 			t.NamedCustom = &custom
 			return nil
 		}
-	default:
-		// 尝试 ToolChoiceAllowed
+	case "mcp":
+		var mcp ToolChoiceNamedMCP
+		if err := json.Unmarshal(data, &mcp); err == nil {
+			t.NamedMCP = &mcp
+			return nil
+		}
+	case "apply_patch":
+		var patch ToolChoiceApplyPatch
+		if err := json.Unmarshal(data, &patch); err == nil {
+			t.ApplyPatch = &patch
+			return nil
+		}
+	case "shell":
+		var shell ToolChoiceShell
+		if err := json.Unmarshal(data, &shell); err == nil {
+			t.Shell = &shell
+			return nil
+		}
+	case "file_search", "web_search_preview", "computer_use_preview", "web_search_preview_2025_03_11", "image_generation", "code_interpreter":
+		var hosted ToolChoiceHosted
+		if err := json.Unmarshal(data, &hosted); err == nil {
+			t.Hosted = &hosted
+			return nil
+		}
+	case "allowed_tools":
 		var allowed ToolChoiceAllowed
 		if err := json.Unmarshal(data, &allowed); err == nil {
 			t.Allowed = &allowed
 			return nil
 		}
-	}
-
-	return nil
-}
-
-// MarshalJSON 实现 ToolUnion 的自定义 JSON 序列化
-func (t ToolUnion) MarshalJSON() ([]byte, error) {
-	if t.Function != nil {
-		return json.Marshal(t.Function)
-	}
-	if t.Custom != nil {
-		return json.Marshal(t.Custom)
-	}
-	return json.Marshal(nil)
-}
-
-// UnmarshalJSON 实现 ToolUnion 的自定义 JSON 反序列化
-func (t *ToolUnion) UnmarshalJSON(data []byte) error {
-	// 解析到通用 map 以检查 type 字段
-	var raw map[string]interface{}
-	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
-	}
-
-	typeVal, ok := raw["type"].(string)
-	if !ok {
-		return nil
-	}
-
-	switch typeVal {
-	case "function":
-		var function ToolFunction
-		if err := json.Unmarshal(data, &function); err == nil {
-			t.Function = &function
-			return nil
-		}
-	case "custom":
-		var custom ToolCustom
-		if err := json.Unmarshal(data, &custom); err == nil {
-			t.Custom = &custom
+	default:
+		var allowed ToolChoiceAllowed
+		if err := json.Unmarshal(data, &allowed); err == nil {
+			t.Allowed = &allowed
 			return nil
 		}
 	}
