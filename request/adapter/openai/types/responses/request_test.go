@@ -2,6 +2,7 @@ package responses
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/MeowSalty/portal/request/adapter/openai/types/shared"
@@ -124,8 +125,23 @@ func TestRequestExtraFields(t *testing.T) {
 }
 
 // compareRawMessage 比较两个 json.RawMessage 是否相等
+// 使用 JSON 语义比较，避免空格等格式差异导致的比较失败
 func compareRawMessage(a, b json.RawMessage) bool {
-	return string(a) == string(b)
+	// 先尝试字符串比较（快速路径）
+	if string(a) == string(b) {
+		return true
+	}
+
+	// 字符串不相等，使用 JSON 语义比较
+	var aVal, bVal interface{}
+	if err := json.Unmarshal(a, &aVal); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(b, &bVal); err != nil {
+		return false
+	}
+
+	return reflect.DeepEqual(aVal, bVal)
 }
 
 // TestInputUnion 测试 InputUnion 的双态（字符串/数组）
