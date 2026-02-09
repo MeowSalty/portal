@@ -5,16 +5,16 @@ import (
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
+	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/MeowSalty/portal/types"
 )
 
 // ChatCompletion 处理聊天完成请求
 func (p *Request) ChatCompletion(
 	ctx context.Context,
-	request *types.Request,
+	request *types.RequestContract,
 	channel *routing.Channel,
-) (*types.Response, error) {
+) (*types.ResponseContract, error) {
 	now := time.Now()
 
 	// 创建带有请求上下文的日志记录器
@@ -77,13 +77,13 @@ func (p *Request) ChatCompletion(
 
 	// 记录 Token 用量
 	if response.Usage != nil {
-		requestLog.PromptTokens = &response.Usage.PromptTokens
-		requestLog.CompletionTokens = &response.Usage.CompletionTokens
-		requestLog.TotalTokens = &response.Usage.TotalTokens
+		requestLog.PromptTokens = response.Usage.InputTokens
+		requestLog.CompletionTokens = response.Usage.OutputTokens
+		requestLog.TotalTokens = response.Usage.TotalTokens
 
 		log.DebugContext(ctx, "记录 Token 使用情况",
-			"prompt_tokens", response.Usage.PromptTokens,
-			"completion_tokens", response.Usage.CompletionTokens,
+			"prompt_tokens", response.Usage.InputTokens,
+			"completion_tokens", response.Usage.OutputTokens,
 			"total_tokens", response.Usage.TotalTokens,
 		)
 	}

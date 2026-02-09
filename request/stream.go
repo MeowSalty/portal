@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
+	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/MeowSalty/portal/types"
 	"github.com/valyala/fasthttp"
 )
 
@@ -19,8 +19,8 @@ import (
 // - 处理流数据
 func (p *Request) ChatCompletionStream(
 	ctx context.Context,
-	request *types.Request,
-	output chan<- *types.Response,
+	request *types.RequestContract,
+	output chan<- *types.StreamEventContract,
 	channel *routing.Channel,
 ) error {
 	// 创建带有请求上下文的日志记录器
@@ -61,7 +61,7 @@ func (p *Request) ChatCompletionStream(
 
 	// 创建内部流
 	log.DebugContext(ctx, "创建内部流通道")
-	internalStream := make(chan *types.Response, 1024)
+	internalStream := make(chan *types.StreamEventContract, 1024)
 
 	log.DebugContext(ctx, "执行流式聊天完成请求")
 	err = adapter.ChatCompletionStream(ctx, request, channel, internalStream)
@@ -82,8 +82,8 @@ func (p *Request) ChatCompletionStream(
 // handleStreamData 处理流数据
 func (p *Request) handleStreamData(
 	ctx context.Context,
-	input <-chan *types.Response,
-	output chan<- *types.Response,
+	input <-chan *types.StreamEventContract,
+	output chan<- *types.StreamEventContract,
 	requestLog *RequestLog,
 ) error {
 	log := p.logger.With(
@@ -137,13 +137,13 @@ func (p *Request) handleStreamData(
 
 		// 记录 Token 用量
 		if response.Usage != nil {
-			requestLog.CompletionTokens = &response.Usage.CompletionTokens
-			requestLog.PromptTokens = &response.Usage.PromptTokens
-			requestLog.TotalTokens = &response.Usage.TotalTokens
+			requestLog.CompletionTokens = response.Usage.OutputTokens
+			requestLog.PromptTokens = response.Usage.InputTokens
+			requestLog.TotalTokens = response.Usage.TotalTokens
 
 			log.DebugContext(ctx, "更新 Token 使用情况",
-				"prompt_tokens", response.Usage.PromptTokens,
-				"completion_tokens", response.Usage.CompletionTokens,
+				"prompt_tokens", response.Usage.InputTokens,
+				"completion_tokens", response.Usage.OutputTokens,
 				"total_tokens", response.Usage.TotalTokens,
 			)
 		}
@@ -175,8 +175,8 @@ func (p *Request) handleStreamData(
 // sendResponse 发送响应到输出通道
 func (p *Request) sendResponse(
 	ctx context.Context,
-	output chan<- *types.Response,
-	response *types.Response,
+	output chan<- *types.StreamEventContract,
+	response *types.StreamEventContract,
 	requestLog *RequestLog,
 	firstByteTime *time.Time,
 ) error {
