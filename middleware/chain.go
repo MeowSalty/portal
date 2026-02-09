@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 
-	"github.com/MeowSalty/portal/types"
+	"github.com/MeowSalty/portal/request/adapter/types"
 )
 
 // Chain 中间件链
@@ -17,7 +17,7 @@ func NewChain(middlewares ...Middleware) *Chain {
 }
 
 // Process 处理非流式响应
-func (c *Chain) Process(ctx context.Context, req *types.Request, resp *types.Response) (*types.Response, error) {
+func (c *Chain) Process(ctx context.Context, req *types.RequestContract, resp *types.ResponseContract) (*types.ResponseContract, error) {
 	if len(c.middlewares) == 0 {
 		return resp, nil
 	}
@@ -32,7 +32,7 @@ func (c *Chain) Process(ctx context.Context, req *types.Request, resp *types.Res
 }
 
 // ProcessStream 处理流式响应（支持有状态的 StreamMiddleware）
-func (c *Chain) ProcessStream(ctx context.Context, req *types.Request, in <-chan *types.Response) <-chan *types.Response {
+func (c *Chain) ProcessStream(ctx context.Context, req *types.RequestContract, in <-chan *types.StreamEventContract) <-chan *types.StreamEventContract {
 	if len(c.middlewares) == 0 {
 		return in
 	}
@@ -48,17 +48,17 @@ func (c *Chain) ProcessStream(ctx context.Context, req *types.Request, in <-chan
 		}
 	}
 
-	out := make(chan *types.Response, cap(in))
+	out := make(chan *types.StreamEventContract, cap(in))
 	go func() {
 		defer close(out)
 
 		// 处理每个 chunk
 		for resp := range in {
-			results := []*types.Response{resp}
+			results := []*types.StreamEventContract{resp}
 
 			// 依次通过每个 handler
 			for _, h := range handlers {
-				var nextResults []*types.Response
+				var nextResults []*types.StreamEventContract
 				for _, r := range results {
 					processed, err := h.Handle(ctx, r)
 					if err != nil {
@@ -103,17 +103,17 @@ func (c *Chain) ProcessStream(ctx context.Context, req *types.Request, in <-chan
 // statelessHandler 将无状态中间件包装为 StreamHandler
 type statelessHandler struct {
 	middleware Middleware
-	req        *types.Request
+	req        *types.RequestContract
 }
 
-func (h *statelessHandler) Handle(ctx context.Context, resp *types.Response) ([]*types.Response, error) {
+func (h *statelessHandler) Handle(ctx context.Context, resp *types.StreamEventContract) ([]*types.StreamEventContract, error) {
 	processed, err := h.middleware.ProcessStream(ctx, h.req, resp)
 	if err != nil {
 		return nil, err
 	}
-	return []*types.Response{processed}, nil
+	return []*types.StreamEventContract{processed}, nil
 }
 
-func (h *statelessHandler) Flush(ctx context.Context) ([]*types.Response, error) {
+func (h *statelessHandler) Flush(ctx context.Context) ([]*types.StreamEventContract, error) {
 	return nil, nil // 无状态，无需刷新
 }
