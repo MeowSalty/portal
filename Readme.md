@@ -55,7 +55,7 @@ if err != nil {
 
 ```go
 // 创建请求
-request := &types.Request{
+request := &types.RequestContract{
     Model: "gpt-3.5-turbo",
     Messages: []types.Message{
         {
