@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/MeowSalty/portal/errors"
+	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 	"github.com/valyala/fasthttp"
 )
 
@@ -51,9 +51,9 @@ func (a *Adapter) Name() string {
 // ChatCompletion 执行聊天完成请求
 func (a *Adapter) ChatCompletion(
 	ctx context.Context,
-	request *coreTypes.Request,
+	request *types.RequestContract,
 	channel *routing.Channel,
-) (*coreTypes.Response, error) {
+) (*types.ResponseContract, error) {
 	// 创建提供商特定请求
 	apiReq, err := a.provider.CreateRequest(request, channel)
 	if err != nil {
@@ -85,9 +85,9 @@ func (a *Adapter) ChatCompletion(
 // ChatCompletionStream 执行流式聊天完成请求
 func (a *Adapter) ChatCompletionStream(
 	ctx context.Context,
-	request *coreTypes.Request,
+	request *types.RequestContract,
 	channel *routing.Channel,
-	output chan<- *coreTypes.Response,
+	output chan<- *types.StreamEventContract,
 ) error {
 	if !a.provider.SupportsStreaming() {
 		return errors.New(errors.ErrCodeUnimplemented, "提供商不支持流式传输").
