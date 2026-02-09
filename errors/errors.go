@@ -353,7 +353,7 @@ func GetErrorLevel(err error) ErrorLevel {
 	code := GetCode(err)
 	switch code {
 	// 密钥层级
-	case ErrCodeAuthenticationFailed:
+	case ErrCodeAuthenticationFailed, ErrCodePermissionDenied:
 		return ErrorLevelKey
 	// 模型层级
 	case ErrCodeNotFound, ErrCodeDeadlineExceeded:
