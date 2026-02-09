@@ -87,7 +87,7 @@ func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}, statusCode 
 				return ErrorFromUpstream
 			}
 			// 当状态码为 503 且错误类型为 one_hub_error 或 new_api_error 时也视为上游错误
-			if statusCode == 503 && (errorType == "one_hub_error" || errorType == "new_api_error") {
+			if statusCode == 503 && (errorType == "one_hub_error" || errorType == "new_api_error" || errorType == "bad_response_status_code") {
 				return ErrorFromUpstream
 			}
 		}
