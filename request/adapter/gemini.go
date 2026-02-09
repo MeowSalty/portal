@@ -2,15 +2,19 @@ package adapter
 
 import (
 	"encoding/json"
+	"fmt"
 
+	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/request/adapter/gemini/converter"
 	geminiTypes "github.com/MeowSalty/portal/request/adapter/gemini/types"
+	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // Gemini Gemini 提供商实现
-type Gemini struct{}
+type Gemini struct {
+	logger logger.Logger
+}
 
 // init 函数注册 Gemini 提供商
 func init() {
@@ -30,38 +34,43 @@ func (p *Gemini) Name() string {
 }
 
 // CreateRequest 创建 Gemini 请求
-func (p *Gemini) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
-	return converter.ConvertRequest(request, channel), nil
+func (p *Gemini) CreateRequest(request *adapterTypes.RequestContract, channel *routing.Channel) (interface{}, error) {
+	return converter.FromContract(request)
 }
 
 // ParseResponse 解析 Gemini 响应
-func (p *Gemini) ParseResponse(responseData []byte) (*coreTypes.Response, error) {
+func (p *Gemini) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
 	// 首先检查是否是错误响应
 	var errorResp geminiTypes.ErrorResponse
 	if err := json.Unmarshal(responseData, &errorResp); err == nil && errorResp.Error.Code != 0 {
-		return &coreTypes.Response{
-			Choices: []coreTypes.Choice{
-				{
-					Error: &coreTypes.ErrorResponse{
-						Code:    errorResp.Error.Code,
-						Message: errorResp.Error.Message,
-					},
-				},
-			},
-		}, nil
+		code := fmt.Sprintf("%d", errorResp.Error.Code)
+		respErr := &adapterTypes.ResponseError{
+			Code:    &code,
+			Message: &errorResp.Error.Message,
+			Type:    &errorResp.Error.Status,
+		}
+		if len(errorResp.Error.Details) > 0 {
+			respErr.Extras = map[string]interface{}{
+				"details": errorResp.Error.Details,
+			}
+		}
+		return &adapterTypes.ResponseContract{Error: respErr}, nil
 	}
 
 	var response geminiTypes.Response
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		return nil, err
 	}
-	return converter.ConvertCoreResponse(&response), nil
+	return converter.ResponseToContract(&response, p.logger)
 }
 
 // ParseStreamResponse 解析 Gemini 流式响应
-func (p *Gemini) ParseStreamResponse(responseData []byte) (*coreTypes.Response, error) {
-	// 流式响应与普通响应格式相同
-	return p.ParseResponse(responseData)
+func (p *Gemini) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
+	var event geminiTypes.StreamEvent
+	if err := json.Unmarshal(responseData, &event); err != nil {
+		return nil, err
+	}
+	return converter.StreamEventToContract(&event, ctx, nil)
 }
 
 // APIEndpoint 返回 API 端点

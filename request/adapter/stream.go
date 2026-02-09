@@ -4,11 +4,12 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/MeowSalty/portal/errors"
+	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 	"github.com/valyala/fasthttp"
 )
 
@@ -18,8 +19,11 @@ func (a *Adapter) handleStreaming(
 	channel *routing.Channel,
 	headers map[string]string,
 	apiReq interface{},
-	stream chan<- *coreTypes.Response,
+	stream chan<- *types.StreamEventContract,
 ) error {
+	// 创建流索引上下文，用于在流式响应转换过程中生成和维护稳定的索引值
+	indexCtx := types.NewStreamIndexContext()
+
 	// 发送 HTTP 请求
 	httpResp, err := a.sendHTTPRequest(channel, headers, apiReq, true)
 	if err != nil {
@@ -81,8 +85,8 @@ func (a *Adapter) handleStreaming(
 						return
 					}
 
-					// 解析流式响应块
-					chunk, parseErr := a.provider.ParseStreamResponse([]byte(data))
+					// 解析流式响应块，传入流索引上下文
+					events, parseErr := a.provider.ParseStreamResponse(indexCtx, []byte(data))
 					if parseErr != nil {
 						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", data)
@@ -91,13 +95,18 @@ func (a *Adapter) handleStreaming(
 					}
 
 					// 确保响应块有效后再发送
-					if chunk != nil {
-						select {
-						case <-ctx.Done():
-							// 上下文已取消，停止发送响应块
-							return
-						default:
-							stream <- chunk
+					if len(events) > 0 {
+						for _, event := range events {
+							if event == nil {
+								continue
+							}
+							select {
+							case <-ctx.Done():
+								// 上下文已取消，停止发送响应块
+								return
+							default:
+								stream <- event
+							}
 						}
 					}
 				}
@@ -122,22 +131,24 @@ func (a *Adapter) handleStreaming(
 // sendStreamError 向流发送错误信息
 func (a *Adapter) sendStreamError(
 	ctx context.Context,
-	stream chan<- *coreTypes.Response,
+	stream chan<- *types.StreamEventContract,
 	code int,
 	message string,
 ) {
+	errEvent := &types.StreamEventContract{
+		Type: types.StreamEventError,
+		Error: &types.StreamErrorPayload{
+			Message: message,
+			Type:    "stream_error",
+			Code:    strconv.Itoa(code),
+		},
+		Extensions: map[string]interface{}{
+			"status_code": code,
+		},
+	}
+
 	select {
 	case <-ctx.Done():
-	default:
-		stream <- &coreTypes.Response{
-			Choices: []coreTypes.Choice{
-				{
-					Error: &coreTypes.ErrorResponse{
-						Code:    code,
-						Message: message,
-					},
-				},
-			},
-		}
+	case stream <- errEvent:
 	}
 }

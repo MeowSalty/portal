@@ -1,8 +1,8 @@
 package adapter
 
 import (
+	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // Provider 定义 AI 提供商的接口
@@ -26,7 +26,7 @@ type Provider interface {
 	// 返回：
 	//   - interface{}: 提供商特定的请求对象
 	//   - error: 转换失败时返回错误
-	CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error)
+	CreateRequest(request *types.RequestContract, channel *routing.Channel) (interface{}, error)
 
 	// ParseResponse 解析提供商响应并转换为核心响应
 	//
@@ -36,21 +36,22 @@ type Provider interface {
 	//   - responseData: 原始响应数据（JSON 字节数组）
 	//
 	// 返回：
-	//   - *coreTypes.Response: 统一的核心响应对象
+	//   - *types.ResponseContract: 统一的核心响应对象
 	//   - error: 解析失败时返回错误
-	ParseResponse(responseData []byte) (*coreTypes.Response, error)
+	ParseResponse(responseData []byte) (*types.ResponseContract, error)
 
 	// ParseStreamResponse 解析提供商流式响应并转换为核心响应
 	//
 	// 用于解析 Server-Sent Events (SSE) 格式的流式响应。
 	//
 	// 参数：
+	//   - ctx: 流索引上下文，用于生成和维护稳定的索引值
 	//   - responseData: 单个流式响应块的数据（JSON 字节数组）
 	//
 	// 返回：
-	//   - *coreTypes.Response: 统一的核心响应对象
+	//   - []*types.StreamEventContract: 统一的核心流式事件列表
 	//   - error: 解析失败时返回错误
-	ParseStreamResponse(responseData []byte) (*coreTypes.Response, error)
+	ParseStreamResponse(ctx types.StreamIndexContext, responseData []byte) ([]*types.StreamEventContract, error)
 
 	// APIEndpoint 返回 API 端点路径
 	//

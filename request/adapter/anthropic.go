@@ -3,14 +3,17 @@ package adapter
 import (
 	"encoding/json"
 
+	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/request/adapter/anthropic/converter"
 	anthropicTypes "github.com/MeowSalty/portal/request/adapter/anthropic/types"
+	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // Anthropic Anthropic 提供商实现
-type Anthropic struct{}
+type Anthropic struct {
+	logger logger.Logger
+}
 
 // init 函数注册 Anthropic 提供商
 func init() {
@@ -30,26 +33,21 @@ func (p *Anthropic) Name() string {
 }
 
 // CreateRequest 创建 Anthropic 请求
-func (p *Anthropic) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
-	return converter.ConvertRequest(request, channel), nil
+func (p *Anthropic) CreateRequest(request *adapterTypes.RequestContract, channel *routing.Channel) (interface{}, error) {
+	request.Model = channel.ModelName
+	return converter.RequestFromContract(request)
 }
 
 // ParseResponse 解析 Anthropic 响应
-func (p *Anthropic) ParseResponse(responseData []byte) (*coreTypes.Response, error) {
+func (p *Anthropic) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
 	// 首先检查是否是错误响应
 	var errorResp anthropicTypes.ErrorResponse
 	if err := json.Unmarshal(responseData, &errorResp); err == nil && errorResp.Type == "error" {
-		return &coreTypes.Response{
-			Choices: []coreTypes.Choice{
-				{
-					Error: &coreTypes.ErrorResponse{
-						Code:    500,
-						Message: errorResp.Error.Message,
-						Metadata: map[string]interface{}{
-							"type": errorResp.Error.Type,
-						},
-					},
-				},
+		return &adapterTypes.ResponseContract{
+			Error: &adapterTypes.ResponseError{
+				Code:    &errorResp.Error.Type,
+				Message: &errorResp.Error.Message,
+				Type:    &errorResp.Error.Type,
 			},
 		}, nil
 	}
@@ -58,37 +56,24 @@ func (p *Anthropic) ParseResponse(responseData []byte) (*coreTypes.Response, err
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		return nil, err
 	}
-	return response.ConvertCoreResponse(), nil
+	return converter.ResponseToContract(&response, p.logger)
 }
 
 // ParseStreamResponse 解析 Anthropic 流式响应
-func (p *Anthropic) ParseStreamResponse(responseData []byte) (*coreTypes.Response, error) {
+func (p *Anthropic) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
 	var event anthropicTypes.StreamEvent
 	if err := json.Unmarshal(responseData, &event); err != nil {
 		return nil, err
 	}
 
-	// 检查是否是错误事件
-	if event.Type == "error" {
-		var errorResp anthropicTypes.ErrorResponse
-		if err := json.Unmarshal(responseData, &errorResp); err == nil {
-			return &coreTypes.Response{
-				Choices: []coreTypes.Choice{
-					{
-						Error: &coreTypes.ErrorResponse{
-							Code:    500,
-							Message: errorResp.Error.Message,
-							Metadata: map[string]interface{}{
-								"type": errorResp.Error.Type,
-							},
-						},
-					},
-				},
-			}, nil
-		}
+	converted, err := converter.StreamEventToContract(&event, ctx, p.logger)
+	if err != nil {
+		return nil, err
 	}
-
-	return event.ConvertCoreResponse(), nil
+	if converted == nil {
+		return nil, nil
+	}
+	return []*adapterTypes.StreamEventContract{converted}, nil
 }
 
 // APIEndpoint 返回 API 端点

@@ -4,17 +4,19 @@ import (
 	"encoding/json"
 	"strings"
 
-	openaiChatConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/chat"
-	openaiResponsesConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/responses"
+	"github.com/MeowSalty/portal/logger"
+	chatConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/chat"
+	responsesConverter "github.com/MeowSalty/portal/request/adapter/openai/converter/responses"
 	openaiChat "github.com/MeowSalty/portal/request/adapter/openai/types/chat"
 	openaiResponses "github.com/MeowSalty/portal/request/adapter/openai/types/responses"
+	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	coreTypes "github.com/MeowSalty/portal/types"
 )
 
 // OpenAI OpenAI 提供商实现
 type OpenAI struct {
 	apiVariant string
+	logger     logger.Logger
 }
 
 // init 函数注册 OpenAI 提供商
@@ -35,46 +37,54 @@ func (p *OpenAI) Name() string {
 }
 
 // CreateRequest 创建 OpenAI 请求
-func (p *OpenAI) CreateRequest(request *coreTypes.Request, channel *routing.Channel) (interface{}, error) {
+func (p *OpenAI) CreateRequest(request *adapterTypes.RequestContract, channel *routing.Channel) (interface{}, error) {
+	request.Model = channel.ModelName
 	style := p.setAPIStyle(channel)
 	if style == "responses" {
-		return openaiResponsesConverter.ConvertRequest(request, channel), nil
+		return responsesConverter.RequestFromContract(request)
 	}
-	return openaiChatConverter.ConvertRequest(request, channel), nil
+	return chatConverter.RequestFromContract(request)
 }
 
 // ParseResponse 解析 OpenAI 响应
-func (p *OpenAI) ParseResponse(responseData []byte) (*coreTypes.Response, error) {
+func (p *OpenAI) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
 	if p.apiVariant == "responses" {
 		var response openaiResponses.Response
 		if err := json.Unmarshal(responseData, &response); err != nil {
 			return nil, err
 		}
-		return openaiResponsesConverter.ConvertCoreResponse(&response), nil
+		return responsesConverter.ResponseToContract(&response, p.logger)
 	}
 
 	var response openaiChat.Response
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		return nil, err
 	}
-	return openaiChatConverter.ConvertCoreResponse(&response), nil
+	return chatConverter.ResponseToContract(&response, p.logger)
 }
 
 // ParseStreamResponse 解析 OpenAI 流式响应
-func (p *OpenAI) ParseStreamResponse(responseData []byte) (*coreTypes.Response, error) {
+func (p *OpenAI) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
 	if p.apiVariant == "responses" {
-		var event openaiResponses.ResponsesStreamEvent
+		var event openaiResponses.StreamEvent
 		if err := json.Unmarshal(responseData, &event); err != nil {
 			return nil, err
 		}
-		return openaiResponsesConverter.ConvertStreamEvent(&event), nil
+		converted, err := responsesConverter.StreamEventToContract(&event, nil)
+		if err != nil {
+			return nil, err
+		}
+		if converted == nil {
+			return nil, nil
+		}
+		return []*adapterTypes.StreamEventContract{converted}, nil
 	}
 
-	var chunk openaiChat.ResponseChunk
+	var chunk openaiChat.StreamEvent
 	if err := json.Unmarshal(responseData, &chunk); err != nil {
 		return nil, err
 	}
-	return openaiChatConverter.ConvertCoreStreamResponse(&chunk), nil
+	return chatConverter.StreamEventToContract(&chunk, nil)
 }
 
 // APIEndpoint 返回 API 端点
