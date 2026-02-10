@@ -164,11 +164,11 @@
 3. **输出项建立**：每个 `output_item` 必须先出现 `response.output_item.added`。
 4. **内容片段建立**：若输出项包含内容片段，需先发 `response.content_part.added`。
 5. **增量与完成**：
-   - 文本：`response.output_text.delta`* → `response.output_text.done`。
-   - 拒绝：`response.refusal.delta`* → `response.refusal.done`。
-   - 推理文本：`response.reasoning_text.delta`* → `response.reasoning_text.done`。
-   - 推理摘要文本：`response.reasoning_summary_text.delta`* → `response.reasoning_summary_text.done`。
-   - 函数/自定义/MCP 参数或输入：`*.delta`* → `*.done`。
+   - 文本：`response.output_text.delta`\* → `response.output_text.done`。
+   - 拒绝：`response.refusal.delta`\* → `response.refusal.done`。
+   - 推理文本：`response.reasoning_text.delta`\* → `response.reasoning_text.done`。
+   - 推理摘要文本：`response.reasoning_summary_text.delta`\* → `response.reasoning_summary_text.done`。
+   - 函数/自定义/MCP 参数或输入：`*.delta`_ → `_.done`。
 6. **输出项完成**：每个 `output_item` 必须以 `response.output_item.done` 结束。
 7. **生命周期结束**：以 `response.completed` / `response.failed` / `response.incomplete` 之一收束。
 
@@ -186,39 +186,50 @@
 
 ### 5.1 请求对齐
 
-| 字段/能力 | 官方规范 | 本实现 | 说明 |
-| --- | --- | --- | --- |
-| `model`/`input` | ✅ | ✅ | 与 `CreateResponse` 对齐。 |
-| `stream`/`stream_options.include_obfuscation` | ✅ | ✅ | 支持 obfuscation 透传。 |
-| `reasoning` | ✅ | ✅ | `summary` 与 `generate_summary` 互斥。 |
-| `tools`/`tool_choice`/`parallel_tool_calls`/`max_tool_calls` | ✅ | ✅ | 结构对齐。 |
-| `include` | ✅ | ✅ | 枚举值与官方一致。 |
-| `input_audio` | ✅ | ❌ | `InputContent` 尚未实现。 |
-| 未知字段透传 | ⚠️ | ✅ | `ExtraFields` 透传，需上层校验。 |
+| 字段/能力                                                    | 官方规范 | 本实现 | 说明                                                                                   |
+| ------------------------------------------------------------ | -------- | ------ | -------------------------------------------------------------------------------------- |
+| `model`/`input`                                              | ✅       | ✅     | 与 `CreateResponse` 对齐。                                                             |
+| `stream`/`stream_options.include_obfuscation`                | ✅       | ✅     | 支持 obfuscation 透传。                                                                |
+| `reasoning`                                                  | ✅       | ✅     | `summary` 与 `generate_summary` 互斥。                                                 |
+| `tools`/`tool_choice`/`parallel_tool_calls`/`max_tool_calls` | ✅       | ✅     | 结构对齐。                                                                             |
+| `include`                                                    | ✅       | ✅     | 枚举值与官方一致。                                                                     |
+| `context_management`                                         | ✅       | ❌     | `Request` 顶层字段缺失。                                                               |
+| `input_audio`                                                | ✅       | ❌     | `InputContent` 尚未实现。                                                              |
+| `image_generation` 工具扩展字段                              | ✅       | ❌     | `ToolImageGen` 缺 `action/background/input_fidelity/input_image_mask/partial_images`。 |
+| `mcp.require_approval`                                       | ✅       | ❌     | `ToolMCP` 未包含 `require_approval`。                                                  |
+| 未知字段透传                                                 | ⚠️       | ✅     | `ExtraFields` 透传，需上层校验。                                                       |
 
 ### 5.2 非流式响应对齐
 
-| 字段/能力 | 官方规范 | 本实现 | 说明 |
-| --- | --- | --- | --- |
-| `Response` 主体字段 | ✅ | ✅ | 必填字段完整覆盖。 |
-| `instructions` 强类型 | ✅ | ✅ | 使用 `ResponseInstructions`，支持 string / []InputItem / null。 |
-| `usage` 结构 | ✅ | ✅ | 字段均为必填。 |
+| 字段/能力             | 官方规范 | 本实现 | 说明                                                            |
+| --------------------- | -------- | ------ | --------------------------------------------------------------- |
+| `Response` 主体字段   | ✅       | ✅     | 必填字段完整覆盖。                                              |
+| `instructions` 强类型 | ✅       | ✅     | 使用 `ResponseInstructions`，支持 string / []InputItem / null。 |
+| `usage` 结构          | ✅       | ✅     | 字段均为必填。                                                  |
 
 ### 5.3 流式响应对齐
 
-| 字段/能力 | 官方规范 | 本实现 | 说明 |
-| --- | --- | --- | --- |
-| `ResponseStreamEvent` 事件集合 | ✅ | ✅ | 覆盖 MCP、图像生成、代码解释器、音频等事件。 |
-| `sequence_number` | ✅ | ✅ | 全局单调递增要求。 |
-| `logprobs` 必填数组 | ✅ | ✅ | 允许空数组。 |
-| `obfuscation` | ✅ | ✅ | 依赖 `stream_options.include_obfuscation`。 |
+| 字段/能力                      | 官方规范 | 本实现 | 说明                                         |
+| ------------------------------ | -------- | ------ | -------------------------------------------- |
+| `ResponseStreamEvent` 事件集合 | ✅       | ✅     | 覆盖 MCP、图像生成、代码解释器、音频等事件。 |
+| `sequence_number`              | ✅       | ✅     | 全局单调递增要求。                           |
+| `logprobs` 必填数组            | ✅       | ✅     | 允许空数组。                                 |
+| `obfuscation`                  | ✅       | ✅     | 依赖 `stream_options.include_obfuscation`。  |
 
 ---
 
 ## 6. 差异与兼容策略
 
 - deprecated 字段：`user` 保留兼容但不推荐使用。
-- 未实现字段：`input_audio` 结构当前缺失。
+- 未实现字段：`context_management`、`input_audio` 结构当前缺失。
+- 工具字段缺失：`ToolImageGen` 未覆盖 `action/background/input_fidelity/input_image_mask/partial_images`，`ToolMCP` 缺 `require_approval`。
+- 输入侧工具调用/输出存在偏差：
+  - `InputFunctionShellToolCall`/`InputApplyPatchToolCall`：`id`、`status` 被实现为必填，且包含 `created_by`（文档为可选/无该字段）。
+  - `InputFunctionToolCallOutput` 缺 `status`。
+  - `InputComputerToolCallOutput` 缺 `acknowledged_safety_checks` 与 `status`。
+  - `InputLocalShellToolCallOutput` 多出 `call_id` 且 `status` 非可选。
+  - `InputFunctionShellToolCallOutput` 缺 `status`，且 `id`/`created_by` 为必填（文档可选/无该字段）。
+  - `InputApplyPatchToolCallOutput` 缺 `output`。
 - 弱类型字段：工具 `action`/`results` 使用 `interface{}` 承载，强类型约束不足。
 - EasyInputMessage：`InputItem` 缺省 `type` 时按 `message` 解析。
 
