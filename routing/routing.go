@@ -73,18 +73,48 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
 
-	// 1. 通过模型名称或别名查找模型
+	// 通过模型名称或别名查找模型
 	models, err := r.modelRepo.FindModelsByNameOrAlias(ctx, modelName)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
 
 	if len(models) == 0 {
-		// 返回错误
 		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型").WithHTTPStatus(fasthttp.StatusNotFound)
 	}
 
-	// 2. 为每个模型构建通道
+	return r.selectChannelFromModels(ctx, models)
+}
+
+// GetChannelByProvider 根据模型名称、提供商和变体获取一个可用的通道
+func (r *Routing) GetChannelByProvider(ctx context.Context, modelName, provider, variant string) (*Channel, error) {
+	// 参数校验
+	if modelName == "" {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+	}
+	if provider == "" {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "提供商不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+	}
+	if variant == "" {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "变体不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+	}
+
+	// 通过模型名称/别名、提供商和变体查找模型
+	models, err := r.modelRepo.FindModelsByNameOrAliasAndProvider(ctx, modelName, provider, variant)
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
+	}
+
+	if len(models) == 0 {
+		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型").WithHTTPStatus(fasthttp.StatusNotFound)
+	}
+
+	return r.selectChannelFromModels(ctx, models)
+}
+
+// selectChannelFromModels 从模型列表中选择一个可用的通道
+func (r *Routing) selectChannelFromModels(ctx context.Context, models []Model) (*Channel, error) {
+	// 为每个模型构建通道
 	var availableChannels []*Channel
 	var channelInfos []selector.ChannelInfo
 
@@ -95,7 +125,7 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 			continue
 		}
 
-		// 3. 使用 health 验证通道是否可用
+		// 使用 health 验证通道是否可用
 		for _, ch := range channels {
 			result := r.healthService.CheckChannelHealth(ch.PlatformID, ch.ModelID, ch.APIKeyID)
 
@@ -114,12 +144,12 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 		}
 	}
 
-	// 4. 如果没有可用通道，返回错误
+	// 如果没有可用通道，返回错误
 	if len(availableChannels) == 0 {
 		return nil, errors.New(errors.ErrCodeResourceExhausted, "没有可用的通道").WithHTTPStatus(fasthttp.StatusServiceUnavailable)
 	}
 
-	// 5. 使用互斥锁保护通道选择和时间更新操作
+	// 使用互斥锁保护通道选择和时间更新操作
 	// 确保在并发环境下，选择通道和更新使用时间是原子操作
 	r.mu.Lock()
 	selectedID, err := r.selector.Select(channelInfos)

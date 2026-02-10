@@ -43,6 +43,7 @@ type PlatformRepository interface {
 type ModelRepository interface {
 	GetModelByID(ctx context.Context, id uint) (Model, error)
 	FindModelsByNameOrAlias(ctx context.Context, name string) ([]Model, error)
+	FindModelsByNameOrAliasAndProvider(ctx context.Context, name, provider, variant string) ([]Model, error)
 }
 
 type KeyRepository interface {
