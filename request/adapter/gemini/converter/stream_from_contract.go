@@ -17,16 +17,12 @@ import (
 //   - message_stop -> 结束块（带 FinishReason/FinishMessage）
 //   - error -> ErrorResponse（不产生 StreamEvent，通过 error 返回）
 //   - 其他类型 -> 返回 nil, nil
-func StreamEventFormContract(contract *adapterTypes.StreamEventContract, log logger.Logger) (*geminiTypes.StreamEvent, error) {
+func StreamEventFromContract(contract *adapterTypes.StreamEventContract) (*geminiTypes.StreamEvent, error) {
 	if contract == nil {
 		return nil, nil
 	}
 
-	if log == nil {
-		log = logger.NewNopLogger()
-	}
-
-	log = log.WithGroup("stream_converter")
+	log := logger.Default().WithGroup("stream_converter")
 
 	// 验证事件来源
 	if contract.Source != adapterTypes.StreamSourceGemini {

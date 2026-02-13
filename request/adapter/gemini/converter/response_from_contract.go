@@ -10,7 +10,7 @@ import (
 )
 
 // ResponseFromContract 将 ResponseContract 转换为 Gemini 响应
-func ResponseFromContract(contract *adapterTypes.ResponseContract, log logger.Logger) (*geminiTypes.Response, error) {
+func ResponseFromContract(contract *adapterTypes.ResponseContract) (*geminiTypes.Response, error) {
 	if contract == nil {
 		return nil, errors.New(errors.ErrCodeInvalidArgument, "ResponseContract 为空")
 	}
@@ -53,7 +53,7 @@ func ResponseFromContract(contract *adapterTypes.ResponseContract, log logger.Lo
 		for _, choice := range contract.Choices {
 			candidate, err := convertChoiceToCandidate(&choice)
 			if err != nil {
-				log.Warn("转换候选响应失败", "error", err)
+				logger.Default().Warn("转换候选响应失败", "error", err)
 				continue
 			}
 			resp.Candidates = append(resp.Candidates, *candidate)

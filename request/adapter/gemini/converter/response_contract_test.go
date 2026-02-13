@@ -271,7 +271,7 @@ func TestResponseToContract_RoundTrip(t *testing.T) {
 	}
 
 	// FromContract
-	restored, err := ResponseFromContract(contract, log)
+	restored, err := ResponseFromContract(contract)
 	if err != nil {
 		t.Fatalf("FromContract 失败: %v", err)
 	}
@@ -290,15 +290,13 @@ func TestResponseToContract_RoundTrip(t *testing.T) {
 
 // TestResponseFromContract_InvalidSource 测试来源验证
 func TestResponseFromContract_InvalidSource(t *testing.T) {
-	log := logger.NewNopLogger()
-
 	// 创建非 Gemini 来源的 contract
 	contract := &types.ResponseContract{
 		Source: types.VendorSourceOpenAIChat,
 		ID:     "test_id",
 	}
 
-	_, err := ResponseFromContract(contract, log)
+	_, err := ResponseFromContract(contract)
 	if err == nil {
 		t.Fatal("期望返回错误，但没有")
 	}

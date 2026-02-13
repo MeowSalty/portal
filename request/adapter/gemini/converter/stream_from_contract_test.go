@@ -4,16 +4,14 @@ import (
 	"testing"
 
 	"github.com/MeowSalty/portal/errors"
-	"github.com/MeowSalty/portal/logger"
 	geminiTypes "github.com/MeowSalty/portal/request/adapter/gemini/types"
 	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 )
 
 func TestConvertFromIntermediateStreamEvents(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("空输入返回 nil", func(t *testing.T) {
-		result, err := StreamEventFormContract(nil, log)
+		result, err := StreamEventFromContract(nil)
 		if err != nil {
 			t.Fatalf("期望无错误，得到: %v", err)
 		}
@@ -28,7 +26,7 @@ func TestConvertFromIntermediateStreamEvents(t *testing.T) {
 			Type:   adapterTypes.StreamEventMessageDelta,
 		}
 
-		_, err := StreamEventFormContract(contract, log)
+		_, err := StreamEventFromContract(contract)
 		if err == nil {
 			t.Fatal("期望返回错误")
 		}
@@ -36,7 +34,6 @@ func TestConvertFromIntermediateStreamEvents(t *testing.T) {
 }
 
 func TestMessageDeltaToGeminiResponse(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("基础 message_delta 转换", func(t *testing.T) {
 		contentText := "Hello"
@@ -50,7 +47,7 @@ func TestMessageDeltaToGeminiResponse(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -97,7 +94,7 @@ func TestMessageDeltaToGeminiResponse(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -121,7 +118,6 @@ func TestMessageDeltaToGeminiResponse(t *testing.T) {
 }
 
 func TestMessageStopToGeminiResponse(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("message_stop 带 finishReason", func(t *testing.T) {
 		finishReason := "STOP"
@@ -136,7 +132,7 @@ func TestMessageStopToGeminiResponse(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -164,7 +160,7 @@ func TestMessageStopToGeminiResponse(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -190,7 +186,7 @@ func TestMessageStopToGeminiResponse(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -206,7 +202,6 @@ func TestMessageStopToGeminiResponse(t *testing.T) {
 }
 
 func TestToolCallConversion(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("functionCall part 转换", func(t *testing.T) {
 		toolCallID := "call-123"
@@ -228,7 +223,7 @@ func TestToolCallConversion(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -262,7 +257,6 @@ func TestToolCallConversion(t *testing.T) {
 }
 
 func TestExtensionsExtraction(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("提取 promptFeedback", func(t *testing.T) {
 		contract := &adapterTypes.StreamEventContract{
@@ -278,7 +272,7 @@ func TestExtensionsExtraction(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -309,7 +303,7 @@ func TestExtensionsExtraction(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -329,7 +323,6 @@ func TestExtensionsExtraction(t *testing.T) {
 }
 
 func TestUnsupportedEventType(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("不支持的事件类型被忽略", func(t *testing.T) {
 		contract := &adapterTypes.StreamEventContract{
@@ -337,7 +330,7 @@ func TestUnsupportedEventType(t *testing.T) {
 			Type:   adapterTypes.StreamEventContentBlockStart,
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("期望无错误，得到: %v", err)
 		}
@@ -349,7 +342,6 @@ func TestUnsupportedEventType(t *testing.T) {
 }
 
 func TestErrorEvent(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("error 事件返回错误", func(t *testing.T) {
 		errorMessage := "Invalid request"
@@ -363,7 +355,7 @@ func TestErrorEvent(t *testing.T) {
 			},
 		}
 
-		_, err := StreamEventFormContract(contract, log)
+		_, err := StreamEventFromContract(contract)
 		if err == nil {
 			t.Fatal("期望返回错误")
 		}
@@ -375,7 +367,6 @@ func TestErrorEvent(t *testing.T) {
 }
 
 func TestContentPartsConversion(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("text part 转换", func(t *testing.T) {
 		contract := &adapterTypes.StreamEventContract{
@@ -393,7 +384,7 @@ func TestContentPartsConversion(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -429,7 +420,7 @@ func TestContentPartsConversion(t *testing.T) {
 			},
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
@@ -454,7 +445,6 @@ func TestContentPartsConversion(t *testing.T) {
 }
 
 func TestEmptyContentHandling(t *testing.T) {
-	log := logger.NewNopLogger()
 
 	t.Run("空 content 也生成事件", func(t *testing.T) {
 		contract := &adapterTypes.StreamEventContract{
@@ -463,7 +453,7 @@ func TestEmptyContentHandling(t *testing.T) {
 			ResponseID: "resp-123",
 		}
 
-		event, err := StreamEventFormContract(contract, log)
+		event, err := StreamEventFromContract(contract)
 		if err != nil {
 			t.Fatalf("转换失败: %v", err)
 		}
