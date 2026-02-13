@@ -71,7 +71,7 @@ func (p *Request) RawOpenAIResponses(
 
 	// 执行原生请求
 	log.DebugContext(ctx, "执行 OpenAI Responses 原生请求")
-	response, err := adapter.RawOpenAIResponses(ctx, channel, nil, req)
+	response, err := adapter.RawOpenAIResponses(ctx, channel, req.Headers, req)
 
 	// 计算耗时
 	requestDuration := time.Since(now)
@@ -179,7 +179,7 @@ func (p *Request) RawOpenAIResponsesStream(
 	internalStream := make(chan *openaiResponses.StreamEvent, 1024)
 
 	log.DebugContext(ctx, "执行 OpenAI Responses 原生流式请求")
-	err = adapter.RawOpenAIResponsesStream(ctx, channel, nil, req, internalStream)
+	err = adapter.RawOpenAIResponsesStream(ctx, channel, req.Headers, req, internalStream)
 	if err != nil {
 		errorMsg := err.Error()
 		requestLog.ErrorMsg = &errorMsg

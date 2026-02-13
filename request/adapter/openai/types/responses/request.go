@@ -81,6 +81,10 @@ type Request struct {
 	ServiceTier          *shared.ServiceTier        `json:"service_tier,omitempty"`
 	Background           *bool                      `json:"background,omitempty"`
 	ExtraFields          map[string]json.RawMessage `json:"-"`
+
+	// 自定义 HTTP 头部（不会被序列化到请求体中）
+	// 用于透传 User-Agent、Referer 等 HTTP 头部信息
+	Headers map[string]string `json:"-"`
 }
 
 // ConversationReference 表示会话引用对象

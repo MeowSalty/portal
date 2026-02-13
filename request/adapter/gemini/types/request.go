@@ -24,6 +24,10 @@ type Request struct {
 	CachedContent *string `json:"cachedContent,omitempty"`
 	// ExtraFields 存储未知字段（仅顶层）
 	ExtraFields map[string]json.RawMessage `json:"-"`
+
+	// 自定义 HTTP 头部（不会被序列化到请求体中）
+	// 用于透传 User-Agent、Referer 等 HTTP 头部信息
+	Headers map[string]string `json:"-"`
 }
 
 // requestExplicitFields 定义 Request 结构体的所有显式字段名称

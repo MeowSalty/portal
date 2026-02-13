@@ -21,6 +21,10 @@ type Request struct {
 	TopK          *int                       `json:"top_k,omitempty"`          // top_k
 	TopP          *float64                   `json:"top_p,omitempty"`          // top_p
 	ExtraFields   map[string]json.RawMessage `json:"-"`                        // 未知字段透传（仅顶层）
+
+	// 自定义 HTTP 头部（不会被序列化到请求体中）
+	// 用于透传 User-Agent、Referer 等 HTTP 头部信息
+	Headers map[string]string `json:"-"`
 }
 
 // MarshalJSON 实现 Request 的序列化，合并显式字段与 ExtraFields。

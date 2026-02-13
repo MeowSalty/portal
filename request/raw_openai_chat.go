@@ -65,7 +65,7 @@ func (p *Request) RawOpenAIChatCompletion(
 
 	// 执行原生请求
 	log.DebugContext(ctx, "执行 OpenAI Chat 原生请求")
-	response, err := adapter.RawOpenAIChatCompletion(ctx, channel, nil, req)
+	response, err := adapter.RawOpenAIChatCompletion(ctx, channel, req.Headers, req)
 
 	// 计算耗时
 	requestDuration := time.Since(now)
@@ -167,7 +167,7 @@ func (p *Request) RawOpenAIChatCompletionStream(
 	internalStream := make(chan *openaiChat.StreamEvent, 1024)
 
 	log.DebugContext(ctx, "执行 OpenAI Chat 原生流式请求")
-	err = adapter.RawOpenAIChatCompletionStream(ctx, channel, nil, req, internalStream)
+	err = adapter.RawOpenAIChatCompletionStream(ctx, channel, req.Headers, req, internalStream)
 	if err != nil {
 		errorMsg := err.Error()
 		requestLog.ErrorMsg = &errorMsg

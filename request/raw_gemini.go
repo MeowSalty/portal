@@ -65,7 +65,7 @@ func (p *Request) RawGeminiGenerateContent(
 
 	// 执行原生请求
 	log.DebugContext(ctx, "执行 Gemini GenerateContent 原生请求")
-	response, err := adapter.RawGeminiGenerateContent(ctx, channel, nil, req)
+	response, err := adapter.RawGeminiGenerateContent(ctx, channel, req.Headers, req)
 
 	// 计算耗时
 	requestDuration := time.Since(now)
@@ -170,7 +170,7 @@ func (p *Request) RawGeminiStreamGenerateContent(
 	internalStream := make(chan *geminiTypes.StreamEvent, 1024)
 
 	log.DebugContext(ctx, "执行 Gemini StreamGenerateContent 原生流式请求")
-	err = adapter.RawGeminiStreamGenerateContent(ctx, channel, nil, req, internalStream)
+	err = adapter.RawGeminiStreamGenerateContent(ctx, channel, req.Headers, req, internalStream)
 	if err != nil {
 		errorMsg := err.Error()
 		requestLog.ErrorMsg = &errorMsg
