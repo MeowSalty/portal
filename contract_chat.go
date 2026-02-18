@@ -74,7 +74,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 	p.logger.DebugContext(ctx, "开始处理流式聊天完成请求", "model", request.Model)
 
 	// 创建内部流（用于接收原始响应）
-	internalStream := make(chan *types.StreamEventContract, 1024)
+	internalStream := make(chan *types.StreamEventContract, StreamBufferSize)
 
 	// 启动内部流处理协程
 	go func() {

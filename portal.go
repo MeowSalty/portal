@@ -12,6 +12,9 @@ import (
 	"github.com/MeowSalty/portal/session"
 )
 
+// StreamBufferSize 流式响应通道的缓冲区大小
+const StreamBufferSize = 64
+
 // New 创建一个新的 Portal 实例
 func New(cfg Config) (*Portal, error) {
 	// 如果未提供日志记录器，使用默认的空操作日志记录器
