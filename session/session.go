@@ -65,6 +65,48 @@ func (sm *Session) WithSession(ctx context.Context, fn func(reqCtx context.Conte
 	return fn(reqCtx, reqCancel)
 }
 
+// WithSessionStream 管理流式请求会话的生命周期
+//
+// 该函数与 WithSession 类似，但会话的"完成"由 done 参数控制。
+// 对于流式请求，需要在流真正结束时才关闭会话，而不是在发起请求后立即关闭。
+//
+// 参数：
+//   - ctx: 父级上下文
+//   - done: 流结束信号通道，关闭后表示流已结束
+//   - fn: 在会话上下文中执行的函数
+//
+// 返回值：
+//   - error: 执行过程中发生的错误，如果服务正在关闭则返回 ErrServerShuttingDown
+func (sm *Session) WithSessionStream(ctx context.Context, done <-chan struct{}, fn func(reqCtx context.Context) error) error {
+	// 检查服务是否正在关闭，如果是则拒绝新请求
+	if sm.isShuttingDown.Load() {
+		return errors.New(errors.ErrCodeUnavailable, "服务正在关闭")
+	}
+	sm.activeSessions.Add(1)
+
+	// 创建可取消的请求上下文
+	reqCtx, reqCancel := context.WithCancel(ctx)
+
+	// 启动一个 goroutine 监听关闭信号和上下文完成信号
+	// 这个 goroutine 会在流结束时自动清理
+	go func() {
+		defer sm.activeSessions.Done()
+		defer reqCancel()
+
+		select {
+		case <-sm.shutdownCtx.Done():
+			// 服务关闭
+		case <-ctx.Done():
+			// 请求完成或被客户端取消
+		case <-done:
+			// 流结束
+		}
+	}()
+
+	// 执行会话函数
+	return fn(reqCtx)
+}
+
 // Shutdown 优雅地关闭服务
 //
 // 它会等待所有正在进行的会话完成，然后关闭健康管理器。
