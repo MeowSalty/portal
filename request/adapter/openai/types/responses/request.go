@@ -129,7 +129,8 @@ func (i *InputUnion) UnmarshalJSON(data []byte) error {
 		return nil
 	}
 
-	return nil
+	return errors.New(errors.ErrCodeInvalidArgument, "input 必须是字符串或输入项").
+		WithContext("input", string(data))
 }
 
 // ConversationUnion 表示会话字段，支持字符串或对象。
@@ -162,12 +163,17 @@ func (c *ConversationUnion) UnmarshalJSON(data []byte) error {
 	}
 
 	var obj ConversationReference
-	if err := json.Unmarshal(data, &obj); err == nil && obj.ID != "" {
-		c.ObjectValue = &obj
-		return nil
+	if err := json.Unmarshal(data, &obj); err == nil {
+		if obj.ID != "" {
+			c.ObjectValue = &obj
+			return nil
+		}
+		return errors.New(errors.ErrCodeInvalidArgument, "conversation 对象必须包含 id 字段").
+			WithContext("conversation", string(data))
 	}
 
-	return nil
+	return errors.New(errors.ErrCodeInvalidArgument, "conversation 必须是字符串或包含 id 字段的对象").
+		WithContext("conversation", string(data))
 }
 
 // Reasoning 表示推理模型参数
@@ -328,26 +334,46 @@ func (pv *PromptVariableValue) UnmarshalJSON(data []byte) error {
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return errors.New(errors.ErrCodeInvalidArgument, "prompt variable value 必须是字符串或对象").
+			WithCause(err).
+			WithContext("prompt_variable_value", string(data))
 	}
 
-	typeVal, _ := raw["type"].(string)
+	typeVal, ok := raw["type"].(string)
+	if !ok {
+		return errors.New(errors.ErrCodeInvalidArgument, "prompt variable value 对象必须包含 type 字段").
+			WithContext("prompt_variable_value", string(data))
+	}
+
 	switch typeVal {
 	case "input_text":
 		var text InputTextContent
-		if err := json.Unmarshal(data, &text); err == nil {
-			pv.Text = &text
+		if err := json.Unmarshal(data, &text); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 input_text 类型失败").
+				WithCause(err).
+				WithContext("prompt_variable_value", string(data))
 		}
+		pv.Text = &text
 	case "input_image":
 		var image InputImageContent
-		if err := json.Unmarshal(data, &image); err == nil {
-			pv.Image = &image
+		if err := json.Unmarshal(data, &image); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 input_image 类型失败").
+				WithCause(err).
+				WithContext("prompt_variable_value", string(data))
 		}
+		pv.Image = &image
 	case "input_file":
 		var file InputFileContent
-		if err := json.Unmarshal(data, &file); err == nil {
-			pv.File = &file
+		if err := json.Unmarshal(data, &file); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 input_file 类型失败").
+				WithCause(err).
+				WithContext("prompt_variable_value", string(data))
 		}
+		pv.File = &file
+	default:
+		return errors.New(errors.ErrCodeInvalidArgument, "未知的 prompt variable value 类型").
+			WithContext("type", typeVal).
+			WithContext("prompt_variable_value", string(data))
 	}
 
 	return nil
@@ -410,26 +436,46 @@ func (t *TextFormatUnion) UnmarshalJSON(data []byte) error {
 
 	var raw map[string]interface{}
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return err
+		return errors.New(errors.ErrCodeInvalidArgument, "text format 必须是对象").
+			WithCause(err).
+			WithContext("text_format", string(data))
 	}
 
-	typeVal, _ := raw["type"].(string)
+	typeVal, ok := raw["type"].(string)
+	if !ok {
+		return errors.New(errors.ErrCodeInvalidArgument, "text format 对象必须包含 type 字段").
+			WithContext("text_format", string(data))
+	}
+
 	switch typeVal {
 	case "text", "":
 		var text TextFormat
-		if err := json.Unmarshal(data, &text); err == nil {
-			t.Text = &text
+		if err := json.Unmarshal(data, &text); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 text 类型失败").
+				WithCause(err).
+				WithContext("text_format", string(data))
 		}
+		t.Text = &text
 	case "json_schema":
 		var schema TextFormatJSONSchema
-		if err := json.Unmarshal(data, &schema); err == nil {
-			t.JSONSchema = &schema
+		if err := json.Unmarshal(data, &schema); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 json_schema 类型失败").
+				WithCause(err).
+				WithContext("text_format", string(data))
 		}
+		t.JSONSchema = &schema
 	case "json_object":
 		var obj TextFormatJSONObject
-		if err := json.Unmarshal(data, &obj); err == nil {
-			t.JSONObject = &obj
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return errors.New(errors.ErrCodeInvalidArgument, "解析 json_object 类型失败").
+				WithCause(err).
+				WithContext("text_format", string(data))
 		}
+		t.JSONObject = &obj
+	default:
+		return errors.New(errors.ErrCodeInvalidArgument, "未知的 text format 类型").
+			WithContext("type", typeVal).
+			WithContext("text_format", string(data))
 	}
 
 	return nil
