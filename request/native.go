@@ -147,37 +147,21 @@ func (p *Request) NativeStream(
 	log.DebugContext(ctx, "创建请求日志")
 
 	// 创建 RequestLogHooks 实例用于记录流式响应统计
-	hooks := &RequestLogHooks{log: requestLog}
+	hooks := &RequestLogHooks{log: requestLog, request: p}
 
 	// 执行原生流式请求
 	log.DebugContext(ctx, "执行原生流式请求")
 	err = adapter.NativeStream(ctx, channel, nil, payload, output, hooks)
 
-	// 计算耗时
-	requestDuration := time.Since(now)
-	requestLog.Duration = requestDuration
-
-	log.DebugContext(ctx, "流式请求完成",
-		"duration", requestDuration.String(),
-		"success", err == nil,
-	)
-
+	// 只在 adapter.NativeStream 调用失败时返回错误
 	if err != nil {
-		// 记录失败统计
-		errorMsg := err.Error()
-		requestLog.Success = false
-		requestLog.ErrorMsg = &errorMsg
-		p.recordRequestLog(requestLog, nil, false)
-
-		log.ErrorContext(ctx, "原生流式请求失败", "error", err)
+		// adapter 启动失败，手动触发 OnError Hook
+		hooks.OnError(err)
+		log.ErrorContext(ctx, "原生流式请求启动失败", "error", err)
 		return err
 	}
 
-	// 记录成功统计
-	requestLog.Success = true
-	p.recordRequestLog(requestLog, nil, true)
-
-	log.InfoContext(ctx, "原生流式请求成功")
+	log.InfoContext(ctx, "原生流式请求启动成功")
 
 	return nil
 }

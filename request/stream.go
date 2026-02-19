@@ -12,10 +12,12 @@ import (
 
 // RequestLogHooks 实现 StreamHooks 接口，用于记录流式响应的统计指标到 RequestLog。
 //
-// 该结构体持有对 RequestLog 的引用，在流式响应的生命周期各个关键时机更新统计字段。
+// 该结构体持有对 RequestLog 和 Request 的引用，在流式响应的生命周期各个关键时机更新统计字段。
 type RequestLogHooks struct {
 	// log 指向需要更新的请求日志记录
 	log *RequestLog
+	// request 指向 Request 实例，用于调用 recordRequestLog 方法
+	request *Request
 }
 
 // OnFirstChunk 在第一次解析出有效事件时触发。
@@ -51,7 +53,7 @@ func (h *RequestLogHooks) OnUsage(u types.Usage) {
 
 // OnComplete 在流正常结束时触发。
 //
-// 该方法计算并记录流的总耗时。
+// 该方法计算并记录流的总耗时，然后异步记录请求日志。
 //
 // 参数 end 表示流结束的时间戳。
 func (h *RequestLogHooks) OnComplete(end time.Time) {
@@ -61,11 +63,17 @@ func (h *RequestLogHooks) OnComplete(end time.Time) {
 
 	// 计算总耗时
 	h.log.Duration = end.Sub(h.log.Timestamp)
+	h.log.Success = true
+
+	// 异步记录请求日志
+	if h.request != nil {
+		go h.request.recordRequestLog(h.log, nil, true)
+	}
 }
 
 // OnError 在流异常结束时触发。
 //
-// 该方法作为异常结束的兜底处理，计算总耗时并记录错误信息。
+// 该方法作为异常结束的兜底处理，计算总耗时并记录错误信息，然后异步记录请求日志。
 //
 // 参数 err 表示导致流异常的错误信息。
 func (h *RequestLogHooks) OnError(err error) {
@@ -75,11 +83,17 @@ func (h *RequestLogHooks) OnError(err error) {
 
 	// 计算总耗时
 	h.log.Duration = time.Since(h.log.Timestamp)
+	h.log.Success = false
 
 	// 记录错误信息
 	if err != nil {
 		errMsg := err.Error()
 		h.log.ErrorMsg = &errMsg
+	}
+
+	// 异步记录请求日志
+	if h.request != nil {
+		go h.request.recordRequestLog(h.log, nil, false)
 	}
 }
 
@@ -133,7 +147,7 @@ func (p *Request) ChatCompletionStream(
 	log.DebugContext(ctx, "创建请求日志")
 
 	// 创建 RequestLogHooks 实例用于记录流式响应统计
-	hooks := &RequestLogHooks{log: requestLog}
+	hooks := &RequestLogHooks{log: requestLog, request: p}
 
 	// 创建内部流
 	log.DebugContext(ctx, "创建内部流通道")
