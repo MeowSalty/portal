@@ -1,5 +1,7 @@
 package types
 
+import "time"
+
 // StreamEventType 表示中间流式事件类型。
 // 使用细粒度事件集合以满足往返转换的保真度需求。
 type StreamEventType string
@@ -199,4 +201,64 @@ type StreamToolCall struct {
 	Name      string                 `json:"name,omitempty"`
 	Arguments string                 `json:"arguments,omitempty"`
 	Raw       map[string]interface{} `json:"raw,omitempty"`
+}
+
+// Usage 表示流式响应的使用量统计。
+// 该类型用于 StreamHooks 接口，提供统一的 token 使用量信息。
+type Usage struct {
+	// InputTokens 表示输入 token 数量
+	InputTokens int
+	// OutputTokens 表示输出 token 数量
+	OutputTokens int
+	// TotalTokens 表示总 token 数量
+	TotalTokens int
+}
+
+// StreamHooks 定义流式响应的生命周期钩子接口。
+// 实现该接口可以监听流式响应的关键事件，用于监控、日志记录、性能分析等场景。
+//
+// 使用示例：
+//
+//	type MyStreamHooks struct{}
+//
+//	func (h *MyStreamHooks) OnFirstChunk(t time.Time) {
+//	    fmt.Printf("首字时间：%v\n", t)
+//	}
+//
+//	func (h *MyStreamHooks) OnUsage(u Usage) {
+//	    fmt.Printf("Token 使用量：输入=%d, 输出=%d, 总计=%d\n",
+//	        u.InputTokens, u.OutputTokens, u.TotalTokens)
+//	}
+//
+//	func (h *MyStreamHooks) OnComplete(end time.Time) {
+//	    fmt.Printf("流结束时间：%v\n", end)
+//	}
+//
+//	func (h *MyStreamHooks) OnError(err error) {
+//	    fmt.Printf("流异常：%v\n", err)
+//	}
+type StreamHooks interface {
+	// OnFirstChunk 在第一次解析出有效事件时触发。
+	// 该方法用于记录首字时间（Time to First Token, TTFT），是衡量流式响应性能的重要指标。
+	//
+	// 参数 t 表示首次接收到有效内容的时间戳。
+	OnFirstChunk(t time.Time)
+
+	// OnUsage 当流中出现 usage 信息时触发。
+	// 该方法用于记录 token 使用量统计，通常在流结束时或流中间某个时刻触发。
+	//
+	// 参数 u 包含输入、输出和总 token 数量。
+	OnUsage(u Usage)
+
+	// OnComplete 在流正常结束时触发。
+	// 该方法用于记录流结束时间，可用于计算总耗时（Total Time）。
+	//
+	// 参数 end 表示流结束的时间戳。
+	OnComplete(end time.Time)
+
+	// OnError 在流异常结束时触发。
+	// 该方法用于记录流处理过程中发生的错误。
+	//
+	// 参数 err 表示导致流异常的错误信息。
+	OnError(err error)
 }
