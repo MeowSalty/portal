@@ -9,9 +9,9 @@ import (
 	"github.com/MeowSalty/portal/routing"
 )
 
-// RawOpenAIChatCompletion 执行 OpenAI Chat 原生请求（非流式）
+// NativeOpenAIChatCompletion 执行 OpenAI Chat 原生请求（非流式）
 //
-// 该方法直接发送原生请求到 OpenAI Chat Completions API，不经过 middleware 与统一 contract。
+// 该方法通过 routing 获取通道，使用 retry 机制，调用 request.Native。
 // 请求体和响应体均为 OpenAI Chat 原生类型。
 //
 // 参数：
@@ -21,7 +21,7 @@ import (
 // 返回：
 //   - *openaiChat.Response: OpenAI Chat 原生响应对象
 //   - error: 请求失败时返回错误
-func (p *Portal) RawOpenAIChatCompletion(
+func (p *Portal) NativeOpenAIChatCompletion(
 	ctx context.Context,
 	req *openaiChat.Request,
 ) (*openaiChat.Response, error) {
@@ -31,7 +31,7 @@ func (p *Portal) RawOpenAIChatCompletion(
 	var channel *routing.Channel
 	var err error
 	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
+		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat")
 		if err != nil {
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 			break
@@ -47,8 +47,17 @@ func (p *Portal) RawOpenAIChatCompletion(
 
 		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 			defer reqCancel()
-			response, err = p.request.RawOpenAIChatCompletion(reqCtx, req, channel)
-			return
+
+			// 调用 request.Native
+			resp, err := p.request.Native(reqCtx, req, channel)
+			if err != nil {
+				return err
+			}
+
+			if r, ok := resp.(*openaiChat.Response); ok {
+				response = r
+			}
+			return nil
 		})
 
 		// 检查错误是否可以重试
@@ -75,9 +84,9 @@ func (p *Portal) RawOpenAIChatCompletion(
 	return response, err
 }
 
-// RawOpenAIChatCompletionStream 执行 OpenAI Chat 原生流式请求
+// NativeOpenAIChatCompletionStream 执行 OpenAI Chat 原生流式请求
 //
-// 该方法直接发送原生请求到 OpenAI Chat Completions API，不经过 middleware 与统一 contract。
+// 该方法通过 routing 获取通道，使用 retry 机制，调用 request.NativeStream。
 // 请求体为 OpenAI Chat 原生类型，响应为原生流事件。
 //
 // 参数：
@@ -86,19 +95,19 @@ func (p *Portal) RawOpenAIChatCompletion(
 //
 // 返回：
 //   - <-chan *openaiChat.StreamEvent: 原生流事件通道
-func (p *Portal) RawOpenAIChatCompletionStream(
+func (p *Portal) NativeOpenAIChatCompletionStream(
 	ctx context.Context,
 	req *openaiChat.Request,
 ) <-chan *openaiChat.StreamEvent {
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生流式请求", "model", req.Model)
 
 	// 创建内部流（用于接收原始响应）
-	internalStream := make(chan *openaiChat.StreamEvent, 1024)
+	internalStream := make(chan *openaiChat.StreamEvent, StreamBufferSize)
 
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
+			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat")
 			if err != nil {
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)
@@ -113,9 +122,14 @@ func (p *Portal) RawOpenAIChatCompletionStream(
 
 			channelLogger.DebugContext(ctx, "获取到通道")
 
-			err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
-				defer reqCancel()
-				return p.request.RawOpenAIChatCompletionStream(reqCtx, req, internalStream, channel)
+			// 创建原生事件输出通道
+			nativeOutput := make(chan any)
+			// 创建流结束信号通道
+			done := make(chan struct{})
+
+			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
+				// 调用 request.NativeStream
+				return p.request.NativeStream(reqCtx, req, channel, nativeOutput)
 			})
 
 			// 检查错误是否可以重试
@@ -137,6 +151,22 @@ func (p *Portal) RawOpenAIChatCompletionStream(
 			}
 			channel.MarkSuccess(ctx)
 			channelLogger.InfoContext(ctx, "流处理成功")
+
+			// 转换原生事件到指定类型
+			go func() {
+				defer close(internalStream)
+				defer close(done) // 流结束时通知会话管理器
+				for event := range nativeOutput {
+					if evt, ok := event.(*openaiChat.StreamEvent); ok {
+						select {
+						case <-ctx.Done():
+							return
+						case internalStream <- evt:
+						}
+					}
+				}
+			}()
+
 			break
 		}
 	}()
@@ -144,9 +174,9 @@ func (p *Portal) RawOpenAIChatCompletionStream(
 	return internalStream
 }
 
-// RawOpenAIResponses 执行 OpenAI Responses 原生请求（非流式）
+// NativeOpenAIResponses 执行 OpenAI Responses 原生请求（非流式）
 //
-// 该方法直接发送原生请求到 OpenAI Responses API，不经过 middleware 与统一 contract。
+// 该方法通过 routing 获取通道，使用 retry 机制，调用 request.Native。
 // 请求体和响应体均为 OpenAI Responses 原生类型。
 //
 // 参数：
@@ -156,7 +186,7 @@ func (p *Portal) RawOpenAIChatCompletionStream(
 // 返回：
 //   - *openaiResponses.Response: OpenAI Responses 原生响应对象
 //   - error: 请求失败时返回错误
-func (p *Portal) RawOpenAIResponses(
+func (p *Portal) NativeOpenAIResponses(
 	ctx context.Context,
 	req *openaiResponses.Request,
 ) (*openaiResponses.Response, error) {
@@ -188,8 +218,17 @@ func (p *Portal) RawOpenAIResponses(
 
 		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 			defer reqCancel()
-			response, err = p.request.RawOpenAIResponses(reqCtx, req, channel)
-			return
+
+			// 调用 request.Native
+			resp, err := p.request.Native(reqCtx, req, channel)
+			if err != nil {
+				return err
+			}
+
+			if r, ok := resp.(*openaiResponses.Response); ok {
+				response = r
+			}
+			return nil
 		})
 
 		// 检查错误是否可以重试
@@ -216,9 +255,9 @@ func (p *Portal) RawOpenAIResponses(
 	return response, err
 }
 
-// RawOpenAIResponsesStream 执行 OpenAI Responses 原生流式请求
+// NativeOpenAIResponsesStream 执行 OpenAI Responses 原生流式请求
 //
-// 该方法直接发送原生请求到 OpenAI Responses API，不经过 middleware 与统一 contract。
+// 该方法通过 routing 获取通道，使用 retry 机制，调用 request.NativeStream。
 // 请求体为 OpenAI Responses 原生类型，响应为原生流事件。
 //
 // 参数：
@@ -227,27 +266,21 @@ func (p *Portal) RawOpenAIResponses(
 //
 // 返回：
 //   - <-chan *openaiResponses.StreamEvent: 原生流事件通道
-func (p *Portal) RawOpenAIResponsesStream(
+func (p *Portal) NativeOpenAIResponsesStream(
 	ctx context.Context,
 	req *openaiResponses.Request,
 ) <-chan *openaiResponses.StreamEvent {
-	// 获取模型名称
-	modelName := ""
-	if req.Model != nil {
-		modelName = *req.Model
-	}
-
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", modelName)
+	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", req.Model)
 
 	// 创建内部流（用于接收原始响应）
-	internalStream := make(chan *openaiResponses.StreamEvent, 1024)
+	internalStream := make(chan *openaiResponses.StreamEvent, StreamBufferSize)
 
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
+			channel, err := p.routing.GetChannelByProvider(ctx, *req.Model, "openai", "responses")
 			if err != nil {
-				p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
+				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)
 				break
 			}
@@ -260,9 +293,14 @@ func (p *Portal) RawOpenAIResponsesStream(
 
 			channelLogger.DebugContext(ctx, "获取到通道")
 
-			err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
-				defer reqCancel()
-				return p.request.RawOpenAIResponsesStream(reqCtx, req, internalStream, channel)
+			// 创建原生事件输出通道
+			nativeOutput := make(chan any)
+			// 创建流结束信号通道
+			done := make(chan struct{})
+
+			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
+				// 调用 request.NativeStream
+				return p.request.NativeStream(reqCtx, req, channel, nativeOutput)
 			})
 
 			// 检查错误是否可以重试
@@ -284,6 +322,22 @@ func (p *Portal) RawOpenAIResponsesStream(
 			}
 			channel.MarkSuccess(ctx)
 			channelLogger.InfoContext(ctx, "流处理成功")
+
+			// 转换原生事件到指定类型
+			go func() {
+				defer close(internalStream)
+				defer close(done) // 流结束时通知会话管理器
+				for event := range nativeOutput {
+					if evt, ok := event.(*openaiResponses.StreamEvent); ok {
+						select {
+						case <-ctx.Done():
+							return
+						case internalStream <- evt:
+						}
+					}
+				}
+			}()
+
 			break
 		}
 	}()
