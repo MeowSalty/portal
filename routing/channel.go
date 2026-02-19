@@ -20,6 +20,8 @@ type Channel struct {
 	APIKey     string // API 密钥
 	APIVariant string // API 变体
 
+	APIEndpointConfig string // 可选端点配置（支持前缀或完整路径）
+
 	CustomHeaders map[string]string // 通道级别的自定义 HTTP 头部（优先级高于请求级别）
 
 	// 健康管理器引用，用于更新状态
