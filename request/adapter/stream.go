@@ -205,6 +205,7 @@ func (a *Adapter) handleNativeStreaming(
 
 	// 处理流式响应
 	go func() {
+		var streamErr error
 		defer func() {
 			// 触发 OnComplete Hook
 			if hooks != nil {
@@ -224,6 +225,7 @@ func (a *Adapter) handleNativeStreaming(
 			case <-ctx.Done():
 				// 上下文已取消，停止流处理
 				log.Debug("上下文已取消，停止流处理", "context_err", ctx.Err())
+				streamErr = ctx.Err()
 				return
 			default:
 				line, err := reader.ReadString('\n')
@@ -247,11 +249,11 @@ func (a *Adapter) handleNativeStreaming(
 						if hooks != nil {
 							hooks.OnError(parseErr)
 						}
-						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
+						streamErr = errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", data)
 						log.Error("解析原生流块失败",
 							"data", data,
-							"error", parseErr,
+							"error", streamErr,
 						)
 						return
 					}
@@ -283,6 +285,7 @@ func (a *Adapter) handleNativeStreaming(
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
 						log.Debug("上下文已取消，停止发送响应块", "context_err", ctx.Err())
+						streamErr = ctx.Err()
 						return
 					default:
 						output <- event
@@ -301,6 +304,7 @@ func (a *Adapter) handleNativeStreaming(
 					if hooks != nil {
 						hooks.OnError(err)
 					}
+					streamErr = err
 					log.Error("读取流数据失败",
 						"error", err,
 					)
