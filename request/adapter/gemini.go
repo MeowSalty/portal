@@ -19,7 +19,7 @@ type Gemini struct {
 
 // init 函数注册 Gemini 提供商
 func init() {
-	RegisterProviderFactory("Gemini", func() Provider {
+	RegisterProviderFactory("google", func() Provider {
 		return NewGeminiProvider()
 	})
 }

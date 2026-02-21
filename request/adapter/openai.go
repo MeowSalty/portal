@@ -22,7 +22,7 @@ type OpenAI struct {
 
 // init 函数注册 OpenAI 提供商
 func init() {
-	RegisterProviderFactory("OpenAI", func() Provider {
+	RegisterProviderFactory("openai", func() Provider {
 		return NewOpenAIProvider()
 	})
 }

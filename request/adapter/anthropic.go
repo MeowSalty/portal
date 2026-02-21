@@ -18,7 +18,7 @@ type Anthropic struct {
 
 // init 函数注册 Anthropic 提供商
 func init() {
-	RegisterProviderFactory("Anthropic", func() Provider {
+	RegisterProviderFactory("anthropic", func() Provider {
 		return NewAnthropicProvider()
 	})
 }

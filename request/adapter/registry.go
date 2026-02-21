@@ -32,7 +32,7 @@ func RegisterProviderFactory(name string, factory ProviderFactory) {
 // 名称匹配不区分大小写。
 //
 // 参数：
-//   - name: 提供商名称（如 "OpenAI", "Gemini"）
+//   - name: 提供商名称（如 "openai", "google"）
 //   - logger: 日志记录器，如果为 nil 则使用默认记录器
 //
 // 返回：
@@ -59,7 +59,7 @@ func GetAdapter(name string) (*Adapter, error) {
 // 适用于需要直接访问提供商特定功能的场景。
 //
 // 参数：
-//   - name: 提供商名称（如 "OpenAI", "Gemini"）
+//   - name: 提供商名称（如 "openai", "google"）
 //
 // 返回：
 //   - Provider: 提供商实例
