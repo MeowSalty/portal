@@ -61,6 +61,8 @@ const (
 	ErrCodeModelNotFound ErrorCode = "MODEL_NOT_FOUND"
 	// 平台未找到
 	ErrCodePlatformNotFound ErrorCode = "PLATFORM_NOT_FOUND"
+	// 端点未找到
+	ErrCodeEndpointNotFound ErrorCode = "ENDPOINT_NOT_FOUND"
 	// API 密钥未找到
 	ErrCodeAPIKeyNotFound ErrorCode = "API_KEY_NOT_FOUND"
 	// 请求失败
@@ -334,6 +336,7 @@ var (
 	ErrAdapterNotFound    = New(ErrCodeAdapterNotFound, "未找到适配器")
 	ErrModelNotFound      = New(ErrCodeModelNotFound, "未找到模型")
 	ErrPlatformNotFound   = New(ErrCodePlatformNotFound, "未找到平台")
+	ErrEndpointNotFound   = New(ErrCodeEndpointNotFound, "未找到端点")
 	ErrAPIKeyNotFound     = New(ErrCodeAPIKeyNotFound, "未找到 API 密钥")
 	ErrRequestFailed      = New(ErrCodeRequestFailed, "请求失败")
 	ErrStreamError        = New(ErrCodeStreamError, "流处理错误")
