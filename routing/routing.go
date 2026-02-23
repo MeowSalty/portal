@@ -67,63 +67,59 @@ func New(ctx context.Context, cfg Config) (*Routing, error) {
 	}, nil
 }
 
-// GetChannel 根据模型名称获取一个可用的通道
+// GetChannel 根据模型名称获取一个可用的通道（使用默认端点）
 func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, error) {
 	if modelName == "" {
 		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
 
-	// 通过模型名称或别名查找模型
-	models, err := r.modelRepo.FindModelsByNameOrAlias(ctx, modelName)
+	// 通过模型名称查找，返回带有平台和默认端点的完整信息
+	modelsWithEndpoint, err := r.modelRepo.FindModelsWithDefaultEndpoint(ctx, modelName)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
 
-	if len(models) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型").WithHTTPStatus(fasthttp.StatusNotFound)
+	if len(modelsWithEndpoint) == 0 {
+		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型或平台未配置默认端点").WithHTTPStatus(fasthttp.StatusNotFound)
 	}
 
-	return r.selectChannelFromModels(ctx, models)
+	return r.selectChannelFromModelsWithEndpoint(modelsWithEndpoint)
 }
 
-// GetChannelByProvider 根据模型名称、提供商和变体获取一个可用的通道
-func (r *Routing) GetChannelByProvider(ctx context.Context, modelName, provider, variant string) (*Channel, error) {
+// GetChannelByProvider 根据模型名称、端点类型和变体获取一个可用的通道
+func (r *Routing) GetChannelByProvider(ctx context.Context, modelName, endpointType, endpointVariant string) (*Channel, error) {
 	// 参数校验
 	if modelName == "" {
 		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
-	if provider == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "提供商不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+	if endpointType == "" {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点类型不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
-	if variant == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "变体不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+	if endpointVariant == "" {
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点变体不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
 	}
 
-	// 通过模型名称/别名、提供商和变体查找模型
-	models, err := r.modelRepo.FindModelsByNameOrAliasAndProvider(ctx, modelName, provider, variant)
+	// 通过模型名称 + 端点类型 + 变体查找
+	modelsWithEndpoint, err := r.modelRepo.FindModelsWithEndpoint(ctx, modelName, endpointType, endpointVariant)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
 
-	if len(models) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型").WithHTTPStatus(fasthttp.StatusNotFound)
+	if len(modelsWithEndpoint) == 0 {
+		return nil, errors.New(errors.ErrCodeEndpointNotFound, "未找到匹配的端点").WithHTTPStatus(fasthttp.StatusNotFound)
 	}
 
-	return r.selectChannelFromModels(ctx, models)
+	return r.selectChannelFromModelsWithEndpoint(modelsWithEndpoint)
 }
 
-// selectChannelFromModels 从模型列表中选择一个可用的通道
-func (r *Routing) selectChannelFromModels(ctx context.Context, models []Model) (*Channel, error) {
+// selectChannelFromModelsWithEndpoint 从模型列表中选择一个可用的通道
+func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []ModelWithEndpoint) (*Channel, error) {
 	// 为每个模型构建通道
 	var availableChannels []*Channel
 	var channelInfos []selector.ChannelInfo
 
-	for _, model := range models {
-		channels, err := r.buildChannelsForModel(ctx, model)
-		if err != nil {
-			// 记录错误但继续处理其他模型
-			continue
-		}
+	for _, mwe := range modelsWithEndpoint {
+		channels := r.buildChannelsForModelWithEndpoint(mwe)
 
 		// 使用 health 验证通道是否可用
 		for _, ch := range channels {
@@ -177,36 +173,51 @@ func (r *Routing) selectChannelFromModels(ctx context.Context, models []Model) (
 	return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(fasthttp.StatusInternalServerError)
 }
 
-// buildChannelsForModel 为指定模型构建所有可能的通道
-func (r *Routing) buildChannelsForModel(ctx context.Context, model Model) ([]*Channel, error) {
-	// 获取平台信息
-	platform, err := r.platformRepo.GetPlatformByID(ctx, model.PlatformID)
-	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "获取平台信息失败", err)
-	}
+// buildChannelsForModelWithEndpoint 为指定模型构建所有可能的通道
+// 从 ModelWithEndpoint 中获取所有需要的信息
+func (r *Routing) buildChannelsForModelWithEndpoint(mwe ModelWithEndpoint) []*Channel {
+	model := mwe.Model
+	platform := mwe.Platform
+	endpoint := mwe.Endpoint
+
+	// 合并 CustomHeaders（Platform 级别 + Endpoint 级别，Endpoint 覆盖同名）
+	customHeaders := mergeCustomHeaders(platform.CustomHeaders, endpoint.CustomHeaders)
 
 	// 检查模型是否有关联的密钥
 	if len(model.APIKeys) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "模型没有配置 API 密钥")
+		return nil
 	}
 
-	// 为每个密钥创建一个通道
+	// 为每个 APIKey 创建一个 Channel
 	var channels []*Channel
-	for _, apiKey := range model.APIKeys {
-		ch := &Channel{
-			PlatformID:    platform.ID,
-			ModelID:       model.ID,
-			APIKeyID:      apiKey.ID,
-			Provider:      platform.Provider,
-			APIVariant:    platform.Variant,
-			BaseURL:       platform.BaseURL,
-			ModelName:     model.Name,
-			APIKey:        apiKey.Value,
-			CustomHeaders: platform.CustomHeaders, // 传递平台自定义头部给通道
-			healthService: r.healthService,
+	for _, key := range model.APIKeys {
+		channel := &Channel{
+			PlatformID:        platform.ID,
+			ModelID:           model.ID,
+			APIKeyID:          key.ID,
+			Provider:          endpoint.EndpointType, // 从 Endpoint 获取
+			BaseURL:           platform.BaseURL,      // 从 Platform 获取
+			ModelName:         model.Name,
+			APIKey:            key.Value,
+			APIVariant:        endpoint.EndpointVariant, // 从 Endpoint 获取
+			APIEndpointConfig: endpoint.Path,            // 从 Endpoint 获取
+			CustomHeaders:     customHeaders,
+			healthService:     r.healthService,
 		}
-		channels = append(channels, ch)
+		channels = append(channels, channel)
 	}
+	return channels
+}
 
-	return channels, nil
+// mergeCustomHeaders 合并 Platform 和 Endpoint 的 CustomHeaders
+// Endpoint 的头部优先级更高，会覆盖 Platform 同名头部
+func mergeCustomHeaders(platform, endpoint map[string]string) map[string]string {
+	result := make(map[string]string)
+	for k, v := range platform {
+		result[k] = v
+	}
+	for k, v := range endpoint {
+		result[k] = v
+	}
+	return result
 }
