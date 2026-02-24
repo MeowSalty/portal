@@ -48,7 +48,7 @@ func (p *Portal) NativeAnthropicMessages(
 			defer reqCancel()
 
 			// 调用 request.Native
-			resp, err := p.request.Native(reqCtx, req, channel)
+			resp, err := p.request.Native(reqCtx, req, channel, req.Model)
 			if err != nil {
 				return err
 			}
@@ -128,7 +128,7 @@ func (p *Portal) NativeAnthropicMessagesStream(
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				// 调用 request.NativeStream
-				return p.request.NativeStream(reqCtx, req, channel, nativeOutput)
+				return p.request.NativeStream(reqCtx, req, channel, req.Model, nativeOutput)
 			})
 
 			// 检查错误是否可以重试

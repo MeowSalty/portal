@@ -49,7 +49,7 @@ func (p *Portal) NativeOpenAIChatCompletion(
 			defer reqCancel()
 
 			// 调用 request.Native
-			resp, err := p.request.Native(reqCtx, req, channel)
+			resp, err := p.request.Native(reqCtx, req, channel, req.Model)
 			if err != nil {
 				return err
 			}
@@ -129,7 +129,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				// 调用 request.NativeStream
-				return p.request.NativeStream(reqCtx, req, channel, nativeOutput)
+				return p.request.NativeStream(reqCtx, req, channel, req.Model, nativeOutput)
 			})
 
 			// 检查错误是否可以重试
@@ -220,7 +220,7 @@ func (p *Portal) NativeOpenAIResponses(
 			defer reqCancel()
 
 			// 调用 request.Native
-			resp, err := p.request.Native(reqCtx, req, channel)
+			resp, err := p.request.Native(reqCtx, req, channel, modelName)
 			if err != nil {
 				return err
 			}
@@ -270,7 +270,13 @@ func (p *Portal) NativeOpenAIResponsesStream(
 	ctx context.Context,
 	req *openaiResponses.Request,
 ) <-chan *openaiResponses.StreamEvent {
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", req.Model)
+	// 获取模型名称
+	modelName := ""
+	if req.Model != nil {
+		modelName = *req.Model
+	}
+
+	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", modelName)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *openaiResponses.StreamEvent, StreamBufferSize)
@@ -278,9 +284,9 @@ func (p *Portal) NativeOpenAIResponsesStream(
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, *req.Model, "openai", "responses")
+			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
 			if err != nil {
-				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
+				p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 				close(internalStream)
 				break
 			}
@@ -300,7 +306,7 @@ func (p *Portal) NativeOpenAIResponsesStream(
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				// 调用 request.NativeStream
-				return p.request.NativeStream(reqCtx, req, channel, nativeOutput)
+				return p.request.NativeStream(reqCtx, req, channel, modelName, nativeOutput)
 			})
 
 			// 检查错误是否可以重试

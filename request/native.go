@@ -25,6 +25,7 @@ func (p *Request) Native(
 	ctx context.Context,
 	payload any,
 	channel *routing.Channel,
+	originalModelName string,
 ) (any, error) {
 	now := time.Now()
 
@@ -35,6 +36,7 @@ func (p *Request) Native(
 		"model_id", channel.ModelID,
 		"api_key_id", channel.APIKeyID,
 		"model_name", channel.ModelName,
+		"original_model_name", originalModelName,
 	)
 
 	log.DebugContext(ctx, "开始处理原生请求")
@@ -51,12 +53,13 @@ func (p *Request) Native(
 
 	// 创建请求日志
 	requestLog := &RequestLog{
-		Timestamp:   now,
-		RequestType: "non-stream-native",
-		ModelName:   channel.ModelName,
-		PlatformID:  channel.PlatformID,
-		APIKeyID:    channel.APIKeyID,
-		ModelID:     channel.ModelID,
+		Timestamp:         now,
+		RequestType:       "non-stream-native",
+		ModelName:         channel.ModelName,
+		OriginalModelName: originalModelName,
+		PlatformID:        channel.PlatformID,
+		APIKeyID:          channel.APIKeyID,
+		ModelID:           channel.ModelID,
 	}
 	log.DebugContext(ctx, "创建请求日志")
 
@@ -110,6 +113,7 @@ func (p *Request) NativeStream(
 	ctx context.Context,
 	payload any,
 	channel *routing.Channel,
+	originalModelName string,
 	output chan<- any,
 ) error {
 	now := time.Now()
@@ -121,6 +125,7 @@ func (p *Request) NativeStream(
 		"model_id", channel.ModelID,
 		"api_key_id", channel.APIKeyID,
 		"model_name", channel.ModelName,
+		"original_model_name", originalModelName,
 	)
 
 	log.DebugContext(ctx, "开始处理原生流式请求")
@@ -137,12 +142,13 @@ func (p *Request) NativeStream(
 
 	// 创建请求日志
 	requestLog := &RequestLog{
-		Timestamp:   now,
-		RequestType: "stream-native",
-		ModelName:   channel.ModelName,
-		PlatformID:  channel.PlatformID,
-		APIKeyID:    channel.APIKeyID,
-		ModelID:     channel.ModelID,
+		Timestamp:         now,
+		RequestType:       "stream-native",
+		ModelName:         channel.ModelName,
+		OriginalModelName: originalModelName,
+		PlatformID:        channel.PlatformID,
+		APIKeyID:          channel.APIKeyID,
+		ModelID:           channel.ModelID,
 	}
 	log.DebugContext(ctx, "创建请求日志")
 
