@@ -139,7 +139,7 @@ func (p *OpenAI) BuildNativeRequest(channel *routing.Channel, payload any) (body
 	style := p.setAPIStyle(channel)
 
 	switch style {
-	case "chat", "chat_completions":
+	case "chat_completions":
 		if req, ok := payload.(*openaiChat.Request); ok {
 			req.Model = channel.ModelName
 			return req, nil
@@ -164,7 +164,7 @@ func (p *OpenAI) BuildNativeRequest(channel *routing.Channel, payload any) (body
 // ParseNativeResponse 解析原生响应
 func (p *OpenAI) ParseNativeResponse(variant string, raw []byte) (any, error) {
 	switch variant {
-	case "chat", "chat_completions":
+	case "chat_completions":
 		var response openaiChat.Response
 		if err := json.Unmarshal(raw, &response); err != nil {
 			return nil, errors.Wrap(errors.ErrCodeInvalidArgument, "解析 OpenAI Chat 响应失败", err)
@@ -186,7 +186,7 @@ func (p *OpenAI) ParseNativeResponse(variant string, raw []byte) (any, error) {
 // ParseNativeStreamEvent 解析原生流事件
 func (p *OpenAI) ParseNativeStreamEvent(variant string, raw []byte) (any, error) {
 	switch variant {
-	case "chat", "chat_completions":
+	case "chat_completions":
 		var event openaiChat.StreamEvent
 		if err := json.Unmarshal(raw, &event); err != nil {
 			return nil, errors.Wrap(errors.ErrCodeInvalidArgument, "解析 OpenAI Chat 流事件失败", err)
@@ -208,7 +208,7 @@ func (p *OpenAI) ParseNativeStreamEvent(variant string, raw []byte) (any, error)
 // ExtractUsageFromNativeStreamEvent 从原生流事件中提取使用统计信息
 func (p *OpenAI) ExtractUsageFromNativeStreamEvent(variant string, event any) *adapterTypes.ResponseUsage {
 	switch variant {
-	case "chat", "chat_completions":
+	case "chat_completions":
 		chatEvent, ok := event.(*openaiChat.StreamEvent)
 		if !ok {
 			return nil

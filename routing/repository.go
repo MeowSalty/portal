@@ -24,7 +24,7 @@ type Platform struct {
 type Endpoint struct {
 	ID              uint              // 端点 ID
 	EndpointType    string            // 端点类型（如 "openai", "anthropic"）
-	EndpointVariant string            // 端点变体（如 "chat", "responses"）
+	EndpointVariant string            // 端点变体（如 "chat_completions", "responses"）
 	Path            string            // API 路径（如 "/v1/chat/completions"）
 	CustomHeaders   map[string]string // 端点级别的自定义 HTTP 头部
 }

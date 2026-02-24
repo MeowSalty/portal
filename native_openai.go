@@ -31,7 +31,7 @@ func (p *Portal) NativeOpenAIChatCompletion(
 	var channel *routing.Channel
 	var err error
 	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat")
+		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
 		if err != nil {
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 			break
@@ -107,7 +107,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat")
+			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
 			if err != nil {
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)

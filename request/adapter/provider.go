@@ -114,7 +114,7 @@ type Provider interface {
 	// 将提供商的原生响应转换为统一的 any 类型返回。
 	//
 	// 参数：
-	//   - variant: API 变体（如 "chat", "responses"）
+	//   - variant: API 变体（如 "chat_completions", "responses"）
 	//   - raw: 原始响应数据（JSON 字节数组）
 	//
 	// 返回：
@@ -127,7 +127,7 @@ type Provider interface {
 	// 将提供商的原生流事件转换为统一的 any 类型返回。
 	//
 	// 参数：
-	//   - variant: API 变体（如 "chat", "responses"）
+	//   - variant: API 变体（如 "chat_completions", "responses"）
 	//   - raw: 单个流事件的数据（JSON 字节数组）
 	//
 	// 返回：
@@ -140,7 +140,7 @@ type Provider interface {
 	// 从 ParseNativeStreamEvent 返回的原生流事件对象中提取 usage 信息。
 	//
 	// 参数：
-	//   - variant: API 变体（如 "chat", "responses"）
+	//   - variant: API 变体（如 "chat_completions", "responses"）
 	//   - event: 原生流事件对象
 	//
 	// 返回：
