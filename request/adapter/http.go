@@ -46,7 +46,10 @@ func (a *Adapter) sendHTTPRequest(
 	}
 
 	// 构建 URL
-	url := channel.BaseURL + a.provider.APIEndpoint(channel.ModelName, isStream, channel.APIEndpointConfig)
+	url := joinBaseURL(
+		channel.BaseURL,
+		a.provider.APIEndpoint(channel.ModelName, isStream, channel.APIEndpointConfig),
+	)
 
 	// 记录调试日志：请求 URL 和请求体
 	log.Debug("HTTP 请求准备完成",
