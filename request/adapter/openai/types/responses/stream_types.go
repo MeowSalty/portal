@@ -57,4 +57,5 @@ const (
 	StreamEventQueued                          StreamEventType = "response.queued"
 	StreamEventCustomToolCallInputDelta        StreamEventType = "response.custom_tool_call_input.delta"
 	StreamEventCustomToolCallInputDone         StreamEventType = "response.custom_tool_call_input.done"
+	StreamEventKeepalive                       StreamEventType = "keepalive"
 )

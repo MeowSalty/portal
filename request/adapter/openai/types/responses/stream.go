@@ -92,6 +92,9 @@ type StreamEvent struct {
 
 	// Error 事件
 	Error *ResponseErrorEvent
+
+	// Keepalive 事件
+	Keepalive *ResponseKeepaliveEvent
 }
 
 // UnmarshalJSON 实现 StreamEvent 的反序列化。
@@ -460,6 +463,14 @@ func (e *StreamEvent) UnmarshalJSON(data []byte) error {
 		}
 		e.Error = &v
 
+	// Keepalive 事件
+	case StreamEventKeepalive:
+		var v ResponseKeepaliveEvent
+		if err := json.Unmarshal(data, &v); err != nil {
+			return fmt.Errorf("keepalive 事件解析失败：%w", err)
+		}
+		e.Keepalive = &v
+
 	default:
 		return fmt.Errorf("不支持的流式事件类型: %s", t.Type)
 	}
@@ -666,6 +677,11 @@ func (e StreamEvent) MarshalJSON() ([]byte, error) {
 	// Error 事件
 	if e.Error != nil {
 		set(e.Error)
+	}
+
+	// Keepalive 事件
+	if e.Keepalive != nil {
+		set(e.Keepalive)
 	}
 
 	if count == 0 {

@@ -392,6 +392,12 @@ func roundTripEvent(t *testing.T, payload []byte, expected any) {
 			t.Fatalf("反序列化失败: %v", err)
 		}
 		unmarshaled = &v
+	case *ResponseKeepaliveEvent:
+		var v ResponseKeepaliveEvent
+		if err := json.Unmarshal(marshaled, &v); err != nil {
+			t.Fatalf("反序列化失败: %v", err)
+		}
+		unmarshaled = &v
 	default:
 		t.Fatalf("未知的事件类型：%T", expected)
 	}
@@ -1535,6 +1541,19 @@ func TestStreamEvent_Unmarshal_AllTypes(t *testing.T) {
 				SequenceNumber: 1,
 			},
 			field: "Error",
+		},
+		// Keepalive 事件
+		{
+			name: "keepalive",
+			payload: []byte(`{
+				"type": "keepalive",
+				"sequence_number": 2
+			}`),
+			expected: &ResponseKeepaliveEvent{
+				Type:           StreamEventKeepalive,
+				SequenceNumber: 2,
+			},
+			field: "Keepalive",
 		},
 	}
 
@@ -2742,6 +2761,20 @@ func TestStreamEvent_Marshal_AllTypes(t *testing.T) {
 				"sequence_number": 1
 			}`),
 		},
+		// Keepalive 事件
+		{
+			name: "keepalive",
+			event: StreamEvent{
+				Keepalive: &ResponseKeepaliveEvent{
+					Type:           StreamEventKeepalive,
+					SequenceNumber: 2,
+				},
+			},
+			payload: []byte(`{
+				"type": "keepalive",
+				"sequence_number": 2
+			}`),
+		},
 	}
 
 	for _, tt := range tests {
@@ -2920,6 +2953,17 @@ func TestStreamEvent_RoundTrip(t *testing.T) {
 				SequenceNumber: 1,
 			},
 		},
+		{
+			name: "keepalive",
+			payload: []byte(`{
+				"type": "keepalive",
+				"sequence_number": 2
+			}`),
+			expected: &ResponseKeepaliveEvent{
+				Type:           StreamEventKeepalive,
+				SequenceNumber: 2,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -3058,6 +3102,7 @@ func TestStreamEvent_TypeConsistency(t *testing.T) {
 		{"response.audio.delta", []byte(`{"type": "response.audio.delta", "response_id": "resp-1", "delta": "data", "sequence_number": 1}`), StreamEventAudioDelta},
 		{"response.created", []byte(`{"type": "response.created", "response": {"id": "resp-1", "object": "response", "created_at": 1234567890, "model": "gpt-4", "output": [], "parallel_tool_calls": false, "metadata": {}, "tools": [], "tool_choice": null}, "sequence_number": 1}`), StreamEventCreated},
 		{"error", []byte(`{"type": "error", "code": "invalid_request", "message": "Invalid request", "sequence_number": 1}`), StreamEventError},
+		{"keepalive", []byte(`{"type": "keepalive", "sequence_number": 2}`), StreamEventKeepalive},
 	}
 
 	for _, tt := range tests {
