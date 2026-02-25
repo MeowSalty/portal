@@ -2,8 +2,6 @@
 package health
 
 import (
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
@@ -242,6 +240,35 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	}
 }
 
+// GetLastTryTimes 获取平台/模型/密钥的最近尝试时间
+//
+// 参数：
+//   - platformID: 平台 ID
+//   - modelID: 模型 ID
+//   - apiKeyID: API 密钥 ID
+//
+// 返回值：
+//   - time.Time: 平台最近尝试时间
+//   - time.Time: 模型最近尝试时间
+//   - time.Time: 密钥最近尝试时间
+//   - error: 错误信息
+func (m *Service) GetLastTryTimes(platformID, modelID, apiKeyID uint) (time.Time, time.Time, time.Time, error) {
+	platformStatus, err := m.GetStatus(ResourceTypePlatform, platformID)
+	if err != nil {
+		return time.Time{}, time.Time{}, time.Time{}, err
+	}
+	modelStatus, err := m.GetStatus(ResourceTypeModel, modelID)
+	if err != nil {
+		return time.Time{}, time.Time{}, time.Time{}, err
+	}
+	apiKeyStatus, err := m.GetStatus(ResourceTypeAPIKey, apiKeyID)
+	if err != nil {
+		return time.Time{}, time.Time{}, time.Time{}, err
+	}
+
+	return platformStatus.LastCheckAt, modelStatus.LastCheckAt, apiKeyStatus.LastCheckAt, nil
+}
+
 // getLatestCheckTime 从多个健康状态中获取最新的检查时间
 //
 // 如果所有状态都为 nil 或未知，则返回当前时间
@@ -284,40 +311,22 @@ func isUnknownStatus(status *Health) bool {
 	return status == nil || status.Status == HealthStatusUnknown
 }
 
-// UpdateLastUsed 更新通道的最后使用时间
+// UpdateLastTry 更新通道的最近尝试时间
 //
-// 该方法用于在通道被选择后立即更新其最后使用时间
+// 该方法用于在通道被选择后立即更新其平台/模型/密钥的最近尝试时间
 //
 // 参数：
-//   - channelID: 通道 ID，格式为 "platformID-modelID-apiKeyID"
+//   - platformID: 平台 ID
+//   - modelID: 模型 ID
+//   - apiKeyID: API 密钥 ID
 //
 // 返回值：
 //   - error: 错误信息
-func (m *Service) UpdateLastUsed(channelID string) error {
-	// 解析通道 ID
-	parts := strings.Split(channelID, "-")
-	if len(parts) != 3 {
-		return errors.New(errors.ErrCodeInvalidArgument, "无效的通道 ID 格式")
-	}
-
-	// 解析所有资源 ID
-	platformID, err := strconv.ParseUint(parts[0], 10, 32)
-	if err != nil {
-		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析平台 ID 失败", err)
-	}
-	modelID, err := strconv.ParseUint(parts[1], 10, 32)
-	if err != nil {
-		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析模型 ID 失败", err)
-	}
-	apiKeyID, err := strconv.ParseUint(parts[2], 10, 32)
-	if err != nil {
-		return errors.Wrap(errors.ErrCodeInvalidArgument, "解析 API 密钥 ID 失败", err)
-	}
-
+func (m *Service) UpdateLastTry(platformID, modelID, apiKeyID uint) error {
 	now := time.Now()
 
 	// 更新平台资源的最后使用时间
-	platformStatus, err := m.GetStatus(ResourceTypePlatform, uint(platformID))
+	platformStatus, err := m.GetStatus(ResourceTypePlatform, platformID)
 	if err != nil {
 		return err
 	}
@@ -328,7 +337,7 @@ func (m *Service) UpdateLastUsed(channelID string) error {
 	}
 
 	// 更新模型资源的最后使用时间
-	modelStatus, err := m.GetStatus(ResourceTypeModel, uint(modelID))
+	modelStatus, err := m.GetStatus(ResourceTypeModel, modelID)
 	if err != nil {
 		return err
 	}
@@ -339,7 +348,7 @@ func (m *Service) UpdateLastUsed(channelID string) error {
 	}
 
 	// 更新 API 密钥资源的最后使用时间
-	apiKeyStatus, err := m.GetStatus(ResourceTypeAPIKey, uint(apiKeyID))
+	apiKeyStatus, err := m.GetStatus(ResourceTypeAPIKey, apiKeyID)
 	if err != nil {
 		return err
 	}

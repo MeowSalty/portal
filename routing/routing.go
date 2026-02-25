@@ -128,9 +128,23 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 			switch result.Status {
 			case health.ChannelStatusAvailable:
 				availableChannels = append(availableChannels, ch)
+				platformLastTry, modelLastTry, keyLastTry, err := r.healthService.GetLastTryTimes(
+					ch.PlatformID,
+					ch.ModelID,
+					ch.APIKeyID,
+				)
+				if err != nil {
+					return nil, errors.Wrap(errors.ErrCodeInternal, "获取最近尝试时间失败", err).
+						WithHTTPStatus(fasthttp.StatusInternalServerError)
+				}
 				channelInfos = append(channelInfos, selector.ChannelInfo{
-					ID:           fmt.Sprintf("%d-%d-%d", ch.PlatformID, ch.ModelID, ch.APIKeyID),
-					LastUsedTime: result.LastCheckAt,
+					ID:              fmt.Sprintf("%d-%d-%d", ch.PlatformID, ch.ModelID, ch.APIKeyID),
+					PlatformID:      ch.PlatformID,
+					ModelID:         ch.ModelID,
+					APIKeyID:        ch.APIKeyID,
+					LastTryPlatform: platformLastTry,
+					LastTryModel:    modelLastTry,
+					LastTryKey:      keyLastTry,
 				})
 			case health.ChannelStatusUnknown:
 				// 对于未知状态的通道，直接返回它
@@ -153,9 +167,25 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 		r.mu.Unlock()
 		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
 	}
+	selectedIndex := -1
+	for i, info := range channelInfos {
+		if info.ID == selectedID {
+			selectedIndex = i
+			break
+		}
+	}
+	if selectedIndex == -1 {
+		r.mu.Unlock()
+		return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(fasthttp.StatusInternalServerError)
+	}
 
-	// 立即更新选中通道的最后使用时间
-	if updateErr := r.healthService.UpdateLastUsed(selectedID); updateErr != nil {
+	// 立即更新选中通道的最近尝试时间
+	selectedChannel := availableChannels[selectedIndex]
+	if updateErr := r.healthService.UpdateLastTry(
+		selectedChannel.PlatformID,
+		selectedChannel.ModelID,
+		selectedChannel.APIKeyID,
+	); updateErr != nil {
 		// 记录错误但不影响通道选择结果
 		// TODO: 添加日志记录
 		_ = updateErr
@@ -163,14 +193,7 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 	r.mu.Unlock()
 
 	// 找到对应的通道
-	for i, info := range channelInfos {
-		if info.ID == selectedID {
-			return availableChannels[i], nil
-		}
-	}
-
-	// 不应该到达这里
-	return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(fasthttp.StatusInternalServerError)
+	return selectedChannel, nil
 }
 
 // buildChannelsForModelWithEndpoint 为指定模型构建所有可能的通道
