@@ -34,7 +34,10 @@ func getItemID(item *responsesTypes.OutputItem) string {
 		return item.Message.ID
 	}
 	if item.FunctionCall != nil {
-		return item.FunctionCall.ID
+		if item.FunctionCall.ID != nil {
+			return *item.FunctionCall.ID
+		}
+		return ""
 	}
 	if item.FileSearchCall != nil {
 		return item.FileSearchCall.ID

@@ -326,7 +326,7 @@ func TestInputItemRoundTrip(t *testing.T) {
 			input: InputItem{
 				FunctionCall: &FunctionToolCall{
 					Type:      InputItemTypeFunctionCall,
-					ID:        "call_001",
+					ID:        ptrString("call_001"),
 					CallID:    "call_abc",
 					Name:      "my_function",
 					Arguments: `{"param":"value"}`,

@@ -262,7 +262,7 @@ func convertToolCallToOutputItem(toolCall *types.ResponseToolCall) (*responsesTy
 		}
 
 		call.Type = string(responsesTypes.OutputItemTypeFunctionCall)
-		call.ID = itemID
+		call.ID = &itemID
 		return &responsesTypes.OutputItem{
 			FunctionCall: &call,
 		}, nil

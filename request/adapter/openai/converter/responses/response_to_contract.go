@@ -138,7 +138,11 @@ func convertOutputItem(item *responsesTypes.OutputItem, message *types.ResponseM
 		return convertOutputMessage(item.Message, item.Message.ID, message, log)
 	}
 	if item.FunctionCall != nil {
-		return convertFunctionCall(item.FunctionCall, item.FunctionCall.ID, message)
+		var itemID string
+		if item.FunctionCall.ID != nil {
+			itemID = *item.FunctionCall.ID
+		}
+		return convertFunctionCall(item.FunctionCall, itemID, message)
 	}
 	if item.Reasoning != nil {
 		return convertReasoning(item.Reasoning, item.Reasoning.ID, message)

@@ -375,12 +375,12 @@ type OutputMessage struct {
 
 // FunctionToolCall 表示函数工具调用（type == "function_call"）。
 type FunctionToolCall struct {
-	Type      string `json:"type"`
-	ID        string `json:"id"`
-	CallID    string `json:"call_id"`   // 调用 ID
-	Name      string `json:"name"`      // 函数名称
-	Arguments string `json:"arguments"` // JSON 格式的参数
-	Status    string `json:"status"`    // 状态：in_progress, completed, incomplete
+	Type      string  `json:"type"`
+	ID        *string `json:"id,omitempty"`
+	CallID    string  `json:"call_id"`   // 调用 ID
+	Name      string  `json:"name"`      // 函数名称
+	Arguments string  `json:"arguments"` // JSON 格式的参数
+	Status    string  `json:"status"`    // 状态：in_progress, completed, incomplete
 }
 
 // FileSearchToolCall 表示文件搜索工具调用（type == "file_search_call"）。
