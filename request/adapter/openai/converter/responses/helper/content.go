@@ -261,14 +261,16 @@ func convertInputItemToContentPart(item responsesTypes.InputItem) types.ContentP
 		// function_call -> ContentPart.ToolCall
 		part.Type = "tool_call"
 		typeStr := "function"
+		payload := map[string]interface{}{}
+		if v.Status != nil {
+			payload["status"] = *v.Status
+		}
 		part.ToolCall = &types.ToolCall{
 			Type:      &typeStr,
 			ID:        &v.CallID,
 			Name:      &v.Name,
 			Arguments: &v.Arguments,
-			Payload: map[string]interface{}{
-				"status": v.Status,
-			},
+			Payload:   payload,
 		}
 	} else if item.FileSearchCall != nil {
 		v := item.FileSearchCall

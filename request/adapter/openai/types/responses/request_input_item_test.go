@@ -330,7 +330,7 @@ func TestInputItemRoundTrip(t *testing.T) {
 					CallID:    "call_abc",
 					Name:      "my_function",
 					Arguments: `{"param":"value"}`,
-					Status:    "in_progress",
+					Status:    ptrString("in_progress"),
 				},
 			},
 		},

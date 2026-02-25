@@ -243,7 +243,10 @@ func convertToolCallToOutputItem(toolCall *types.ResponseToolCall) (*responsesTy
 	switch *toolCall.Type {
 	case "function":
 		call := responsesTypes.FunctionToolCall{
-			Status: "completed",
+			Status: func() *string {
+				status := "completed"
+				return &status
+			}(),
 		}
 
 		if toolCall.ID != nil {
@@ -258,7 +261,7 @@ func convertToolCallToOutputItem(toolCall *types.ResponseToolCall) (*responsesTy
 
 		// 从 Extras 恢复 status
 		if status, ok := toolCall.Extras["openai.responses.status"].(string); ok {
-			call.Status = status
+			call.Status = &status
 		}
 
 		call.Type = string(responsesTypes.OutputItemTypeFunctionCall)

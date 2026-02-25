@@ -146,7 +146,10 @@ func TestRequestToContract(t *testing.T) {
 					CallID:    "call_1",
 					Name:      "lookup",
 					Arguments: "{\"q\":\"go\"}",
-					Status:    "completed",
+					Status: func() *string {
+						status := "completed"
+						return &status
+					}(),
 				},
 			},
 			{
