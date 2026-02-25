@@ -149,18 +149,6 @@ func getStringExtra(key string, extras map[string]interface{}) (string, bool) {
 	return fallback, ok
 }
 
-func getBoolExtra(key string, extras map[string]interface{}) (bool, bool) {
-	var value bool
-	if found, err := GetVendorExtra(key, extras, &value); err == nil && found {
-		return value, true
-	}
-	if extras == nil {
-		return false, false
-	}
-	fallback, ok := extras[key].(bool)
-	return fallback, ok
-}
-
 func getIntExtra(key string, extras map[string]interface{}) (int, bool) {
 	var value int
 	if found, err := GetVendorExtra(key, extras, &value); err == nil && found {

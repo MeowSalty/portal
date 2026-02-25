@@ -47,7 +47,7 @@ func StreamEventToContract(event *geminiTypes.StreamEvent, ctx adapterTypes.Stre
 		}
 
 		// 补齐索引字段
-		fillMissingIndices(contract, event.ResponseID, 0, nil, -1, ctx)
+		fillMissingIndices(contract, event.ResponseID, nil, -1, ctx)
 
 		log.Warn("Gemini 流式响应缺少 candidates")
 		return []*adapterTypes.StreamEventContract{contract}, nil
@@ -87,7 +87,7 @@ func buildMessageDeltaEvent(event *geminiTypes.StreamEvent, candidate *geminiTyp
 		message.Role = candidate.Content.Role
 	}
 
-	parts, toolCalls, contentText, contentIndex := convertPartsToStreamMessage(candidate.Content.Parts, ctx, log)
+	parts, toolCalls, contentText, contentIndex := convertPartsToStreamMessage(candidate.Content.Parts, log)
 	if len(parts) > 0 {
 		message.Parts = parts
 	}
@@ -105,7 +105,7 @@ func buildMessageDeltaEvent(event *geminiTypes.StreamEvent, candidate *geminiTyp
 	mergeGeminiCandidateExtensions(contract, candidate)
 
 	// 补齐索引字段
-	fillMissingIndices(contract, event.ResponseID, int(candidate.Index), toolCalls, contentIndex, ctx)
+	fillMissingIndices(contract, event.ResponseID, toolCalls, contentIndex, ctx)
 
 	log.Debug("转换 Gemini message_delta 事件完成", "response_id", contract.ResponseID, "output_index", contract.OutputIndex)
 	return contract
@@ -138,7 +138,7 @@ func buildMessageStopEvent(event *geminiTypes.StreamEvent, candidate *geminiType
 	}
 
 	// 补齐索引字段
-	fillMissingIndices(contract, event.ResponseID, int(candidate.Index), nil, -1, ctx)
+	fillMissingIndices(contract, event.ResponseID, nil, -1, ctx)
 
 	return contract
 }
@@ -263,7 +263,7 @@ func mergeGeminiCandidateExtensions(contract *adapterTypes.StreamEventContract, 
 
 // convertPartsToStreamMessage 转换 Gemini 内容分片到 StreamMessagePayload 所需字段。
 // 返回：parts, toolCalls, contentText, contentIndex（最后一个 part 的索引）
-func convertPartsToStreamMessage(parts []geminiTypes.Part, ctx adapterTypes.StreamIndexContext, log logger.Logger) ([]adapterTypes.StreamContentPart, []adapterTypes.StreamToolCall, *string, int) {
+func convertPartsToStreamMessage(parts []geminiTypes.Part, log logger.Logger) ([]adapterTypes.StreamContentPart, []adapterTypes.StreamToolCall, *string, int) {
 	if len(parts) == 0 {
 		return nil, nil, nil, -1
 	}
@@ -433,7 +433,7 @@ func cloneExtensions(extensions map[string]interface{}) map[string]interface{} {
 //   - item_id：优先 tool_call id（如存在）；否则 response_id:output_index 组合；若仍缺失 -> ctx.EnsureItemID(BuildStreamIndexKey(...))
 //   - content_index：Gemini parts 拆分时以 part 顺序作为 content_index；若无 parts -> ctx.EnsureContentIndex(item_id, -1)
 //   - 缺失索引统一使用 -1 作为哨兵值，与合法 0 区分
-func fillMissingIndices(contract *adapterTypes.StreamEventContract, responseID string, candidateIndex int, toolCalls []adapterTypes.StreamToolCall, contentIndex int, ctx adapterTypes.StreamIndexContext) {
+func fillMissingIndices(contract *adapterTypes.StreamEventContract, responseID string, toolCalls []adapterTypes.StreamToolCall, contentIndex int, ctx adapterTypes.StreamIndexContext) {
 	// 补齐 sequence_number
 	if contract.SequenceNumber == 0 {
 		contract.SequenceNumber = ctx.NextSequence()
