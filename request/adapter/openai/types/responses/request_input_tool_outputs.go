@@ -34,7 +34,7 @@ type InputLocalShellToolCallOutput struct {
 // 用于输入侧 shell_call_output 类型
 type InputFunctionShellToolCallOutput struct {
 	Type            InputItemType   `json:"type"`
-	ID              string          `json:"id"`
+	ID              *string         `json:"id,omitempty"`
 	CallID          string          `json:"call_id"`                     // 调用 ID
 	Output          json.RawMessage `json:"output"`                      // 输出内容：string | []InputContent
 	MaxOutputLength *int            `json:"max_output_length,omitempty"` // 最大输出长度

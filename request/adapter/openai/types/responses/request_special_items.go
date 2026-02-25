@@ -2,7 +2,7 @@ package responses
 
 // InputItemCompaction 表示压缩项（type == "compaction"）
 type InputItemCompaction struct {
-	ID               string        `json:"id"`
+	ID               *string       `json:"id,omitempty"`
 	Type             InputItemType `json:"type"`
 	CreatedBy        string        `json:"created_by"`
 	EncryptedContent *string       `json:"encrypted_content,omitempty"`

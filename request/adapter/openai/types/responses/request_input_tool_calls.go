@@ -6,7 +6,7 @@ import "encoding/json"
 // 用于输入侧 shell_call 类型
 type InputFunctionShellToolCall struct {
 	Type      InputItemType   `json:"type"`
-	ID        string          `json:"id"`
+	ID        *string         `json:"id,omitempty"`
 	CallID    string          `json:"call_id"`    // 调用 ID
 	Action    json.RawMessage `json:"action"`     // Shell 动作
 	Status    string          `json:"status"`     // 状态
@@ -17,7 +17,7 @@ type InputFunctionShellToolCall struct {
 // 用于输入侧 apply_patch_call 类型
 type InputApplyPatchToolCall struct {
 	Type      InputItemType   `json:"type"`
-	ID        string          `json:"id"`
+	ID        *string         `json:"id,omitempty"`
 	CallID    string          `json:"call_id"`   // 调用 ID
 	Operation json.RawMessage `json:"operation"` // 补丁操作
 	Status    string          `json:"status"`    // 状态
