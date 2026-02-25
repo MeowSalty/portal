@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	portalErrors "github.com/MeowSalty/portal/errors"
+	"github.com/MeowSalty/portal/logger"
 )
 
 // InputItem 表示 Responses API 的输入项
@@ -259,6 +260,21 @@ func (i *InputItem) UnmarshalJSON(data []byte) error {
 			}
 			i.OutputMessage = &outputMsg
 		} else {
+			if shouldNormalizeToOutputMessage(raw) {
+				logger.Default().WithGroup("openai").Warn("检测到非标准 input message，已自动转换为 OutputMessage，请尽快升级为 OpenAI 最新格式")
+				normalized := normalizeOutputMessageRaw(raw)
+				payload, err := json.Marshal(normalized)
+				if err != nil {
+					return err
+				}
+				var outputMsg OutputMessage
+				if err := json.Unmarshal(payload, &outputMsg); err != nil {
+					return err
+				}
+				i.OutputMessage = &outputMsg
+				return nil
+			}
+
 			var msg InputMessage
 			if err := json.Unmarshal(data, &msg); err != nil {
 				return err

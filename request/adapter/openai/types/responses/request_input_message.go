@@ -2,9 +2,14 @@ package responses
 
 import (
 	"encoding/json"
+	"fmt"
+	"sync/atomic"
+	"time"
 
 	portalErrors "github.com/MeowSalty/portal/errors"
 )
+
+var normalizedMessageIDCounter uint64
 
 // InputMessage 表示简化输入消息
 // role 支持 user/system/developer/assistant。
@@ -79,4 +84,67 @@ func NewInputMessageContentFromList(list []InputContent) InputMessageContent {
 type ItemReferenceParam struct {
 	Type *InputItemType `json:"type,omitempty"`
 	ID   string         `json:"id"`
+}
+
+// shouldNormalizeToOutputMessage 判断是否为错误格式的输出消息输入。
+//
+// 条件：content 为列表，且每个元素的 type 都是 output_text/refusal。
+// 参考文档：https://developers.openai.com/api/reference/resources/responses/methods/create
+func shouldNormalizeToOutputMessage(raw map[string]interface{}) bool {
+	contentValue, ok := raw["content"]
+	if !ok {
+		return false
+	}
+
+	contentItems, ok := contentValue.([]interface{})
+	if !ok || len(contentItems) == 0 {
+		return false
+	}
+
+	for _, item := range contentItems {
+		itemMap, ok := item.(map[string]interface{})
+		if !ok {
+			return false
+		}
+		itemType, ok := itemMap["type"].(string)
+		if !ok {
+			return false
+		}
+		if itemType != string(OutputMessageContentTypeOutputText) && itemType != string(OutputMessageContentTypeRefusal) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// normalizeOutputMessageRaw 将错误格式的输入 message 补齐为 OutputMessage 结构。
+//
+// 适用场景：部分第三方库把模型输出回填到 input 中，但缺失 status/type 字段。
+// 此处作为临时兼容逻辑补齐：status=completed，type=message。
+//
+// 参考文档：
+// https://developers.openai.com/api/reference/resources/responses/methods/create
+func normalizeOutputMessageRaw(raw map[string]interface{}) map[string]interface{} {
+	normalized := make(map[string]interface{}, len(raw)+2)
+	for key, value := range raw {
+		normalized[key] = value
+	}
+
+	if idValue, ok := normalized["id"]; !ok || idValue == nil || idValue == "" {
+		normalized["id"] = generateOutputMessageID()
+	}
+	if _, ok := normalized["type"]; !ok {
+		normalized["type"] = OutputItemTypeMessage
+	}
+	if _, ok := normalized["status"]; !ok {
+		normalized["status"] = "completed"
+	}
+
+	return normalized
+}
+
+func generateOutputMessageID() string {
+	counter := atomic.AddUint64(&normalizedMessageIDCounter, 1)
+	return fmt.Sprintf("msg_auto_%d_%d", time.Now().UnixNano(), counter)
 }

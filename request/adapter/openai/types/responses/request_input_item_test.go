@@ -184,6 +184,33 @@ func TestInputItemUnmarshalJSON(t *testing.T) {
 			},
 		},
 		{
+			name:      "UnmarshalJSON_NormalizeOutputMessage",
+			jsonInput: `{"role":"assistant","content":[{"type":"output_text","text":"ok","annotations":[]}]}`,
+			wantError: false,
+			validator: func(t *testing.T, item InputItem) {
+				if item.Message != nil {
+					t.Error("期望 Message 为空，但非 nil")
+				}
+				if item.OutputMessage == nil {
+					t.Error("期望 OutputMessage 非空，但为 nil")
+				}
+				if item.OutputMessage != nil {
+					if item.OutputMessage.Status != "completed" {
+						t.Errorf("期望 Status=completed，got %s", item.OutputMessage.Status)
+					}
+					if item.OutputMessage.Type != OutputItemTypeMessage {
+						t.Errorf("期望 Type=message，got %s", item.OutputMessage.Type)
+					}
+					if item.OutputMessage.ID == "" {
+						t.Error("期望 ID 被补齐，但为空")
+					}
+					if item.OutputMessage.Role != "assistant" {
+						t.Errorf("期望 Role=assistant，got %s", item.OutputMessage.Role)
+					}
+				}
+			},
+		},
+		{
 			name:      "UnmarshalJSON_ItemReference",
 			jsonInput: `{"type":"item_reference","id":"item_123"}`,
 			wantError: false,
