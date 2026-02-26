@@ -31,7 +31,7 @@ func NewGeminiProvider() *Gemini {
 
 // Name 返回提供商名称
 func (p *Gemini) Name() string {
-	return "gemini"
+	return "google"
 }
 
 // CreateRequest 创建 Gemini 请求

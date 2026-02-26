@@ -386,8 +386,8 @@ func extractResponseExtensions(response *geminiTypes.StreamEvent, extensions map
 		return
 	}
 
-	// 从 gemini 命名空间提取
-	if geminiExt, ok := extensions["gemini"].(map[string]interface{}); ok {
+	// 从 google 命名空间提取
+	if geminiExt, ok := extensions["google"].(map[string]interface{}); ok {
 		if val, ok := geminiExt["prompt_feedback"].(map[string]interface{}); ok {
 			response.PromptFeedback = convertMapToPromptFeedback(val)
 		}
@@ -406,8 +406,8 @@ func extractCandidateExtensions(candidate *geminiTypes.Candidate, extensions map
 		return
 	}
 
-	// 从 gemini 命名空间提取
-	if geminiExt, ok := extensions["gemini"].(map[string]interface{}); ok {
+	// 从 google 命名空间提取
+	if geminiExt, ok := extensions["google"].(map[string]interface{}); ok {
 		if val, ok := geminiExt["finish_message"].(string); ok {
 			candidate.FinishMessage = val
 		}

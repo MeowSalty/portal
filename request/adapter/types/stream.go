@@ -109,7 +109,7 @@ type StreamEventSource string
 
 const (
 	StreamSourceAnthropic      StreamEventSource = "anthropic"
-	StreamSourceGemini         StreamEventSource = "gemini"
+	StreamSourceGemini         StreamEventSource = "google"
 	StreamSourceOpenAIChat     StreamEventSource = "openai.chat"
 	StreamSourceOpenAIResponse StreamEventSource = "openai.responses"
 )

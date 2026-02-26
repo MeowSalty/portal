@@ -154,7 +154,7 @@ func TestMessageStopToGeminiResponse(t *testing.T) {
 			Type:       adapterTypes.StreamEventMessageStop,
 			ResponseID: "resp-123",
 			Extensions: map[string]interface{}{
-				"gemini": map[string]interface{}{
+				"google": map[string]interface{}{
 					"finish_message": finishMessage,
 				},
 			},
@@ -264,7 +264,7 @@ func TestExtensionsExtraction(t *testing.T) {
 			Type:       adapterTypes.StreamEventMessageDelta,
 			ResponseID: "resp-123",
 			Extensions: map[string]interface{}{
-				"gemini": map[string]interface{}{
+				"google": map[string]interface{}{
 					"prompt_feedback": map[string]interface{}{
 						"blockReason": "SAFETY",
 					},
@@ -292,7 +292,7 @@ func TestExtensionsExtraction(t *testing.T) {
 			Type:       adapterTypes.StreamEventMessageDelta,
 			ResponseID: "resp-123",
 			Extensions: map[string]interface{}{
-				"gemini": map[string]interface{}{
+				"google": map[string]interface{}{
 					"safety_ratings": []interface{}{
 						map[string]interface{}{
 							"category":    "HARM_CATEGORY_SEXUALLY_EXPLICIT",

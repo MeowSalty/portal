@@ -377,7 +377,7 @@ func TestStreamEventToContract_MessageStop_WithFinishMessage(t *testing.T) {
 	if stopContract.Extensions == nil {
 		t.Fatal("Extensions 不应为 nil")
 	}
-	geminiExt, ok := stopContract.Extensions["gemini"].(map[string]interface{})
+	geminiExt, ok := stopContract.Extensions["google"].(map[string]interface{})
 	if !ok {
 		t.Fatal("Extensions[gemini] 不存在或类型错误")
 	}

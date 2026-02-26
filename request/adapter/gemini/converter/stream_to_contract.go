@@ -220,7 +220,7 @@ func buildGeminiResponseExtensions(event *geminiTypes.StreamEvent) map[string]in
 	}
 
 	return map[string]interface{}{
-		"gemini": geminiExt,
+		"google": geminiExt,
 	}
 }
 
@@ -401,14 +401,14 @@ func ensureGeminiExtensions(extensions map[string]interface{}) map[string]interf
 		return map[string]interface{}{}
 	}
 
-	if ext, ok := extensions["gemini"]; ok {
+	if ext, ok := extensions["google"]; ok {
 		if geminiExt, ok := ext.(map[string]interface{}); ok {
 			return geminiExt
 		}
 	}
 
 	geminiExt := make(map[string]interface{})
-	extensions["gemini"] = geminiExt
+	extensions["google"] = geminiExt
 	return geminiExt
 }
 

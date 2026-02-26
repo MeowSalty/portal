@@ -5,7 +5,7 @@ type VendorSource string
 
 const (
 	VendorSourceAnthropic      VendorSource = "anthropic"
-	VendorSourceGemini         VendorSource = "gemini"
+	VendorSourceGemini         VendorSource = "google"
 	VendorSourceOpenAIChat     VendorSource = "openai.chat"
 	VendorSourceOpenAIResponse VendorSource = "openai.responses"
 )
