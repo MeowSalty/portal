@@ -30,7 +30,7 @@ func (p *Portal) NativeAnthropicMessages(
 	var channel *routing.Channel
 	var err error
 	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "")
+		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
 		if err != nil {
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 			break
@@ -106,7 +106,7 @@ func (p *Portal) NativeAnthropicMessagesStream(
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "")
+			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
 			if err != nil {
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)

@@ -33,7 +33,7 @@ func (p *Portal) NativeGeminiGenerateContent(
 	var channel *routing.Channel
 	var err error
 	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, modelName, "google", "")
+		channel, err = p.routing.GetChannelByProvider(ctx, modelName, "google", "generate")
 		if err != nil {
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 			break
