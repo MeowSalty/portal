@@ -112,7 +112,7 @@ func (p *Portal) NativeGeminiStreamGenerateContent(
 	// 启动内部流处理协程
 	go func() {
 		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "google", "")
+			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "google", "generate")
 			if err != nil {
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 				close(internalStream)
