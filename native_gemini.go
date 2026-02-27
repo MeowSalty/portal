@@ -23,9 +23,11 @@ import (
 func (p *Portal) NativeGeminiGenerateContent(
 	ctx context.Context,
 	req *geminiTypes.Request,
+	opts ...NativeOption,
 ) (*geminiTypes.Response, error) {
 	// 获取模型名称
 	modelName := req.Model
+	options := applyNativeOptions(opts)
 
 	p.logger.DebugContext(ctx, "开始处理 Gemini GenerateContent 原生请求", "model", modelName)
 
@@ -35,6 +37,16 @@ func (p *Portal) NativeGeminiGenerateContent(
 	for {
 		channel, err = p.routing.GetChannelByProvider(ctx, modelName, "google", "generate")
 		if err != nil {
+			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+					"request_mode", "compat",
+					"model", modelName,
+					"provider", "google",
+					"endpoint_variant", "generate",
+					"error", err,
+				)
+				return p.nativeGeminiCompatFallback(ctx, req)
+			}
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 			break
 		}
@@ -100,9 +112,11 @@ func (p *Portal) NativeGeminiGenerateContent(
 func (p *Portal) NativeGeminiStreamGenerateContent(
 	ctx context.Context,
 	req *geminiTypes.Request,
+	opts ...NativeOption,
 ) <-chan *geminiTypes.StreamEvent {
 	// 获取模型名称
 	modelName := req.Model
+	options := applyNativeOptions(opts)
 
 	p.logger.DebugContext(ctx, "开始处理 Gemini StreamGenerateContent 原生流式请求", "model", modelName)
 
@@ -114,6 +128,26 @@ func (p *Portal) NativeGeminiStreamGenerateContent(
 		for {
 			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "google", "generate")
 			if err != nil {
+				if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+					p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+						"request_mode", "compat",
+						"model", modelName,
+						"provider", "google",
+						"endpoint_variant", "generate",
+						"error", err,
+					)
+					compatStream := p.nativeGeminiStreamCompatFallback(ctx, req)
+					for evt := range compatStream {
+						select {
+						case <-ctx.Done():
+							close(internalStream)
+							return
+						case internalStream <- evt:
+						}
+					}
+					close(internalStream)
+					return
+				}
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 				close(internalStream)
 				break

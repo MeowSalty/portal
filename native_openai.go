@@ -24,8 +24,10 @@ import (
 func (p *Portal) NativeOpenAIChatCompletion(
 	ctx context.Context,
 	req *openaiChat.Request,
+	opts ...NativeOption,
 ) (*openaiChat.Response, error) {
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生请求", "model", req.Model)
+	options := applyNativeOptions(opts)
 
 	var response *openaiChat.Response
 	var channel *routing.Channel
@@ -33,6 +35,16 @@ func (p *Portal) NativeOpenAIChatCompletion(
 	for {
 		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
 		if err != nil {
+			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+					"request_mode", "compat",
+					"model", req.Model,
+					"provider", "openai",
+					"endpoint_variant", "chat_completions",
+					"error", err,
+				)
+				return p.nativeOpenAIChatCompatFallback(ctx, req)
+			}
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 			break
 		}
@@ -98,8 +110,10 @@ func (p *Portal) NativeOpenAIChatCompletion(
 func (p *Portal) NativeOpenAIChatCompletionStream(
 	ctx context.Context,
 	req *openaiChat.Request,
+	opts ...NativeOption,
 ) <-chan *openaiChat.StreamEvent {
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生流式请求", "model", req.Model)
+	options := applyNativeOptions(opts)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *openaiChat.StreamEvent, StreamBufferSize)
@@ -109,6 +123,26 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 		for {
 			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
 			if err != nil {
+				if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+					p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+						"request_mode", "compat",
+						"model", req.Model,
+						"provider", "openai",
+						"endpoint_variant", "chat_completions",
+						"error", err,
+					)
+					compatStream := p.nativeOpenAIChatStreamCompatFallback(ctx, req)
+					for evt := range compatStream {
+						select {
+						case <-ctx.Done():
+							close(internalStream)
+							return
+						case internalStream <- evt:
+						}
+					}
+					close(internalStream)
+					return
+				}
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)
 				break
@@ -189,6 +223,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 func (p *Portal) NativeOpenAIResponses(
 	ctx context.Context,
 	req *openaiResponses.Request,
+	opts ...NativeOption,
 ) (*openaiResponses.Response, error) {
 	// 获取模型名称
 	modelName := ""
@@ -197,6 +232,7 @@ func (p *Portal) NativeOpenAIResponses(
 	}
 
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生请求", "model", modelName)
+	options := applyNativeOptions(opts)
 
 	var response *openaiResponses.Response
 	var channel *routing.Channel
@@ -204,6 +240,16 @@ func (p *Portal) NativeOpenAIResponses(
 	for {
 		channel, err = p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
 		if err != nil {
+			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+					"request_mode", "compat",
+					"model", modelName,
+					"provider", "openai",
+					"endpoint_variant", "responses",
+					"error", err,
+				)
+				return p.nativeOpenAIResponsesCompatFallback(ctx, req)
+			}
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 			break
 		}
@@ -269,6 +315,7 @@ func (p *Portal) NativeOpenAIResponses(
 func (p *Portal) NativeOpenAIResponsesStream(
 	ctx context.Context,
 	req *openaiResponses.Request,
+	opts ...NativeOption,
 ) <-chan *openaiResponses.StreamEvent {
 	// 获取模型名称
 	modelName := ""
@@ -277,6 +324,7 @@ func (p *Portal) NativeOpenAIResponsesStream(
 	}
 
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", modelName)
+	options := applyNativeOptions(opts)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *openaiResponses.StreamEvent, StreamBufferSize)
@@ -286,6 +334,26 @@ func (p *Portal) NativeOpenAIResponsesStream(
 		for {
 			channel, err := p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
 			if err != nil {
+				if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+					p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+						"request_mode", "compat",
+						"model", modelName,
+						"provider", "openai",
+						"endpoint_variant", "responses",
+						"error", err,
+					)
+					compatStream := p.nativeOpenAIResponsesStreamCompatFallback(ctx, req)
+					for evt := range compatStream {
+						select {
+						case <-ctx.Done():
+							close(internalStream)
+							return
+						case internalStream <- evt:
+						}
+					}
+					close(internalStream)
+					return
+				}
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
 				close(internalStream)
 				break

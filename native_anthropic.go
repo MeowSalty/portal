@@ -23,8 +23,10 @@ import (
 func (p *Portal) NativeAnthropicMessages(
 	ctx context.Context,
 	req *anthropicTypes.Request,
+	opts ...NativeOption,
 ) (*anthropicTypes.Response, error) {
 	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生请求", "model", req.Model)
+	options := applyNativeOptions(opts)
 
 	var response *anthropicTypes.Response
 	var channel *routing.Channel
@@ -32,6 +34,16 @@ func (p *Portal) NativeAnthropicMessages(
 	for {
 		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
 		if err != nil {
+			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+					"request_mode", "compat",
+					"model", req.Model,
+					"provider", "anthropic",
+					"endpoint_variant", "messages",
+					"error", err,
+				)
+				return p.nativeAnthropicCompatFallback(ctx, req)
+			}
 			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 			break
 		}
@@ -97,8 +109,10 @@ func (p *Portal) NativeAnthropicMessages(
 func (p *Portal) NativeAnthropicMessagesStream(
 	ctx context.Context,
 	req *anthropicTypes.Request,
+	opts ...NativeOption,
 ) <-chan *anthropicTypes.StreamEvent {
 	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生流式请求", "model", req.Model)
+	options := applyNativeOptions(opts)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *anthropicTypes.StreamEvent, StreamBufferSize)
@@ -108,6 +122,26 @@ func (p *Portal) NativeAnthropicMessagesStream(
 		for {
 			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
 			if err != nil {
+				if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
+					p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+						"request_mode", "compat",
+						"model", req.Model,
+						"provider", "anthropic",
+						"endpoint_variant", "messages",
+						"error", err,
+					)
+					compatStream := p.nativeAnthropicStreamCompatFallback(ctx, req)
+					for evt := range compatStream {
+						select {
+						case <-ctx.Done():
+							close(internalStream)
+							return
+						case internalStream <- evt:
+						}
+					}
+					close(internalStream)
+					return
+				}
 				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
 				close(internalStream)
 				break
