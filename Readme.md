@@ -5,7 +5,8 @@ Portal 是一个用 Go 语言编写的 AI 网关管理模块，提供多平台 A
 ## 功能特性
 
 - **统一接入**: 支持多种 AI 平台（包括 OpenAI、Gemini 和 Anthropic）的统一接入
-- **双模式 API**: 提供 Contract API（统一格式）和 Native API（原生格式）两种调用方式
+- **三模式 API**: 提供 Contract API（统一格式）、Native API（原生格式）和 Compat API（兼容原生）三种调用方式
+- **兼容模式**: Native API 支持 `WithCompatMode()` 选项，在原生端点不可用时自动降级到默认端点
 - **智能路由**: 基于模型名称和健康状态自动选择最佳通道，支持多种选择策略
 - **通道选择策略**: 内置随机选择和多维 LRU 选择策略，支持自定义扩展
 - **健康检查**: 实时监控各平台和通道的健康状态
@@ -109,11 +110,17 @@ req := &openaiChat.Request{
     },
 }
 
-// 非流式请求
+// 非流式请求（纯原生模式）
 resp, err := portal.NativeOpenAIChatCompletion(ctx, req)
 
-// 流式请求
+// 非流式请求（兼容模式 - 原生端点不可用时自动降级）
+resp, err := portal.NativeOpenAIChatCompletion(ctx, req, portal.WithCompatMode())
+
+// 流式请求（纯原生模式）
 stream := portal.NativeOpenAIChatCompletionStream(ctx, req)
+
+// 流式请求（兼容模式）
+stream := portal.NativeOpenAIChatCompletionStream(ctx, req, portal.WithCompatMode())
 ```
 
 #### OpenAI Responses API
@@ -131,11 +138,17 @@ req := &openaiResponses.Request{
     },
 }
 
-// 非流式请求
+// 非流式请求（纯原生模式）
 resp, err := portal.NativeOpenAIResponses(ctx, req)
 
-// 流式请求
+// 非流式请求（兼容模式）
+resp, err := portal.NativeOpenAIResponses(ctx, req, portal.WithCompatMode())
+
+// 流式请求（纯原生模式）
 stream := portal.NativeOpenAIResponsesStream(ctx, req)
+
+// 流式请求（兼容模式）
+stream := portal.NativeOpenAIResponsesStream(ctx, req, portal.WithCompatMode())
 ```
 
 #### Anthropic Messages
@@ -154,11 +167,17 @@ req := &anthropicTypes.Request{
     MaxTokens: 1024,
 }
 
-// 非流式请求
+// 非流式请求（纯原生模式）
 resp, err := portal.NativeAnthropicMessages(ctx, req)
 
-// 流式请求
+// 非流式请求（兼容模式）
+resp, err := portal.NativeAnthropicMessages(ctx, req, portal.WithCompatMode())
+
+// 流式请求（纯原生模式）
 stream := portal.NativeAnthropicMessagesStream(ctx, req)
+
+// 流式请求（兼容模式）
+stream := portal.NativeAnthropicMessagesStream(ctx, req, portal.WithCompatMode())
 ```
 
 #### Gemini GenerateContent
@@ -178,14 +197,46 @@ req := &geminiTypes.Request{
     },
 }
 
-// 非流式请求
+// 非流式请求（纯原生模式）
 resp, err := portal.NativeGeminiGenerateContent(ctx, req)
 
-// 流式请求
+// 非流式请求（兼容模式）
+resp, err := portal.NativeGeminiGenerateContent(ctx, req, portal.WithCompatMode())
+
+// 流式请求（纯原生模式）
 stream := portal.NativeGeminiGenerateContentStream(ctx, req)
+
+// 流式请求（兼容模式）
+stream := portal.NativeGeminiGenerateContentStream(ctx, req, portal.WithCompatMode())
 ```
 
-### 4. 优雅停机
+### 4. 兼容模式（Compat Mode）
+
+兼容模式是 Native API 的一种增强选项，通过 `WithCompatMode()` 开启。当原生端点不可用时，系统会自动降级到默认端点，通过 Contract 归一格式中转完成请求。
+
+#### 工作原理
+
+```mermaid
+flowchart TD
+    A[调用 Native 方法 + WithCompatMode] --> B{尝试获取匹配端点}
+    B -->|找到匹配端点| C[直接原生请求]
+    C --> D[返回原生响应]
+    B -->|未找到匹配端点| E{是否启用 CompatMode?}
+    E -->|否| F[直接返回错误]
+    E -->|是| G[原生请求 → Contract]
+    G --> H[通过默认端点发送 Contract 请求]
+    H --> I[收到 Contract 响应]
+    I --> J[Contract 响应 → 原生响应]
+    J --> D
+```
+
+#### 注意事项
+
+- 兼容模式会引入额外的格式转换开销
+- 部分平台特定功能在降级转换中可能丢失
+- 不传 `WithCompatMode()` 时，行为与纯原生模式一致（端点不匹配直接报错）
+
+### 5. 优雅停机
 
 ```go
 // 优雅停机，等待最多 30 秒
@@ -200,6 +251,8 @@ if err != nil {
 ```tree
 portal/
 ├── contract_chat.go       # Contract API 聊天完成
+├── native_options.go      # Native API 选项定义（WithCompatMode 等）
+├── native_compat.go       # 兼容模式降级路径实现
 ├── native_anthropic.go    # Anthropic Native API
 ├── native_gemini.go       # Gemini Native API
 ├── native_openai.go       # OpenAI Native API
@@ -241,10 +294,17 @@ portal/
 
 ## 核心概念
 
-### Contract API vs Native API
+### 三种 API 模式对比
+
+| 模式                | 入口格式 | 路由策略                       | 出口格式 | 适用场景                 |
+| ------------------- | -------- | ------------------------------ | -------- | ------------------------ |
+| Contract API        | 统一格式 | 默认端点                       | 统一格式 | 跨平台兼容、统一处理     |
+| Native API          | 原生格式 | 指定 Provider 端点             | 原生格式 | 平台特定功能、无额外开销 |
+| Native API + Compat | 原生格式 | 先尝试指定端点，降级到默认端点 | 原生格式 | 高可用、渐进式迁移       |
 
 - **Contract API**: 提供统一的请求/响应格式，自动处理不同平台之间的转换。适合需要跨平台兼容的场景。
 - **Native API**: 直接使用各平台的原生请求/响应格式，支持平台特定功能。适合需要使用特定平台高级功能的场景。
+- **兼容模式**: Native API 的增强选项，在原生端点不可用时自动降级，兼顾原生格式的便利性和高可用性。
 
 ### 适配器 (Adapter)
 
