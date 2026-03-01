@@ -1,7 +1,7 @@
 package shared
 
-// Error 表示错误响应。
-type Error struct {
+// HTTPError 表示错误响应。
+type HTTPError struct {
 	Error ErrorDetail `json:"error"`
 }
 
@@ -9,6 +9,6 @@ type Error struct {
 type ErrorDetail struct {
 	Message string  `json:"message"`
 	Type    string  `json:"type"`
-	Param   *string `json:"param"`
-	Code    string  `json:"code"`
+	Param   *string `json:"param,omitempty"`
+	Code    *string `json:"code,omitempty"`
 }
