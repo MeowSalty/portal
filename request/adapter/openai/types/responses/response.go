@@ -108,10 +108,8 @@ type Response struct {
 
 // ResponseError 表示 Responses API 错误对象。
 type ResponseError struct {
-	Code    string  `json:"code"`            // 错误代码
-	Message string  `json:"message"`         // 错误描述
-	Type    *string `json:"type,omitempty"`  // 错误类型
-	Param   *string `json:"param,omitempty"` // 相关参数
+	Code    ResponseErrorCode `json:"code"`    // 错误代码
+	Message string            `json:"message"` // 错误描述
 }
 
 // IncompleteDetails 表示未完成响应的原因。

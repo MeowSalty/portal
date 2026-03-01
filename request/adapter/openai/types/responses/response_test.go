@@ -225,14 +225,9 @@ func TestResponse_FromJSON(t *testing.T) {
 
 // TestResponseError_JSONRoundTrip 测试 ResponseError 的 JSON 转换
 func TestResponseError_JSONRoundTrip(t *testing.T) {
-	errType := "invalid_request_error"
-	param := "model"
-
 	original := ResponseError{
-		Code:    "invalid_model",
+		Code:    ResponseErrorCodeInvalidPrompt,
 		Message: "模型不存在",
-		Type:    &errType,
-		Param:   &param,
 	}
 
 	jsonData, err := json.Marshal(original)
@@ -250,12 +245,6 @@ func TestResponseError_JSONRoundTrip(t *testing.T) {
 	}
 	if decoded.Message != original.Message {
 		t.Errorf("Message 不匹配：得到 %s, 期望 %s", decoded.Message, original.Message)
-	}
-	if decoded.Type == nil || *decoded.Type != *original.Type {
-		t.Errorf("Type 不匹配")
-	}
-	if decoded.Param == nil || *decoded.Param != *original.Param {
-		t.Errorf("Param 不匹配")
 	}
 }
 

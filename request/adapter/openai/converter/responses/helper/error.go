@@ -11,13 +11,11 @@ func ConvertErrorToContract(respErr *responsesTypes.ResponseError) *types.Respon
 		return nil
 	}
 
-	code := respErr.Code
+	code := string(respErr.Code)
 	message := respErr.Message
 	return &types.ResponseError{
 		Code:    &code,
 		Message: &message,
-		Type:    respErr.Type,
-		Param:   respErr.Param,
 		Extras:  make(map[string]interface{}),
 	}
 }
@@ -31,13 +29,11 @@ func ConvertErrorFromContract(contractErr *types.ResponseError) *responsesTypes.
 	respErr := &responsesTypes.ResponseError{}
 
 	if contractErr.Code != nil {
-		respErr.Code = *contractErr.Code
+		respErr.Code = responsesTypes.ResponseErrorCode(*contractErr.Code)
 	}
 	if contractErr.Message != nil {
 		respErr.Message = *contractErr.Message
 	}
-	respErr.Type = contractErr.Type
-	respErr.Param = contractErr.Param
 
 	return respErr
 }
@@ -49,10 +45,8 @@ func ConvertStreamErrorToResponseError(err *types.StreamErrorPayload) *responses
 	}
 
 	return &responsesTypes.ResponseError{
-		Code:    err.Code,
+		Code:    responsesTypes.ResponseErrorCode(err.Code),
 		Message: err.Message,
-		Type:    &err.Type,
-		Param:   &err.Param,
 	}
 }
 
@@ -64,15 +58,8 @@ func ConvertResponseErrorToStreamError(err *responsesTypes.ResponseError) *types
 
 	result := &types.StreamErrorPayload{
 		Message: err.Message,
-		Code:    err.Code,
+		Code:    string(err.Code),
 		Raw:     make(map[string]interface{}),
-	}
-
-	if err.Type != nil {
-		result.Type = *err.Type
-	}
-	if err.Param != nil {
-		result.Param = *err.Param
 	}
 
 	return result
