@@ -11,9 +11,10 @@ type RequestLog struct {
 
 	// 请求基本信息
 	Timestamp         time.Time `json:"timestamp"`                     // 请求时间
-	RequestType       string    `json:"request_type"`                  // 请求类型：stream 或 non-stream
 	ModelName         string    `json:"model_name"`                    // 模型名称
 	OriginalModelName string    `json:"original_model_name,omitempty"` // 原始模型名称（用户请求中的模型名称）
+	IsStream          bool      `json:"is_stream"`
+	IsNative          bool      `json:"is_native"`
 
 	// 通道信息
 	PlatformID uint `json:"platform_id"` // 平台 ID
@@ -45,7 +46,8 @@ func (p *Request) recordRequestLog(
 		"platform_id", requestLog.PlatformID,
 		"model_id", requestLog.ModelID,
 		"api_key_id", requestLog.APIKeyID,
-		"request_type", requestLog.RequestType,
+		"is_stream", requestLog.IsStream,
+		"is_native", requestLog.IsNative,
 		"model_name", requestLog.ModelName,
 	)
 

@@ -137,7 +137,8 @@ func (p *Request) ChatCompletionStream(
 	now := time.Now()
 	requestLog := &RequestLog{
 		Timestamp:         now,
-		RequestType:       "stream",
+		IsStream:          true,
+		IsNative:          false,
 		ModelName:         channel.ModelName,
 		OriginalModelName: request.Model,
 		PlatformID:        channel.PlatformID,

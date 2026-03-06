@@ -54,7 +54,8 @@ func (p *Request) Native(
 	// 创建请求日志
 	requestLog := &RequestLog{
 		Timestamp:         now,
-		RequestType:       "non-stream-native",
+		IsStream:          false,
+		IsNative:          true,
 		ModelName:         channel.ModelName,
 		OriginalModelName: originalModelName,
 		PlatformID:        channel.PlatformID,
@@ -143,7 +144,8 @@ func (p *Request) NativeStream(
 	// 创建请求日志
 	requestLog := &RequestLog{
 		Timestamp:         now,
-		RequestType:       "stream-native",
+		IsStream:          true,
+		IsNative:          true,
 		ModelName:         channel.ModelName,
 		OriginalModelName: originalModelName,
 		PlatformID:        channel.PlatformID,

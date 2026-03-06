@@ -42,7 +42,8 @@ func (p *Request) ChatCompletion(
 	// 创建请求日志
 	requestLog := &RequestLog{
 		Timestamp:         now,
-		RequestType:       "non-stream",
+		IsStream:          false,
+		IsNative:          false,
 		ModelName:         channel.ModelName,
 		OriginalModelName: request.Model,
 		PlatformID:        channel.PlatformID,
