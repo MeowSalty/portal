@@ -6,9 +6,10 @@ import (
 	"sync"
 
 	"github.com/MeowSalty/portal/errors"
+	"net/http"
+
 	"github.com/MeowSalty/portal/routing/health"
 	"github.com/MeowSalty/portal/routing/selector"
-	"github.com/valyala/fasthttp"
 )
 
 // Routing 管理通道的获取和状态
@@ -70,17 +71,17 @@ func New(ctx context.Context, cfg Config) (*Routing, error) {
 // GetChannel 根据模型名称获取一个可用的通道（使用默认端点）
 func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, error) {
 	if modelName == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(http.StatusBadRequest)
 	}
 
 	// 通过模型名称查找，返回带有平台和默认端点的完整信息
 	modelsWithEndpoint, err := r.modelRepo.FindModelsWithDefaultEndpoint(ctx, modelName)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
+		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(http.StatusInternalServerError)
 	}
 
 	if len(modelsWithEndpoint) == 0 {
-		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型或平台未配置默认端点").WithHTTPStatus(fasthttp.StatusNotFound)
+		return nil, errors.New(errors.ErrCodeNotFound, "未找到模型或平台未配置默认端点").WithHTTPStatus(http.StatusNotFound)
 	}
 
 	return r.selectChannelFromModelsWithEndpoint(modelsWithEndpoint)
@@ -90,23 +91,23 @@ func (r *Routing) GetChannel(ctx context.Context, modelName string) (*Channel, e
 func (r *Routing) GetChannelByProvider(ctx context.Context, modelName, endpointType, endpointVariant string) (*Channel, error) {
 	// 参数校验
 	if modelName == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "模型名称不能为空").WithHTTPStatus(http.StatusBadRequest)
 	}
 	if endpointType == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点类型不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点类型不能为空").WithHTTPStatus(http.StatusBadRequest)
 	}
 	if endpointVariant == "" {
-		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点变体不能为空").WithHTTPStatus(fasthttp.StatusBadRequest)
+		return nil, errors.New(errors.ErrCodeInvalidArgument, "端点变体不能为空").WithHTTPStatus(http.StatusBadRequest)
 	}
 
 	// 通过模型名称 + 端点类型 + 变体查找
 	modelsWithEndpoint, err := r.modelRepo.FindModelsWithEndpoint(ctx, modelName, endpointType, endpointVariant)
 	if err != nil {
-		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
+		return nil, errors.Wrap(errors.ErrCodeInternal, "查询模型失败", err).WithHTTPStatus(http.StatusInternalServerError)
 	}
 
 	if len(modelsWithEndpoint) == 0 {
-		return nil, errors.New(errors.ErrCodeEndpointNotFound, "未找到匹配的端点").WithHTTPStatus(fasthttp.StatusNotFound)
+		return nil, errors.New(errors.ErrCodeEndpointNotFound, "未找到匹配的端点").WithHTTPStatus(http.StatusNotFound)
 	}
 
 	return r.selectChannelFromModelsWithEndpoint(modelsWithEndpoint)
@@ -135,7 +136,7 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 				)
 				if err != nil {
 					return nil, errors.Wrap(errors.ErrCodeInternal, "获取最近尝试时间失败", err).
-						WithHTTPStatus(fasthttp.StatusInternalServerError)
+						WithHTTPStatus(http.StatusInternalServerError)
 				}
 				channelInfos = append(channelInfos, selector.ChannelInfo{
 					ID:              fmt.Sprintf("%d-%d-%d", ch.PlatformID, ch.ModelID, ch.APIKeyID),
@@ -156,7 +157,7 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 
 	// 如果没有可用通道，返回错误
 	if len(availableChannels) == 0 {
-		return nil, errors.New(errors.ErrCodeResourceExhausted, "没有可用的通道").WithHTTPStatus(fasthttp.StatusServiceUnavailable)
+		return nil, errors.New(errors.ErrCodeResourceExhausted, "没有可用的通道").WithHTTPStatus(http.StatusServiceUnavailable)
 	}
 
 	// 使用互斥锁保护通道选择和时间更新操作
@@ -165,7 +166,7 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 	selectedID, err := r.selector.Select(channelInfos)
 	if err != nil {
 		r.mu.Unlock()
-		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err).WithHTTPStatus(fasthttp.StatusInternalServerError)
+		return nil, errors.Wrap(errors.ErrCodeInternal, "选择通道失败", err).WithHTTPStatus(http.StatusInternalServerError)
 	}
 	selectedIndex := -1
 	for i, info := range channelInfos {
@@ -176,7 +177,7 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 	}
 	if selectedIndex == -1 {
 		r.mu.Unlock()
-		return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(fasthttp.StatusInternalServerError)
+		return nil, errors.New(errors.ErrCodeInternal, "选择的通道未找到").WithHTTPStatus(http.StatusInternalServerError)
 	}
 
 	// 立即更新选中通道的最近尝试时间

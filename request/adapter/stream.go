@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"io"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/valyala/fasthttp"
 )
 
 // handleStreaming 处理流式请求
@@ -27,18 +27,12 @@ func (a *Adapter) handleStreaming(
 	indexCtx := types.NewStreamIndexContext()
 
 	// 发送 HTTP 请求
-	httpResp, err := a.sendHTTPRequest(channel, headers, apiReq, true)
+	httpResp, err := a.sendHTTPRequest(ctx, channel, headers, apiReq, true)
 	if err != nil {
 		return err
 	}
 
-	// 获取需要释放的响应对象
-	var respToRelease *fasthttp.Response
-	if resp, ok := httpResp.userData.(*fasthttp.Response); ok {
-		respToRelease = resp
-	}
-
-	if httpResp.StatusCode != fasthttp.StatusOK {
+	if httpResp.StatusCode != http.StatusOK {
 		// 读取响应体以获取详细错误信息
 		var body []byte
 		if httpResp.BodyStream != nil {
@@ -62,8 +56,8 @@ func (a *Adapter) handleStreaming(
 	go func() {
 		defer func() {
 			close(stream)
-			if respToRelease != nil {
-				fasthttp.ReleaseResponse(respToRelease)
+			if httpResp.body != nil {
+				httpResp.body.Close()
 			}
 		}()
 
@@ -92,7 +86,7 @@ func (a *Adapter) handleStreaming(
 					if parseErr != nil {
 						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", data)
-						a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, parseErr.Error())
+						a.sendStreamError(ctx, stream, http.StatusInternalServerError, parseErr.Error())
 						return
 					}
 
@@ -120,7 +114,7 @@ func (a *Adapter) handleStreaming(
 						return
 					}
 					streamErr := errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
-					a.sendStreamError(ctx, stream, fasthttp.StatusInternalServerError, streamErr.Error())
+					a.sendStreamError(ctx, stream, http.StatusInternalServerError, streamErr.Error())
 					return
 				}
 			}
@@ -151,16 +145,10 @@ func (a *Adapter) handleNativeStreaming(
 
 	// 发送 HTTP 请求
 	log.Debug("开始发送流式请求")
-	httpResp, err := a.sendHTTPRequest(channel, headers, payload, true)
+	httpResp, err := a.sendHTTPRequest(ctx, channel, headers, payload, true)
 	if err != nil {
 		log.Error("发送 HTTP 请求失败", "error", err)
 		return err
-	}
-
-	// 获取需要释放的响应对象
-	var respToRelease *fasthttp.Response
-	if resp, ok := httpResp.userData.(*fasthttp.Response); ok {
-		respToRelease = resp
 	}
 
 	log.Debug("收到 HTTP 响应",
@@ -168,7 +156,7 @@ func (a *Adapter) handleNativeStreaming(
 		"content_type", string(httpResp.ContentType),
 	)
 
-	if httpResp.StatusCode != fasthttp.StatusOK {
+	if httpResp.StatusCode != http.StatusOK {
 		// 读取响应体以获取详细错误信息
 		var body []byte
 		if httpResp.BodyStream != nil {
@@ -179,8 +167,8 @@ func (a *Adapter) handleNativeStreaming(
 		} else {
 			body = []byte{}
 		}
-		if respToRelease != nil {
-			fasthttp.ReleaseResponse(respToRelease)
+		if httpResp.body != nil {
+			httpResp.body.Close()
 		}
 		log.Warn("API 返回错误状态码",
 			"status_code", httpResp.StatusCode,
@@ -192,8 +180,8 @@ func (a *Adapter) handleNativeStreaming(
 	// 检查 BodyStream 是否为 nil
 	if httpResp.BodyStream == nil {
 		log.Error("流式响应体为空")
-		if respToRelease != nil {
-			fasthttp.ReleaseResponse(respToRelease)
+		if httpResp.body != nil {
+			httpResp.body.Close()
 		}
 		return errors.New(errors.ErrCodeStreamError, "流式响应体为空")
 	}
@@ -213,8 +201,8 @@ func (a *Adapter) handleNativeStreaming(
 			}
 			log.Debug("流式响应处理完成")
 			close(output)
-			if respToRelease != nil {
-				fasthttp.ReleaseResponse(respToRelease)
+			if httpResp.body != nil {
+				httpResp.body.Close()
 			}
 		}()
 

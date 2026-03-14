@@ -2,11 +2,11 @@ package adapter
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/valyala/fasthttp"
 )
 
 // Adapter 统一适配器实现
@@ -18,7 +18,7 @@ import (
 //
 // Adapter 通过组合模式将不同提供商的 API 统一为一致的调用接口。
 type Adapter struct {
-	client   *fasthttp.Client
+	client   *http.Client
 	provider Provider
 }
 
@@ -61,13 +61,13 @@ func (a *Adapter) ChatCompletion(
 	}
 
 	// 发送请求
-	httpResp, err := a.sendHTTPRequest(channel, request.Headers, apiReq, false)
+	httpResp, err := a.sendHTTPRequest(ctx, channel, request.Headers, apiReq, false)
 	if err != nil {
 		return nil, err
 	}
 
 	// 检查 HTTP 状态码
-	if httpResp.StatusCode != fasthttp.StatusOK {
+	if httpResp.StatusCode != http.StatusOK {
 		err := a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, httpResp.Body)
 		return nil, err
 	}
@@ -136,13 +136,13 @@ func (a *Adapter) Native(
 	}
 
 	// 发送请求（使用 channel.APIEndpointConfig）
-	httpResp, err := a.sendHTTPRequest(channel, headers, body, false)
+	httpResp, err := a.sendHTTPRequest(ctx, channel, headers, body, false)
 	if err != nil {
 		return nil, err
 	}
 
 	// 检查 HTTP 状态码
-	if httpResp.StatusCode != fasthttp.StatusOK {
+	if httpResp.StatusCode != http.StatusOK {
 		err := a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, httpResp.Body)
 		return nil, err
 	}

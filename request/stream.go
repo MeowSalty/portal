@@ -4,10 +4,11 @@ import (
 	"context"
 	"time"
 
+	"net/http"
+
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/request/adapter/types"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/valyala/fasthttp"
 )
 
 // RequestLogHooks 实现 StreamHooks 接口，用于记录流式响应的统计指标到 RequestLog。
@@ -128,7 +129,7 @@ func (p *Request) ChatCompletionStream(
 	if err != nil {
 		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
-			WithHTTPStatus(fasthttp.StatusInternalServerError).
+			WithHTTPStatus(http.StatusInternalServerError).
 			WithContext("format", channel.Provider)
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())

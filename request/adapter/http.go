@@ -1,37 +1,39 @@
 package adapter
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"net/http"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/routing"
-	"github.com/valyala/fasthttp"
 )
 
 // httpResponse 统一的 HTTP 响应封装
 type httpResponse struct {
-	StatusCode  int         // HTTP 状态码
-	ContentType string      // 新增：响应的 Content-Type 头部
-	Body        []byte      // 非流式响应的完整响应体（已读取）
-	BodyStream  io.Reader   // 流式响应的响应体流（需持续读取）
-	IsStream    bool        // 标记是否为流式响应
-	userData    interface{} // 内部使用，用于存储原始响应对象（如*fasthttp.Response）以便正确释放资源
+	StatusCode  int           // HTTP 状态码
+	ContentType string        // 响应的 Content-Type 头部
+	Body        []byte        // 非流式响应的完整响应体（已读取）
+	BodyStream  io.Reader     // 流式响应的响应体流（需持续读取）
+	IsStream    bool          // 标记是否为流式响应
+	body        io.ReadCloser // 存储 resp.Body 用于流式场景的延迟关闭
 }
 
 // newHTTPClient 创建新的 HTTP 客户端
-func newHTTPClient() *fasthttp.Client {
-	client := &fasthttp.Client{
-		StreamResponseBody:            true,
-		DisableHeaderNamesNormalizing: true,
+func newHTTPClient() *http.Client {
+	return &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return http.ErrUseLastResponse // 不自动跟随重定向，与 fasthttp 行为一致
+		},
 	}
-
-	return client
 }
 
 // sendHTTPRequest 发送 HTTP 请求
 func (a *Adapter) sendHTTPRequest(
+	ctx context.Context,
 	channel *routing.Channel,
 	headers map[string]string,
 	payload interface{},
@@ -58,14 +60,13 @@ func (a *Adapter) sendHTTPRequest(
 		"request_body", string(jsonData),
 	)
 
-	// 创建请求和响应对象
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	resp := fasthttp.AcquireResponse()
+	// 创建请求
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(jsonData))
+	if err != nil {
+		return nil, errors.Wrap(errors.ErrCodeInternal, "创建 HTTP 请求失败", err)
+	}
 
-	// 设置请求参数
-	req.SetRequestURI(url)
-	req.Header.SetMethod("POST")
+	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
 
 	// 添加提供商特定头部（包括身份验证头部）
@@ -93,8 +94,6 @@ func (a *Adapter) sendHTTPRequest(
 		}
 	}
 
-	req.SetBody(jsonData)
-
 	// 记录调试日志：完整的请求头部
 	log.Debug("HTTP 请求头部信息",
 		"url", url,
@@ -106,10 +105,8 @@ func (a *Adapter) sendHTTPRequest(
 	)
 
 	// 发送请求
-	err = a.client.Do(req, resp)
+	resp, err := a.client.Do(req)
 	if err != nil {
-		// 发生错误时释放 response 对象
-		fasthttp.ReleaseResponse(resp)
 		log.Error("HTTP 请求失败",
 			"url", url,
 			"is_stream", isStream,
@@ -122,39 +119,35 @@ func (a *Adapter) sendHTTPRequest(
 	log.Debug("HTTP 请求已发送",
 		"url", url,
 		"is_stream", isStream,
-		"status_code", resp.StatusCode(),
-		"content_type", string(resp.Header.ContentType()),
+		"status_code", resp.StatusCode,
+		"content_type", resp.Header.Get("Content-Type"),
 	)
 
 	// 根据是否流式请求返回不同的响应体
 	httpResp := &httpResponse{
-		StatusCode:  resp.StatusCode(),
-		ContentType: string(resp.Header.ContentType()), // 新增：提取 Content-Type 头部
+		StatusCode:  resp.StatusCode,
+		ContentType: resp.Header.Get("Content-Type"),
 		IsStream:    isStream,
-		userData:    resp, // 总是存储 resp 对象以便后续释放
 	}
 
 	if isStream {
-		// 流式请求返回 BodyStream
-		bodyStream := resp.BodyStream()
-		if bodyStream == nil {
-			// 如果 BodyStream 为 nil，释放 response 并返回错误
-			fasthttp.ReleaseResponse(resp)
+		// 流式请求：保留 resp.Body 供后续读取，由调用者负责关闭
+		if resp.Body == nil {
 			log.Error("流式响应体为空", "url", url)
 			return nil, errors.New(errors.ErrCodeStreamError, "流式响应体为空")
 		}
-		httpResp.BodyStream = bodyStream
+		httpResp.BodyStream = resp.Body
+		httpResp.body = resp.Body
 		log.Debug("流式响应已准备", "url", url)
 	} else {
-		// 非流式请求返回 Body，并释放 response 对象
-		body := make([]byte, len(resp.Body()))
-		copy(body, resp.Body())
+		// 非流式请求：读取完整响应体后关闭
+		defer resp.Body.Close()
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			log.Error("读取响应体失败", "url", url, "error", err)
+			return nil, errors.Wrap(errors.ErrCodeInternal, "读取响应体失败", err)
+		}
 		httpResp.Body = body
-		// 确保非流式响应的 BodyStream 为空
-		httpResp.BodyStream = nil
-		// 非流式情况下立即释放
-		fasthttp.ReleaseResponse(resp)
-		httpResp.userData = nil
 		log.Debug("非流式响应已准备", "url", url, "body_size", len(body))
 	}
 

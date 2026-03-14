@@ -3,10 +3,11 @@ package request
 import (
 	"strconv"
 
+	"net/http"
+
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/request/adapter"
 	"github.com/MeowSalty/portal/request/adapter/types"
-	"github.com/valyala/fasthttp"
 )
 
 // 辅助函数和工具方法
@@ -22,12 +23,12 @@ func (p *Request) checkResponseError(response *types.StreamEventContract) error 
 
 	if response.Type == types.StreamEventError && response.Error == nil {
 		log.Error("响应错误事件缺少错误信息")
-		return errors.NewWithHTTPStatus(errors.ErrCodeStreamError, "流处理错误", fasthttp.StatusInternalServerError).
+		return errors.NewWithHTTPStatus(errors.ErrCodeStreamError, "流处理错误", http.StatusInternalServerError).
 			WithContext("error_from", "upstream")
 	}
 
 	if response.Error != nil {
-		statusCode := fasthttp.StatusInternalServerError
+		statusCode := http.StatusInternalServerError
 		if response.Error.Code != "" {
 			if parsed, err := strconv.Atoi(response.Error.Code); err == nil {
 				statusCode = parsed
