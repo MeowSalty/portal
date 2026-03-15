@@ -8,6 +8,20 @@ import (
 	"github.com/MeowSalty/portal/errors"
 )
 
+// 预编译正则表达式，避免每次调用时重新编译
+var (
+	htmlTagRegex    = regexp.MustCompile(`(?i)<[^>]+>`)
+	allTagsRegex    = regexp.MustCompile(`<[^>]*>`)
+	whitespaceRegex = regexp.MustCompile(`\s+`)
+	tagPatterns     = map[string]*regexp.Regexp{
+		"title":  regexp.MustCompile(`(?i)<title(?:\s+[^>]*)?>(.+?)</title>`),
+		"h1":     regexp.MustCompile(`(?i)<h1(?:\s+[^>]*)?>(.+?)</h1>`),
+		"h2":     regexp.MustCompile(`(?i)<h2(?:\s+[^>]*)?>(.+?)</h2>`),
+		"p":      regexp.MustCompile(`(?i)<p(?:\s+[^>]*)?>(.+?)</p>`),
+		"center": regexp.MustCompile(`(?i)<center(?:\s+[^>]*)?>(.+?)</center>`),
+	}
+)
+
 // ErrorFrom 表示错误来源
 // 网关 (A) → 服务器 (B) → 外部服务 (C)
 type ErrorFrom int
@@ -225,16 +239,14 @@ func extractHTMLError(content string) string {
 
 // extractTagContent 提取指定标签的内容
 func extractTagContent(content, tagName string) string {
-	// 构建正则表达式匹配指定标签的内容
-	pattern := `(?i)<` + tagName + `(?:\s+[^>]*)?>(.*?)</` + tagName + `>`
-	regex := regexp.MustCompile(pattern)
+	regex, ok := tagPatterns[tagName]
+	if !ok {
+		return ""
+	}
 	matches := regex.FindStringSubmatch(content)
 	if len(matches) > 1 {
 		// 提取内容后，移除其中可能存在的 HTML 标签
-		extracted := matches[1]
-		// 移除所有 HTML 标签
-		tagRegex := regexp.MustCompile(`<[^>]*>`)
-		cleaned := tagRegex.ReplaceAllString(extracted, "")
+		cleaned := allTagsRegex.ReplaceAllString(matches[1], "")
 		return strings.TrimSpace(cleaned)
 	}
 	return ""
@@ -242,16 +254,12 @@ func extractTagContent(content, tagName string) string {
 
 // isHTMLContent 检查内容是否为 HTML
 func isHTMLContent(content string) bool {
-	// 检查是否包含 HTML 标签
-	htmlTagRegex := regexp.MustCompile(`(?i)<[^>]+>`)
 	return htmlTagRegex.MatchString(content)
 }
 
 // cleanWhitespace 清理多余的空白字符
 func cleanWhitespace(content string) string {
-	// 清理多余的空白字符，包括连续的空格、制表符、换行符等
-	spaceRegex := regexp.MustCompile(`\s+`)
-	result := spaceRegex.ReplaceAllString(content, " ")
+	result := whitespaceRegex.ReplaceAllString(content, " ")
 	return strings.TrimSpace(result)
 }
 
