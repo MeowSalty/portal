@@ -100,8 +100,7 @@ func (a *Adapter) handleStreaming(
 							case <-ctx.Done():
 								// 上下文已取消，停止发送响应块
 								return
-							default:
-								stream <- event
+							case stream <- event:
 							}
 						}
 					}
@@ -275,8 +274,7 @@ func (a *Adapter) handleNativeStreaming(
 						log.Debug("上下文已取消，停止发送响应块", "context_err", ctx.Err())
 						streamErr = ctx.Err()
 						return
-					default:
-						output <- event
+					case output <- event:
 						log.Debug("成功发送事件到输出通道")
 					}
 				}
