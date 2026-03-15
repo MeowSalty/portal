@@ -6,10 +6,17 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/routing"
+)
+
+var (
+	sharedClient *http.Client
+	clientOnce   sync.Once
 )
 
 // httpResponse 统一的 HTTP 响应封装
@@ -22,13 +29,25 @@ type httpResponse struct {
 	body        io.ReadCloser // 存储 resp.Body 用于流式场景的延迟关闭
 }
 
-// newHTTPClient 创建新的 HTTP 客户端
-func newHTTPClient() *http.Client {
-	return &http.Client{
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse // 不自动跟随重定向，与 fasthttp 行为一致
-		},
-	}
+// getSharedHTTPClient 返回共享的 HTTP 客户端单例
+//
+// 使用 sync.Once 确保只初始化一次。http.Client 是线程安全的，
+// 共享单例可以复用底层 TCP/TLS 连接池，避免每次请求创建新连接。
+func getSharedHTTPClient() *http.Client {
+	clientOnce.Do(func() {
+		sharedClient = &http.Client{
+			Transport: &http.Transport{
+				MaxIdleConns:        1000,
+				MaxIdleConnsPerHost: 100,
+				IdleConnTimeout:     90 * time.Second,
+				TLSHandshakeTimeout: 10 * time.Second,
+			},
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+	})
+	return sharedClient
 }
 
 // sendHTTPRequest 发送 HTTP 请求

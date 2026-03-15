@@ -38,7 +38,7 @@ func NewAdapterFromProvider(provider Provider) *Adapter {
 	}
 
 	return &Adapter{
-		client:   newHTTPClient(),
+		client:   getSharedHTTPClient(),
 		provider: provider,
 	}
 }
