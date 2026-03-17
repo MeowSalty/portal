@@ -67,9 +67,8 @@ func (p *Request) ChatCompletion(
 
 	if err != nil {
 		// 记录失败统计
-		errorMsg := err.Error()
 		requestLog.Success = false
-		requestLog.ErrorMsg = &errorMsg
+		fillRequestLogErrorFields(requestLog, err)
 		p.recordRequestLog(requestLog, nil, false)
 
 		log.ErrorContext(ctx, "聊天完成请求失败", "error", err)

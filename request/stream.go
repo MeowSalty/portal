@@ -88,8 +88,7 @@ func (h *RequestLogHooks) OnError(err error) {
 
 	// 记录错误信息
 	if err != nil {
-		errMsg := err.Error()
-		h.log.ErrorMsg = &errMsg
+		fillRequestLogErrorFields(h.log, err)
 	}
 
 	// 异步记录请求日志
@@ -158,8 +157,7 @@ func (p *Request) ChatCompletionStream(
 	log.DebugContext(ctx, "执行流式聊天完成请求")
 	err = adapter.ChatCompletionStream(ctx, request, channel, internalStream)
 	if err != nil {
-		errorMsg := err.(*errors.Error).Error()
-		requestLog.ErrorMsg = &errorMsg
+		fillRequestLogErrorFields(requestLog, err)
 		p.recordRequestLog(requestLog, nil, false)
 
 		log.ErrorContext(ctx, "流式聊天完成请求失败", "error", err)
@@ -209,8 +207,7 @@ func (p *Request) handleStreamData(
 				}
 			}
 
-			msg := err.Error()
-			requestLog.ErrorMsg = &msg
+			fillRequestLogErrorFields(requestLog, err)
 			p.recordRequestLog(requestLog, nil, false)
 
 			return err

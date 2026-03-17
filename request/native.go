@@ -79,9 +79,8 @@ func (p *Request) Native(
 
 	if err != nil {
 		// 记录失败统计
-		errorMsg := err.Error()
 		requestLog.Success = false
-		requestLog.ErrorMsg = &errorMsg
+		fillRequestLogErrorFields(requestLog, err)
 		p.recordRequestLog(requestLog, nil, false)
 
 		log.ErrorContext(ctx, "原生请求失败", "error", err)
