@@ -73,7 +73,7 @@ func (a *Adapter) ChatCompletion(
 	}
 
 	// 解析响应
-	response, err := a.provider.ParseResponse(httpResp.Body)
+	response, err := a.provider.ParseResponse(channel.APIVariant, httpResp.Body)
 	if err != nil {
 		err := a.handleParseError("响应解析错误", err, httpResp.Body)
 		return nil, err

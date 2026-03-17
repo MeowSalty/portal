@@ -128,7 +128,7 @@ func (a *Adapter) sendHTTPRequest(
 	// 构建 URL
 	url := joinBaseURL(
 		channel.BaseURL,
-		a.provider.APIEndpoint(channel.ModelName, isStream, channel.APIEndpointConfig),
+		a.provider.APIEndpoint(channel.APIVariant, channel.ModelName, isStream, channel.APIEndpointConfig),
 	)
 
 	// 记录调试日志：请求 URL 和请求体

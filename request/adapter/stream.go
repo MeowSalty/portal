@@ -82,7 +82,7 @@ func (a *Adapter) handleStreaming(
 					}
 
 					// 解析流式响应块，传入流索引上下文
-					events, parseErr := a.provider.ParseStreamResponse(indexCtx, []byte(data))
+					events, parseErr := a.provider.ParseStreamResponse(channel.APIVariant, indexCtx, []byte(data))
 					if parseErr != nil {
 						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", data)

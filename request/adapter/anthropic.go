@@ -40,7 +40,7 @@ func (p *Anthropic) CreateRequest(request *adapterTypes.RequestContract, channel
 }
 
 // ParseResponse 解析 Anthropic 响应
-func (p *Anthropic) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
+func (p *Anthropic) ParseResponse(variant string, responseData []byte) (*adapterTypes.ResponseContract, error) {
 	// 首先检查是否是错误响应
 	var errorResp anthropicTypes.ErrorResponse
 	if err := json.Unmarshal(responseData, &errorResp); err == nil && errorResp.Type == "error" {
@@ -61,7 +61,7 @@ func (p *Anthropic) ParseResponse(responseData []byte) (*adapterTypes.ResponseCo
 }
 
 // ParseStreamResponse 解析 Anthropic 流式响应
-func (p *Anthropic) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
+func (p *Anthropic) ParseStreamResponse(variant string, ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
 	var event anthropicTypes.StreamEvent
 	if err := json.Unmarshal(responseData, &event); err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func (p *Anthropic) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, res
 }
 
 // APIEndpoint 返回 API 端点
-func (p *Anthropic) APIEndpoint(model string, stream bool, config ...string) string {
+func (p *Anthropic) APIEndpoint(variant string, model string, stream bool, config ...string) string {
 	defaultEndpoint := "/v1/messages"
 
 	// 如果没有提供 config，使用默认端点

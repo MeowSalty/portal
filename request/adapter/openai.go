@@ -14,10 +14,9 @@ import (
 	"github.com/MeowSalty/portal/routing"
 )
 
-// OpenAI OpenAI 提供商实现
+// OpenAI OpenAI 提供商实现（无状态）
 type OpenAI struct {
-	apiVariant string
-	logger     logger.Logger
+	logger logger.Logger
 }
 
 // init 函数注册 OpenAI 提供商
@@ -40,7 +39,7 @@ func (p *OpenAI) Name() string {
 // CreateRequest 创建 OpenAI 请求
 func (p *OpenAI) CreateRequest(request *adapterTypes.RequestContract, channel *routing.Channel) (interface{}, error) {
 	request.Model = channel.ModelName
-	style := p.setAPIStyle(channel)
+	style := resolveAPIVariant(channel)
 	if style == "responses" {
 		return responsesConverter.RequestFromContract(request)
 	}
@@ -48,8 +47,8 @@ func (p *OpenAI) CreateRequest(request *adapterTypes.RequestContract, channel *r
 }
 
 // ParseResponse 解析 OpenAI 响应
-func (p *OpenAI) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
-	if p.apiVariant == "responses" {
+func (p *OpenAI) ParseResponse(variant string, responseData []byte) (*adapterTypes.ResponseContract, error) {
+	if variant == "responses" {
 		var response openaiResponses.Response
 		if err := json.Unmarshal(responseData, &response); err != nil {
 			return nil, err
@@ -65,8 +64,8 @@ func (p *OpenAI) ParseResponse(responseData []byte) (*adapterTypes.ResponseContr
 }
 
 // ParseStreamResponse 解析 OpenAI 流式响应
-func (p *OpenAI) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
-	if p.apiVariant == "responses" {
+func (p *OpenAI) ParseStreamResponse(variant string, ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
+	if variant == "responses" {
 		var event openaiResponses.StreamEvent
 		if err := json.Unmarshal(responseData, &event); err != nil {
 			return nil, err
@@ -89,10 +88,10 @@ func (p *OpenAI) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, respon
 }
 
 // APIEndpoint 返回 API 端点
-func (p *OpenAI) APIEndpoint(model string, stream bool, config ...string) string {
+func (p *OpenAI) APIEndpoint(variant string, model string, stream bool, config ...string) string {
 	// 默认端点
 	var defaultEndpoint string
-	if p.apiVariant == "responses" {
+	if variant == "responses" {
 		defaultEndpoint = "/v1/responses"
 	} else {
 		defaultEndpoint = "/v1/chat/completions"
@@ -136,7 +135,7 @@ func (p *OpenAI) SupportsNative() bool {
 
 // BuildNativeRequest 构建原生请求
 func (p *OpenAI) BuildNativeRequest(channel *routing.Channel, payload any) (body any, err error) {
-	style := p.setAPIStyle(channel)
+	style := resolveAPIVariant(channel)
 
 	switch style {
 	case "chat_completions":
@@ -244,10 +243,11 @@ func (p *OpenAI) ExtractUsageFromNativeStreamEvent(variant string, event any) *a
 	}
 }
 
-func (p *OpenAI) setAPIStyle(channel *routing.Channel) string {
+// resolveAPIVariant 从 channel 解析 API 变体，返回标准化的变体字符串。
+// 这是一个纯函数，不修改任何状态。
+func resolveAPIVariant(channel *routing.Channel) string {
 	if channel == nil {
-		p.apiVariant = "chat_completions"
-		return p.apiVariant
+		return "chat_completions"
 	}
 
 	style := strings.ToLower(strings.TrimSpace(channel.APIVariant))
@@ -255,6 +255,5 @@ func (p *OpenAI) setAPIStyle(channel *routing.Channel) string {
 		style = "chat_completions"
 	}
 
-	p.apiVariant = style
-	return p.apiVariant
+	return style
 }

@@ -40,7 +40,7 @@ func (p *Gemini) CreateRequest(request *adapterTypes.RequestContract, channel *r
 }
 
 // ParseResponse 解析 Gemini 响应
-func (p *Gemini) ParseResponse(responseData []byte) (*adapterTypes.ResponseContract, error) {
+func (p *Gemini) ParseResponse(variant string, responseData []byte) (*adapterTypes.ResponseContract, error) {
 	// 首先检查是否是错误响应
 	var errorResp geminiTypes.ErrorResponse
 	if err := json.Unmarshal(responseData, &errorResp); err == nil && errorResp.Error.Code != 0 {
@@ -66,7 +66,7 @@ func (p *Gemini) ParseResponse(responseData []byte) (*adapterTypes.ResponseContr
 }
 
 // ParseStreamResponse 解析 Gemini 流式响应
-func (p *Gemini) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
+func (p *Gemini) ParseStreamResponse(variant string, ctx adapterTypes.StreamIndexContext, responseData []byte) ([]*adapterTypes.StreamEventContract, error) {
 	var event geminiTypes.StreamEvent
 	if err := json.Unmarshal(responseData, &event); err != nil {
 		return nil, err
@@ -75,7 +75,7 @@ func (p *Gemini) ParseStreamResponse(ctx adapterTypes.StreamIndexContext, respon
 }
 
 // APIEndpoint 返回 API 端点
-func (p *Gemini) APIEndpoint(model string, stream bool, config ...string) string {
+func (p *Gemini) APIEndpoint(variant string, model string, stream bool, config ...string) string {
 	// 移除模型名的前缀"models/"（如果存在的话）
 	if len(model) > 7 && model[:7] == "models/" {
 		model = model[7:]
