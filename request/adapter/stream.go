@@ -194,11 +194,14 @@ func (a *Adapter) handleNativeStreaming(
 	go func() {
 		var streamErr error
 		defer func() {
-			// 触发 OnComplete Hook
 			if hooks != nil {
-				hooks.OnComplete(time.Now())
+				if streamErr != nil {
+					hooks.OnError(streamErr)
+				} else {
+					hooks.OnComplete(time.Now())
+				}
 			}
-			log.Debug("流式响应处理完成")
+			log.Debug("流式响应处理完成", "error", streamErr)
 			close(output)
 			if httpResp.body != nil {
 				httpResp.body.Close()
@@ -212,7 +215,7 @@ func (a *Adapter) handleNativeStreaming(
 			case <-ctx.Done():
 				// 上下文已取消，停止流处理
 				log.Debug("上下文已取消，停止流处理", "context_err", ctx.Err())
-				streamErr = ctx.Err()
+				streamErr = normalizeCanceled(ctx.Err())
 				return
 			default:
 				line, err := reader.ReadString('\n')
@@ -232,10 +235,6 @@ func (a *Adapter) handleNativeStreaming(
 					// 使用 Provider 解析原生流事件
 					event, parseErr := a.provider.ParseNativeStreamEvent(channel.APIVariant, []byte(data))
 					if parseErr != nil {
-						// 触发 OnError Hook
-						if hooks != nil {
-							hooks.OnError(parseErr)
-						}
 						streamErr = errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", data)
 						log.Error("解析原生流块失败",
@@ -272,7 +271,7 @@ func (a *Adapter) handleNativeStreaming(
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
 						log.Debug("上下文已取消，停止发送响应块", "context_err", ctx.Err())
-						streamErr = ctx.Err()
+						streamErr = normalizeCanceled(ctx.Err())
 						return
 					case output <- event:
 						log.Debug("成功发送事件到输出通道")
@@ -286,11 +285,17 @@ func (a *Adapter) handleNativeStreaming(
 						// 流已结束
 						return
 					}
-					// 触发 OnError Hook
-					if hooks != nil {
-						hooks.OnError(err)
+
+					if isCanceled(err) || isCanceled(ctx.Err()) {
+						cancelErr := err
+						if ctx.Err() != nil {
+							cancelErr = ctx.Err()
+						}
+						streamErr = normalizeCanceled(cancelErr)
+						return
 					}
-					streamErr = err
+
+					streamErr = errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
 					log.Error("读取流数据失败",
 						"error", err,
 					)

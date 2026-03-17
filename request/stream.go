@@ -157,6 +157,10 @@ func (p *Request) ChatCompletionStream(
 	log.DebugContext(ctx, "执行流式聊天完成请求")
 	err = adapter.ChatCompletionStream(ctx, request, channel, internalStream)
 	if err != nil {
+		if isCanceled(err) {
+			err = normalizeCanceled(err)
+		}
+
 		fillRequestLogErrorFields(requestLog, err)
 		p.recordRequestLog(requestLog, nil, false)
 
@@ -194,6 +198,10 @@ func (p *Request) handleStreamData(
 
 		// 检查错误
 		if err := p.checkResponseError(response); err != nil {
+			if isCanceled(err) {
+				err = normalizeCanceled(err)
+			}
+
 			var portalError *errors.Error
 			if errors.As(err, &portalError) {
 				switch errors.GetCode(portalError) {
@@ -254,6 +262,13 @@ func (p *Request) handleStreamData(
 
 		// 发送响应
 		if err := p.sendResponse(ctx, output, response, requestLog); err != nil {
+			if isCanceled(err) {
+				err = normalizeCanceled(err)
+			}
+
+			fillRequestLogErrorFields(requestLog, err)
+			p.recordRequestLog(requestLog, nil, false)
+
 			log.ErrorContext(ctx, "发送响应失败",
 				"error", err,
 				"message_count", messageCount,
@@ -306,7 +321,7 @@ func (p *Request) sendResponse(
 		log.DebugContext(ctx, "响应发送成功")
 		return nil
 	case <-ctx.Done():
-		err := errors.Wrap(errors.ErrCodeAborted, "连接被终止", ctx.Err())
+		err := normalizeCanceled(ctx.Err())
 
 		log.WarnContext(ctx, "连接被终止", "error", ctx.Err())
 		return err

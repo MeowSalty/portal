@@ -78,6 +78,10 @@ func (p *Request) Native(
 	)
 
 	if err != nil {
+		if isCanceled(err) {
+			err = normalizeCanceled(err)
+		}
+
 		// 记录失败统计
 		requestLog.Success = false
 		fillRequestLogErrorFields(requestLog, err)
@@ -162,6 +166,10 @@ func (p *Request) NativeStream(
 
 	// 只在 adapter.NativeStream 调用失败时返回错误
 	if err != nil {
+		if isCanceled(err) {
+			err = normalizeCanceled(err)
+		}
+
 		// adapter 启动失败，手动触发 OnError Hook
 		hooks.OnError(err)
 		log.ErrorContext(ctx, "原生流式请求启动失败", "error", err)
