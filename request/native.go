@@ -78,8 +78,8 @@ func (p *Request) Native(
 	)
 
 	if err != nil {
-		if isCanceled(err) {
-			err = normalizeCanceled(err)
+		if errors.IsCanceled(err) {
+			err = errors.NormalizeCanceled(err)
 		}
 
 		// 记录失败统计
@@ -166,8 +166,8 @@ func (p *Request) NativeStream(
 
 	// 只在 adapter.NativeStream 调用失败时返回错误
 	if err != nil {
-		if isCanceled(err) {
-			err = normalizeCanceled(err)
+		if errors.IsCanceled(err) {
+			err = errors.NormalizeCanceled(err)
 		}
 
 		// adapter 启动失败，手动触发 OnError Hook

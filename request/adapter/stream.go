@@ -215,7 +215,7 @@ func (a *Adapter) handleNativeStreaming(
 			case <-ctx.Done():
 				// 上下文已取消，停止流处理
 				log.Debug("上下文已取消，停止流处理", "context_err", ctx.Err())
-				streamErr = normalizeCanceled(ctx.Err())
+				streamErr = errors.NormalizeCanceled(ctx.Err())
 				return
 			default:
 				line, err := reader.ReadString('\n')
@@ -271,7 +271,7 @@ func (a *Adapter) handleNativeStreaming(
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
 						log.Debug("上下文已取消，停止发送响应块", "context_err", ctx.Err())
-						streamErr = normalizeCanceled(ctx.Err())
+						streamErr = errors.NormalizeCanceled(ctx.Err())
 						return
 					case output <- event:
 						log.Debug("成功发送事件到输出通道")
@@ -286,12 +286,12 @@ func (a *Adapter) handleNativeStreaming(
 						return
 					}
 
-					if isCanceled(err) || isCanceled(ctx.Err()) {
+					if errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
 						cancelErr := err
 						if ctx.Err() != nil {
 							cancelErr = ctx.Err()
 						}
-						streamErr = normalizeCanceled(cancelErr)
+						streamErr = errors.NormalizeCanceled(cancelErr)
 						return
 					}
 

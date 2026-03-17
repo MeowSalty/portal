@@ -22,15 +22,15 @@ func (p *cancelTestProvider) CreateRequest(request *types.RequestContract, chann
 	return map[string]any{"ok": true}, nil
 }
 
-func (p *cancelTestProvider) ParseResponse(responseData []byte) (*types.ResponseContract, error) {
+func (p *cancelTestProvider) ParseResponse(variant string, responseData []byte) (*types.ResponseContract, error) {
 	return &types.ResponseContract{}, nil
 }
 
-func (p *cancelTestProvider) ParseStreamResponse(ctx types.StreamIndexContext, responseData []byte) ([]*types.StreamEventContract, error) {
+func (p *cancelTestProvider) ParseStreamResponse(variant string, ctx types.StreamIndexContext, responseData []byte) ([]*types.StreamEventContract, error) {
 	return nil, nil
 }
 
-func (p *cancelTestProvider) APIEndpoint(model string, stream bool, config ...string) string {
+func (p *cancelTestProvider) APIEndpoint(variant string, model string, stream bool, config ...string) string {
 	return "/stream"
 }
 
@@ -79,13 +79,13 @@ func (h *hookSpy) OnError(err error) {
 }
 
 func TestNormalizeCanceled_ContextCanceled(t *testing.T) {
-	err := normalizeCanceled(context.Canceled)
+	err := errors.NormalizeCanceled(context.Canceled)
 
 	if !errors.IsCode(err, errors.ErrCodeAborted) {
 		t.Fatalf("错误码期望 ABORTED，实际：%v", errors.GetCode(err))
 	}
 
-	if got := errors.GetHTTPStatus(err); got != httpStatusClientClosedRequest {
+	if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
 		t.Fatalf("HTTP 状态码期望 499，实际：%d", got)
 	}
 
@@ -149,7 +149,7 @@ func TestHandleNativeStreaming_CancelTriggersOnErrorOnly(t *testing.T) {
 		if !errors.IsCode(err, errors.ErrCodeAborted) {
 			t.Fatalf("OnError 错误码期望 ABORTED，实际：%v", errors.GetCode(err))
 		}
-		if got := errors.GetHTTPStatus(err); got != httpStatusClientClosedRequest {
+		if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
 			t.Fatalf("OnError HTTP 状态码期望 499，实际：%d", got)
 		}
 	}

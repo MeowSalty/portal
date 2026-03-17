@@ -66,8 +66,8 @@ func (p *Request) ChatCompletion(
 	)
 
 	if err != nil {
-		if isCanceled(err) {
-			err = normalizeCanceled(err)
+		if errors.IsCanceled(err) {
+			err = errors.NormalizeCanceled(err)
 		}
 
 		// 记录失败统计

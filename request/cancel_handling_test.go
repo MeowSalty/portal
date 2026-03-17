@@ -8,13 +8,13 @@ import (
 )
 
 func TestNormalizeCanceled_ContextCanceled(t *testing.T) {
-	err := normalizeCanceled(context.Canceled)
+	err := errors.NormalizeCanceled(context.Canceled)
 
 	if !errors.IsCode(err, errors.ErrCodeAborted) {
 		t.Fatalf("错误码期望 ABORTED，实际：%v", errors.GetCode(err))
 	}
 
-	if got := errors.GetHTTPStatus(err); got != httpStatusClientClosedRequest {
+	if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
 		t.Fatalf("HTTP 状态码期望 499，实际：%d", got)
 	}
 
@@ -29,13 +29,13 @@ func TestNormalizeCanceled_ContextCanceled(t *testing.T) {
 }
 
 func TestNormalizeCanceled_ContextDeadlineExceeded(t *testing.T) {
-	err := normalizeCanceled(context.DeadlineExceeded)
+	err := errors.NormalizeCanceled(context.DeadlineExceeded)
 
 	if !errors.IsCode(err, errors.ErrCodeAborted) {
 		t.Fatalf("错误码期望 ABORTED，实际：%v", errors.GetCode(err))
 	}
 
-	if got := errors.GetHTTPStatus(err); got != httpStatusClientClosedRequest {
+	if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
 		t.Fatalf("HTTP 状态码期望 499，实际：%d", got)
 	}
 
@@ -51,13 +51,13 @@ func TestNormalizeCanceled_ContextDeadlineExceeded(t *testing.T) {
 
 func TestNormalizeCanceled_ExistingAbortedKeepsCodeAndSetsFields(t *testing.T) {
 	sourceErr := errors.Wrap(errors.ErrCodeAborted, "连接被终止", context.Canceled)
-	err := normalizeCanceled(sourceErr)
+	err := errors.NormalizeCanceled(sourceErr)
 
 	if !errors.IsCode(err, errors.ErrCodeAborted) {
 		t.Fatalf("错误码期望 ABORTED，实际：%v", errors.GetCode(err))
 	}
 
-	if got := errors.GetHTTPStatus(err); got != httpStatusClientClosedRequest {
+	if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
 		t.Fatalf("HTTP 状态码期望 499，实际：%d", got)
 	}
 
@@ -73,7 +73,7 @@ func TestNormalizeCanceled_ExistingAbortedKeepsCodeAndSetsFields(t *testing.T) {
 
 func TestFillRequestLogErrorFields_CanceledError(t *testing.T) {
 	log := &RequestLog{}
-	err := normalizeCanceled(context.Canceled)
+	err := errors.NormalizeCanceled(context.Canceled)
 
 	fillRequestLogErrorFields(log, err)
 	log.Success = false
@@ -82,7 +82,7 @@ func TestFillRequestLogErrorFields_CanceledError(t *testing.T) {
 		t.Fatalf("ErrorCode 期望 ABORTED，实际：%+v", log.ErrorCode)
 	}
 
-	if log.HTTPStatus == nil || *log.HTTPStatus != httpStatusClientClosedRequest {
+	if log.HTTPStatus == nil || *log.HTTPStatus != errors.HTTPStatusClientClosedRequest {
 		t.Fatalf("HTTPStatus 期望 499，实际：%+v", log.HTTPStatus)
 	}
 
