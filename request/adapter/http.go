@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 	"time"
@@ -37,10 +38,19 @@ func getSharedHTTPClient() *http.Client {
 	clientOnce.Do(func() {
 		sharedClient = &http.Client{
 			Transport: &http.Transport{
-				MaxIdleConns:        1000,
-				MaxIdleConnsPerHost: 100,
-				IdleConnTimeout:     90 * time.Second,
-				TLSHandshakeTimeout: 10 * time.Second,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				ForceAttemptHTTP2:     true,
+				MaxIdleConns:          1000,
+				MaxIdleConnsPerHost:   100,
+				IdleConnTimeout:       90 * time.Second,
+				TLSHandshakeTimeout:  10 * time.Second,
+				ExpectContinueTimeout: 1 * time.Second,
+				ReadBufferSize:        32 * 1024,
+				WriteBufferSize:       32 * 1024,
+				DisableCompression:    true,
 			},
 			CheckRedirect: func(req *http.Request, via []*http.Request) error {
 				return http.ErrUseLastResponse
