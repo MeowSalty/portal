@@ -30,6 +30,55 @@ type httpResponse struct {
 	body        io.ReadCloser // 存储 resp.Body 用于流式场景的延迟关闭
 }
 
+var responseBodyPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 8*1024)
+		return &b
+	},
+}
+
+// readResponseBody 使用 pool 和 Content-Length 预分配读取响应体
+func readResponseBody(resp *http.Response) ([]byte, error) {
+	bufp := responseBodyPool.Get().(*[]byte)
+	buf := (*bufp)[:0]
+
+	if resp.ContentLength > 0 && resp.ContentLength <= 10*1024*1024 {
+		if cap(buf) < int(resp.ContentLength) {
+			buf = make([]byte, 0, resp.ContentLength)
+		}
+	}
+
+	buf, err := appendReader(buf, resp.Body)
+	if err != nil {
+		*bufp = buf
+		responseBodyPool.Put(bufp)
+		return nil, err
+	}
+
+	result := make([]byte, len(buf))
+	copy(result, buf)
+
+	*bufp = buf
+	responseBodyPool.Put(bufp)
+	return result, nil
+}
+
+func appendReader(buf []byte, r io.Reader) ([]byte, error) {
+	for {
+		if len(buf) == cap(buf) {
+			buf = append(buf, 0)[:len(buf)]
+		}
+		n, err := r.Read(buf[len(buf):cap(buf)])
+		buf = buf[:len(buf)+n]
+		if err != nil {
+			if err == io.EOF {
+				return buf, nil
+			}
+			return buf, err
+		}
+	}
+}
+
 // getSharedHTTPClient 返回共享的 HTTP 客户端单例
 //
 // 使用 sync.Once 确保只初始化一次。http.Client 是线程安全的，
@@ -171,7 +220,7 @@ func (a *Adapter) sendHTTPRequest(
 	} else {
 		// 非流式请求：读取完整响应体后关闭
 		defer resp.Body.Close()
-		body, err := io.ReadAll(resp.Body)
+		body, err := readResponseBody(resp)
 		if err != nil {
 			log.Error("读取响应体失败", "url", url, "error", err)
 			return nil, errors.Wrap(errors.ErrCodeInternal, "读取响应体失败", err)
