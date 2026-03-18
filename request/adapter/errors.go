@@ -31,6 +31,8 @@ const (
 	ErrorFromServer ErrorFrom = iota
 	// ErrorFromUpstream C 产生的错误，经 B 转发
 	ErrorFromUpstream
+	// ErrorFromUpstreamDependency C 的上游依赖产生的错误，经 B 转发
+	ErrorFromUpstreamDependency
 )
 
 // isJSONContentType 检查 Content-Type 是否为 JSON 类型
@@ -60,7 +62,7 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 		} else {
 			// JSON 解析成功
 			bodyStr = a.processBodyHTML(jsonData)
-			errorFrom = a.classifyErrorFrom(jsonData, statusCode)
+			errorFrom = a.classifyErrorFrom(jsonData)
 		}
 	} else {
 		// 非 JSON 类型，直接处理为 HTML/文本
@@ -93,19 +95,68 @@ func (a *Adapter) processBodyHTML(jsonData map[string]interface{}) string {
 	return string(cleanedBody)
 }
 
-// classifyErrorFrom 根据已解析的 JSON 数据分类错误来源
-func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}, statusCode int) ErrorFrom {
-	if errorObj, ok := jsonData["error"].(map[string]interface{}); ok {
-		if errorType, ok := errorObj["type"].(string); ok {
-			if errorType == "upstream_error" || errorType == "openai_error" {
-				return ErrorFromUpstream
-			}
-			// 当状态码为 503 且错误类型为 one_hub_error 或 new_api_error 时也视为上游错误
-			if statusCode == 503 && (errorType == "one_hub_error" || errorType == "new_api_error" || errorType == "bad_response_status_code") {
-				return ErrorFromUpstream
-			}
-		}
+// extractErrorFields 从已解析 JSON 中提取错误字段。
+func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, errorMessage string) {
+	errorObj, ok := jsonData["error"].(map[string]interface{})
+	if !ok {
+		return "", "", ""
 	}
+
+	if v, ok := errorObj["type"].(string); ok {
+		errorType = strings.ToLower(v)
+	}
+	if v, ok := errorObj["code"].(string); ok {
+		errorCode = strings.ToLower(v)
+	}
+	if v, ok := errorObj["message"].(string); ok {
+		errorMessage = strings.ToLower(v)
+	}
+
+	return errorType, errorCode, errorMessage
+}
+
+// classifyErrorFrom 根据已解析的 JSON 数据分类错误来源。
+func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) ErrorFrom {
+	errorType, errorCode, errorMessage := extractErrorFields(jsonData)
+
+	// 1) 按 type 识别 upstream_dependency
+	switch errorType {
+	case "upstream_error", "openai_error", "anthropic_error", "gemini_error":
+		return ErrorFromUpstreamDependency
+	}
+
+	// 2) 按 code 识别 upstream_dependency
+	switch errorCode {
+	case "bad_response_status_code", "do_request_failed":
+		return ErrorFromUpstreamDependency
+	}
+
+	// 3) 按 message 识别 upstream_dependency
+	if strings.Contains(errorMessage, "请求上游地址失败") ||
+		strings.Contains(errorMessage, "bad response status code") ||
+		strings.Contains(errorMessage, "failed to retrieve proxy group") {
+		return ErrorFromUpstreamDependency
+	}
+
+	// 4) 按 type 识别 upstream
+	switch errorType {
+	case "one_hub_error", "new_api_error", "veloera_error":
+		return ErrorFromUpstream
+	}
+
+	// 5) 按 code 识别 upstream
+	switch errorCode {
+	case "insufficient_user_quota", "model_not_found":
+		return ErrorFromUpstream
+	}
+
+	// 6) 按 message 识别 upstream
+	if strings.Contains(errorMessage, "无可用渠道") ||
+		strings.Contains(errorMessage, "用户额度不足") {
+		return ErrorFromUpstream
+	}
+
+	// 兜底：保守归类为 portal 自身错误
 	return ErrorFromServer
 }
 
@@ -118,7 +169,7 @@ func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string
 	case ErrorFromServer:
 		// B 产生的错误，根据 HTTP 状态码映射
 		errCode = mapHTTPStatusToErrorCode(statusCode)
-	case ErrorFromUpstream:
+	case ErrorFromUpstream, ErrorFromUpstreamDependency:
 		// C 产生的错误，经 B 转发，视为请求错误
 		errCode = errors.ErrCodeRequestFailed
 	default:
@@ -171,7 +222,8 @@ func mapHTTPStatusToErrorCode(statusCode int) errors.ErrorCode {
 func (a *Adapter) handleParseError(operation string, err error, body []byte) error {
 	return errors.Wrap(errors.ErrCodeInternal, "解析响应失败", err).
 		WithContext("operation", operation).
-		WithContext("response_body", string(body))
+		WithContext("response_body", string(body)).
+		WithContext("error_from", string(errors.ErrorFromServer))
 }
 
 // extractHTMLError 从 HTML 页面中提取有效的错误信息
@@ -303,9 +355,11 @@ func stripErrorHTML(err error) error {
 func errorFromToString(errorFrom ErrorFrom) string {
 	switch errorFrom {
 	case ErrorFromServer:
-		return "server"
+		return string(errors.ErrorFromServer)
 	case ErrorFromUpstream:
-		return "upstream"
+		return string(errors.ErrorFromUpstream)
+	case ErrorFromUpstreamDependency:
+		return string(errors.ErrorFromUpstreamDependency)
 	default:
 		return "unknown"
 	}

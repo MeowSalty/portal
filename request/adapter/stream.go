@@ -54,7 +54,8 @@ func (a *Adapter) handleStreaming(
 
 	// 检查 BodyStream 是否为 nil
 	if httpResp.BodyStream == nil {
-		return errors.New(errors.ErrCodeStreamError, "流式响应体为空")
+		return errors.New(errors.ErrCodeStreamError, "流式响应体为空").
+			WithContext("error_from", string(errors.ErrorFromServer))
 	}
 
 	// 处理流式响应
@@ -89,7 +90,8 @@ func (a *Adapter) handleStreaming(
 					events, parseErr := a.provider.ParseStreamResponse(channel.APIVariant, indexCtx, data)
 					if parseErr != nil {
 						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
-							WithContext("data", string(data))
+							WithContext("data", string(data)).
+							WithContext("error_from", string(errors.ErrorFromServer))
 						a.sendStreamError(ctx, stream, http.StatusInternalServerError, parseErr.Error())
 						return
 					}
@@ -120,7 +122,8 @@ func (a *Adapter) handleStreaming(
 					if errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
 						return
 					}
-					streamErr := errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
+					streamErr := errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err)).
+						WithContext("error_from", string(errors.ErrorFromServer))
 					a.sendStreamError(ctx, stream, http.StatusInternalServerError, streamErr.Error())
 					return
 				}
@@ -190,7 +193,8 @@ func (a *Adapter) handleNativeStreaming(
 		if httpResp.body != nil {
 			httpResp.body.Close()
 		}
-		return errors.New(errors.ErrCodeStreamError, "流式响应体为空")
+		return errors.New(errors.ErrCodeStreamError, "流式响应体为空").
+			WithContext("error_from", string(errors.ErrorFromServer))
 	}
 
 	log.Debug("开始处理流式响应")
@@ -243,7 +247,8 @@ func (a *Adapter) handleNativeStreaming(
 					event, parseErr := a.provider.ParseNativeStreamEvent(channel.APIVariant, data)
 					if parseErr != nil {
 						streamErr = errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
-							WithContext("data", string(data))
+							WithContext("data", string(data)).
+							WithContext("error_from", string(errors.ErrorFromServer))
 						log.Error("解析原生流块失败",
 							"data", string(data),
 							"error", streamErr,
@@ -302,7 +307,8 @@ func (a *Adapter) handleNativeStreaming(
 						return
 					}
 
-					streamErr = errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
+					streamErr = errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err)).
+						WithContext("error_from", string(errors.ErrorFromServer))
 					log.Error("读取流数据失败",
 						"error", err,
 					)
