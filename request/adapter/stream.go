@@ -2,11 +2,11 @@ package adapter
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
@@ -15,12 +15,18 @@ import (
 	"github.com/MeowSalty/portal/routing"
 )
 
+// SSE 解析常量，避免每次事件重复分配
+var (
+	sseDataPrefix = []byte("data:")
+	sseDoneMarker = []byte("[DONE]")
+)
+
 // handleStreaming 处理流式请求
 func (a *Adapter) handleStreaming(
 	ctx context.Context,
 	channel *routing.Channel,
 	headers map[string]string,
-	apiReq interface{},
+	apiReq any,
 	stream chan<- *types.StreamEventContract,
 ) error {
 	// 创建流索引上下文，用于在流式响应转换过程中生成和维护稳定的索引值
@@ -36,7 +42,6 @@ func (a *Adapter) handleStreaming(
 		// 读取响应体以获取详细错误信息
 		var body []byte
 		if httpResp.BodyStream != nil {
-			// 读取 BodyStream 的内容
 			body, err = io.ReadAll(httpResp.BodyStream)
 			if err != nil {
 				body = []byte{}
@@ -61,7 +66,7 @@ func (a *Adapter) handleStreaming(
 			}
 		}()
 
-		reader := bufio.NewReaderSize(httpResp.BodyStream, 4096) // 使用更大的缓冲区提高性能
+		reader := bufio.NewReaderSize(httpResp.BodyStream, 4096)
 
 		for {
 			select {
@@ -69,23 +74,22 @@ func (a *Adapter) handleStreaming(
 				// 上下文已取消，停止流处理
 				return
 			default:
-				line, err := reader.ReadString('\n')
+				lineBytes, err := reader.ReadBytes('\n')
 
-				// 处理数据
-				line = strings.TrimSpace(line)
-				if line != "" && strings.HasPrefix(line, "data:") {
-					// 提取数据部分
-					data := strings.TrimSpace(line[5:])
-					if data == "[DONE]" {
+				// 处理数据（零拷贝）
+				lineBytes = bytes.TrimSpace(lineBytes)
+				if len(lineBytes) > 0 && bytes.HasPrefix(lineBytes, sseDataPrefix) {
+					data := bytes.TrimSpace(lineBytes[5:])
+					if bytes.Equal(data, sseDoneMarker) {
 						// 流式传输正常完成
 						return
 					}
 
-					// 解析流式响应块，传入流索引上下文
-					events, parseErr := a.provider.ParseStreamResponse(channel.APIVariant, indexCtx, []byte(data))
+					// 解析流式响应块，直接传 []byte 避免拷贝
+					events, parseErr := a.provider.ParseStreamResponse(channel.APIVariant, indexCtx, data)
 					if parseErr != nil {
 						parseErr := errors.Wrap(errors.ErrCodeStreamError, "解析流块失败", stripErrorHTML(parseErr)).
-							WithContext("data", data)
+							WithContext("data", string(data))
 						a.sendStreamError(ctx, stream, http.StatusInternalServerError, parseErr.Error())
 						return
 					}
@@ -112,6 +116,10 @@ func (a *Adapter) handleStreaming(
 						// 流已结束
 						return
 					}
+					// 检查取消错误，与 handleNativeStreaming 保持一致
+					if errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
+						return
+					}
 					streamErr := errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err))
 					a.sendStreamError(ctx, stream, http.StatusInternalServerError, streamErr.Error())
 					return
@@ -131,7 +139,7 @@ func (a *Adapter) handleNativeStreaming(
 	ctx context.Context,
 	channel *routing.Channel,
 	headers map[string]string,
-	payload interface{},
+	payload any,
 	output chan<- any,
 	hooks types.StreamHooks,
 ) error {
@@ -218,27 +226,26 @@ func (a *Adapter) handleNativeStreaming(
 				streamErr = errors.NormalizeCanceled(ctx.Err())
 				return
 			default:
-				line, err := reader.ReadString('\n')
+				lineBytes, err := reader.ReadBytes('\n')
 
-				// 处理数据
-				line = strings.TrimSpace(line)
-				if line != "" && strings.HasPrefix(line, "data:") {
-					// 提取数据部分
-					data := strings.TrimSpace(line[5:])
-					log.Debug("读取到流数据行", "raw_line", line, "data", data[:min(len(data), 100)]) // 只记录前 100 个字符避免日志过长
-					if data == "[DONE]" {
+				// 处理数据（零拷贝）
+				lineBytes = bytes.TrimSpace(lineBytes)
+				if len(lineBytes) > 0 && bytes.HasPrefix(lineBytes, sseDataPrefix) {
+					data := bytes.TrimSpace(lineBytes[5:])
+					log.Debug("读取到流数据行", "data", string(data[:min(len(data), 100)])) // 只记录前 100 个字符避免日志过长
+					if bytes.Equal(data, sseDoneMarker) {
 						log.Debug("流式传输正常完成")
 						// 流式传输正常完成
 						return
 					}
 
-					// 使用 Provider 解析原生流事件
-					event, parseErr := a.provider.ParseNativeStreamEvent(channel.APIVariant, []byte(data))
+					// 使用 Provider 解析原生流事件，直接传 []byte
+					event, parseErr := a.provider.ParseNativeStreamEvent(channel.APIVariant, data)
 					if parseErr != nil {
 						streamErr = errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
-							WithContext("data", data)
+							WithContext("data", string(data))
 						log.Error("解析原生流块失败",
-							"data", data,
+							"data", string(data),
 							"error", streamErr,
 						)
 						return
@@ -322,7 +329,7 @@ func (a *Adapter) sendStreamError(
 			Type:    "stream_error",
 			Code:    strconv.Itoa(code),
 		},
-		Extensions: map[string]interface{}{
+		Extensions: map[string]any{
 			"status_code": code,
 		},
 	}
