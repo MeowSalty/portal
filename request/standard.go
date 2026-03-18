@@ -35,7 +35,8 @@ func (p *Request) ChatCompletion(
 	if err != nil {
 		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return nil, errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
-			WithContext("format", channel.Provider)
+			WithContext("format", channel.Provider).
+			WithContext("error_from", string(errors.ErrorFromServer))
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 

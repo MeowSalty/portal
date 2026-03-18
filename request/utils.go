@@ -18,13 +18,13 @@ func (p *Request) checkResponseError(response *types.StreamEventContract) error 
 
 	if response == nil {
 		log.Error("响应为空")
-		return errors.ErrEmptyResponse.WithContext("error_from", "upstream")
+		return errors.ErrEmptyResponse.WithContext("error_from", string(errors.ErrorFromUpstream))
 	}
 
 	if response.Type == types.StreamEventError && response.Error == nil {
 		log.Error("响应错误事件缺少错误信息")
 		return errors.NewWithHTTPStatus(errors.ErrCodeStreamError, "流处理错误", http.StatusInternalServerError).
-			WithContext("error_from", "upstream")
+			WithContext("error_from", string(errors.ErrorFromUpstream))
 	}
 
 	if response.Error != nil {
@@ -41,7 +41,7 @@ func (p *Request) checkResponseError(response *types.StreamEventContract) error 
 			"error_message", response.Error.Message,
 		)
 		return errors.NewWithHTTPStatus(errors.ErrCodeStreamError, "流处理错误", statusCode).
-			WithContext("error_from", "upstream").
+			WithContext("error_from", string(errors.ErrorFromUpstream)).
 			WithContext("error_type", response.Error.Type).
 			WithContext("error_code", response.Error.Code).
 			WithContext("error_message", response.Error.Message)
@@ -63,7 +63,10 @@ func (p *Request) getAdapter(format string) (*adapter.Adapter, error) {
 			"format", format,
 			"error", err,
 		)
-		return nil, errors.ErrAdapterNotFound.WithContext("format", format).WithCause(err)
+		return nil, errors.New(errors.ErrCodeAdapterNotFound, "未找到适配器").
+			WithContext("format", format).
+			WithContext("error_from", string(errors.ErrorFromServer)).
+			WithCause(err)
 	}
 
 	log.Debug("适配器获取成功",
