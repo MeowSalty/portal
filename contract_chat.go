@@ -13,50 +13,15 @@ import (
 func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContract) (*types.ResponseContract, error) {
 	p.logger.DebugContext(ctx, "开始处理聊天完成请求", "model", request.Model)
 
-	var response *types.ResponseContract
-	var channel *routing.Channel
-	var err error
-	for {
-		channel, err = p.routing.GetChannel(ctx, request.Model)
-		if err != nil {
-			p.logger.ErrorContext(ctx, "获取通道失败", "model", request.Model, "error", err)
-			break
-		}
-
-		// 使用 With 创建带有通道上下文的日志记录器
-		channelLogger := p.logger.With(
-			"platform_id", channel.PlatformID,
-			"model_id", channel.ModelID,
-			"api_key_id", channel.APIKeyID)
-
-		channelLogger.DebugContext(ctx, "获取到通道")
-
-		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
-			defer reqCancel()
-			response, err = p.request.ChatCompletion(reqCtx, request, channel)
-			return
-		})
-
-		// 检查错误是否可以重试
-		if err != nil {
-			if errors.IsRetryable(err) {
-				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
-				channel.MarkFailure(ctx, err)
-				continue
-			}
-			// 特殊处理：操作终止时标记成功
-			if errors.IsCode(err, errors.ErrCodeAborted) {
-				channelLogger.InfoContext(ctx, "操作终止")
-				channel.MarkSuccess(ctx)
-			}
-			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
-			channel.MarkFailure(ctx, err)
-			break
-		}
-		channel.MarkSuccess(ctx)
-		channelLogger.InfoContext(ctx, "请求处理成功")
-		break
-	}
+	response, err := retryNonStream(ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return p.routing.GetChannel(ctx, request.Model)
+		},
+		func(reqCtx context.Context, ch *routing.Channel) (*types.ResponseContract, error) {
+			return p.request.ChatCompletion(reqCtx, request, ch)
+		},
+		nil,
+	)
 
 	// 通过中间件链处理响应
 	if response != nil && p.middleware != nil {

@@ -29,71 +29,28 @@ func (p *Portal) NativeOpenAIChatCompletion(
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生请求", "model", req.Model)
 	options := applyNativeOptions(opts)
 
-	var response *openaiChat.Response
-	var channel *routing.Channel
-	var err error
-	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
-		if err != nil {
-			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
-				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
-					"request_mode", "compat",
-					"model", req.Model,
-					"provider", "openai",
-					"endpoint_variant", "chat_completions",
-					"error", err,
-				)
-				return p.nativeOpenAIChatCompatFallback(ctx, req)
-			}
-			p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
-			break
-		}
-
-		// 使用 With 创建带有通道上下文的日志记录器
-		channelLogger := p.logger.With(
-			"platform_id", channel.PlatformID,
-			"model_id", channel.ModelID,
-			"api_key_id", channel.APIKeyID)
-
-		channelLogger.DebugContext(ctx, "获取到通道")
-
-		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
-			defer reqCancel()
-
-			// 调用 request.Native
-			resp, err := p.request.Native(reqCtx, req, channel, req.Model)
+	return retryNonStream(ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
+		},
+		func(reqCtx context.Context, ch *routing.Channel) (*openaiChat.Response, error) {
+			resp, err := p.request.Native(reqCtx, req, ch, req.Model)
 			if err != nil {
-				return err
+				return nil, err
 			}
-
-			if r, ok := resp.(*openaiChat.Response); ok {
-				response = r
-			}
-			return nil
-		})
-
-		// 检查错误是否可以重试
-		if err != nil {
-			if errors.IsRetryable(err) {
-				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
-				channel.MarkFailure(ctx, err)
-				continue
-			}
-			// 特殊处理：操作终止时标记成功
-			if errors.IsCode(err, errors.ErrCodeAborted) {
-				channelLogger.InfoContext(ctx, "操作终止")
-				channel.MarkSuccess(ctx)
-			}
-			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
-			channel.MarkFailure(ctx, err)
-			break
-		}
-		channel.MarkSuccess(ctx)
-		channelLogger.InfoContext(ctx, "请求处理成功")
-		break
-	}
-
-	return response, err
+			r, _ := resp.(*openaiChat.Response)
+			return r, nil
+		},
+		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*openaiChat.Response, error) {
+			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+				"request_mode", "compat",
+				"model", req.Model,
+				"provider", "openai",
+				"endpoint_variant", "chat_completions",
+			)
+			return p.nativeOpenAIChatCompatFallback(ctx, req)
+		}),
+	)
 }
 
 // NativeOpenAIChatCompletionStream 执行 OpenAI Chat 原生流式请求
@@ -234,71 +191,28 @@ func (p *Portal) NativeOpenAIResponses(
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生请求", "model", modelName)
 	options := applyNativeOptions(opts)
 
-	var response *openaiResponses.Response
-	var channel *routing.Channel
-	var err error
-	for {
-		channel, err = p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
-		if err != nil {
-			if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
-				p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
-					"request_mode", "compat",
-					"model", modelName,
-					"provider", "openai",
-					"endpoint_variant", "responses",
-					"error", err,
-				)
-				return p.nativeOpenAIResponsesCompatFallback(ctx, req)
-			}
-			p.logger.ErrorContext(ctx, "获取通道失败", "model", modelName, "error", err)
-			break
-		}
-
-		// 使用 With 创建带有通道上下文的日志记录器
-		channelLogger := p.logger.With(
-			"platform_id", channel.PlatformID,
-			"model_id", channel.ModelID,
-			"api_key_id", channel.APIKeyID)
-
-		channelLogger.DebugContext(ctx, "获取到通道")
-
-		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
-			defer reqCancel()
-
-			// 调用 request.Native
-			resp, err := p.request.Native(reqCtx, req, channel, modelName)
+	return retryNonStream(ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
+		},
+		func(reqCtx context.Context, ch *routing.Channel) (*openaiResponses.Response, error) {
+			resp, err := p.request.Native(reqCtx, req, ch, modelName)
 			if err != nil {
-				return err
+				return nil, err
 			}
-
-			if r, ok := resp.(*openaiResponses.Response); ok {
-				response = r
-			}
-			return nil
-		})
-
-		// 检查错误是否可以重试
-		if err != nil {
-			if errors.IsRetryable(err) {
-				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
-				channel.MarkFailure(ctx, err)
-				continue
-			}
-			// 特殊处理：操作终止时标记成功
-			if errors.IsCode(err, errors.ErrCodeAborted) {
-				channelLogger.InfoContext(ctx, "操作终止")
-				channel.MarkSuccess(ctx)
-			}
-			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
-			channel.MarkFailure(ctx, err)
-			break
-		}
-		channel.MarkSuccess(ctx)
-		channelLogger.InfoContext(ctx, "请求处理成功")
-		break
-	}
-
-	return response, err
+			r, _ := resp.(*openaiResponses.Response)
+			return r, nil
+		},
+		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*openaiResponses.Response, error) {
+			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+				"request_mode", "compat",
+				"model", modelName,
+				"provider", "openai",
+				"endpoint_variant", "responses",
+			)
+			return p.nativeOpenAIResponsesCompatFallback(ctx, req)
+		}),
+	)
 }
 
 // NativeOpenAIResponsesStream 执行 OpenAI Responses 原生流式请求
