@@ -2,6 +2,8 @@ package adapter
 
 import (
 	"testing"
+
+	portalErrors "github.com/MeowSalty/portal/errors"
 )
 
 func TestExtractHTMLError(t *testing.T) {
@@ -189,5 +191,129 @@ func TestCleanWhitespace(t *testing.T) {
 				t.Errorf("cleanWhitespace(%q) = %q; want %q", tt.input, result, tt.expected)
 			}
 		})
+	}
+}
+
+func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
+	a := &Adapter{}
+
+	tests := []struct {
+		name string
+		data map[string]interface{}
+		want ErrorFrom
+	}{
+		{
+			name: "按 type 命中 upstream_dependency",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type": "openai_error",
+				},
+			},
+			want: ErrorFromUpstreamDependency,
+		},
+		{
+			name: "按 code 命中 upstream_dependency",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"code": "do_request_failed",
+				},
+			},
+			want: ErrorFromUpstreamDependency,
+		},
+		{
+			name: "按 message 命中 upstream_dependency",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "failed to retrieve proxy group",
+				},
+			},
+			want: ErrorFromUpstreamDependency,
+		},
+		{
+			name: "按 type 命中 upstream",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type": "one_hub_error",
+				},
+			},
+			want: ErrorFromUpstream,
+		},
+		{
+			name: "按 code 命中 upstream",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"code": "model_not_found",
+				},
+			},
+			want: ErrorFromUpstream,
+		},
+		{
+			name: "按 message 命中 upstream",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "用户额度不足",
+				},
+			},
+			want: ErrorFromUpstream,
+		},
+		{
+			name: "优先级 upstream_dependency 高于 upstream",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "openai_error",
+					"code":    "model_not_found",
+					"message": "用户额度不足",
+				},
+			},
+			want: ErrorFromUpstreamDependency,
+		},
+		{
+			name: "未命中规则回退 server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "unknown",
+					"code":    "unknown",
+					"message": "unknown",
+				},
+			},
+			want: ErrorFromServer,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := a.classifyErrorFrom(tt.data)
+			if got != tt.want {
+				t.Fatalf("classifyErrorFrom() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestHandleParseError_SetsErrorFromServer(t *testing.T) {
+	a := &Adapter{}
+	innerErr := portalErrors.New(portalErrors.ErrCodeInvalidArgument, "无效参数")
+
+	err := a.handleParseError("响应解析错误", innerErr, []byte("bad body"))
+
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeInternal {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeInternal)
+	}
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	}
+
+	ctx := portalErrors.GetContext(err)
+	if ctx == nil {
+		t.Fatalf("GetContext() 返回 nil")
+	}
+
+	if got, ok := ctx["operation"].(string); !ok || got != "响应解析错误" {
+		t.Fatalf("operation 上下文不符合预期: %+v", ctx["operation"])
+	}
+
+	if got, ok := ctx["response_body"].(string); !ok || got != "bad body" {
+		t.Fatalf("response_body 上下文不符合预期: %+v", ctx["response_body"])
 	}
 }

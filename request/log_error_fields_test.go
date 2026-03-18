@@ -124,6 +124,21 @@ func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstream(t *test
 	}
 }
 
+func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstreamDependency(t *testing.T) {
+	log := &RequestLog{}
+	err := errors.New(errors.ErrCodeAuthenticationFailed, "认证失败").
+		WithContext("error_from", "upstream_dependency")
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream_dependency" {
+		t.Fatalf("ErrorFrom 期望 upstream_dependency，实际：%+v", log.ErrorFrom)
+	}
+	if log.ErrorLevel == nil || *log.ErrorLevel != "model" {
+		t.Fatalf("ErrorLevel 期望 model，实际：%+v", log.ErrorLevel)
+	}
+}
+
 func TestFillRequestLogErrorFields_ErrorLevelKey_WhenAuthenticationFailed(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.New(errors.ErrCodeAuthenticationFailed, "认证失败")
