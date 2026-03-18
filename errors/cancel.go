@@ -34,12 +34,12 @@ func NormalizeCanceled(err error) error {
 		}
 
 		if portalErr.Context == nil || portalErr.Context["error_from"] == nil {
-			portalErr.WithContext("error_from", "client")
+			portalErr.WithContext("error_from", string(ErrorFromClient))
 		}
 
 		return portalErr
 	}
 
 	return WrapWithHTTPStatus(ErrCodeAborted, "请求已取消", err, HTTPStatusClientClosedRequest).
-		WithContext("error_from", "client")
+		WithContext("error_from", string(ErrorFromClient))
 }
