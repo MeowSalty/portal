@@ -71,7 +71,7 @@ func (p *Portal) NativeAnthropicMessagesStream(
 	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生流式请求", "model", req.Model)
 	options := applyNativeOptions(opts)
 
-	return retryNativeStream[*anthropicTypes.StreamEvent](ctx, p,
+	return retryNativeStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
 			return p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
 		},

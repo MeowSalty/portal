@@ -75,7 +75,7 @@ func (p *Portal) NativeGeminiStreamGenerateContent(
 
 	p.logger.DebugContext(ctx, "开始处理 Gemini StreamGenerateContent 原生流式请求", "model", modelName)
 
-	return retryNativeStream[*geminiTypes.StreamEvent](ctx, p,
+	return retryNativeStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
 			return p.routing.GetChannelByProvider(ctx, modelName, "google", "generate")
 		},

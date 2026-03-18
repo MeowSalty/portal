@@ -72,7 +72,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生流式请求", "model", req.Model)
 	options := applyNativeOptions(opts)
 
-	return retryNativeStream[*openaiChat.StreamEvent](ctx, p,
+	return retryNativeStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
 			return p.routing.GetChannelByProvider(ctx, req.Model, "openai", "chat_completions")
 		},
@@ -166,7 +166,7 @@ func (p *Portal) NativeOpenAIResponsesStream(
 	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", modelName)
 	options := applyNativeOptions(opts)
 
-	return retryNativeStream[*openaiResponses.StreamEvent](ctx, p,
+	return retryNativeStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
 			return p.routing.GetChannelByProvider(ctx, modelName, "openai", "responses")
 		},
