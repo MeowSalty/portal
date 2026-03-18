@@ -71,95 +71,21 @@ func (p *Portal) NativeAnthropicMessagesStream(
 	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生流式请求", "model", req.Model)
 	options := applyNativeOptions(opts)
 
-	// 创建内部流（用于接收原始响应）
-	internalStream := make(chan *anthropicTypes.StreamEvent, StreamBufferSize)
-
-	// 启动内部流处理协程
-	go func() {
-		for {
-			channel, err := p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
-			if err != nil {
-				if options.compatMode && errors.IsCode(err, errors.ErrCodeEndpointNotFound) {
-					p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
-						"request_mode", "compat",
-						"model", req.Model,
-						"provider", "anthropic",
-						"endpoint_variant", "messages",
-						"error", err,
-					)
-					compatStream := p.nativeAnthropicStreamCompatFallback(ctx, req)
-					for evt := range compatStream {
-						select {
-						case <-ctx.Done():
-							close(internalStream)
-							return
-						case internalStream <- evt:
-						}
-					}
-					close(internalStream)
-					return
-				}
-				p.logger.ErrorContext(ctx, "获取通道失败", "model", req.Model, "error", err)
-				close(internalStream)
-				break
-			}
-
-			// 使用 With 创建带有通道上下文的日志记录器
-			channelLogger := p.logger.With(
-				"platform_id", channel.PlatformID,
-				"model_id", channel.ModelID,
-				"api_key_id", channel.APIKeyID)
-
-			channelLogger.DebugContext(ctx, "获取到通道")
-
-			// 创建原生事件输出通道
-			nativeOutput := make(chan any)
-			// 创建流结束信号通道
-			done := make(chan struct{})
-
-			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
-				// 调用 request.NativeStream
-				return p.request.NativeStream(reqCtx, req, channel, req.Model, nativeOutput)
-			})
-
-			// 检查错误是否可以重试
-			if err != nil {
-				if errors.IsRetryable(err) {
-					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
-					channel.MarkFailure(ctx, err)
-					continue
-				}
-				// 特殊处理：操作终止时标记成功
-				if errors.IsCode(err, errors.ErrCodeAborted) {
-					channelLogger.InfoContext(ctx, "操作终止")
-					channel.MarkSuccess(ctx)
-				}
-				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
-				channel.MarkFailure(ctx, err)
-				close(internalStream)
-				break
-			}
-			channel.MarkSuccess(ctx)
-			channelLogger.InfoContext(ctx, "流处理成功")
-
-			// 转换原生事件到指定类型
-			go func() {
-				defer close(internalStream)
-				defer close(done) // 流结束时通知会话管理器
-				for event := range nativeOutput {
-					if evt, ok := event.(*anthropicTypes.StreamEvent); ok {
-						select {
-						case <-ctx.Done():
-							return
-						case internalStream <- evt:
-						}
-					}
-				}
-			}()
-
-			break
-		}
-	}()
-
-	return internalStream
+	return retryNativeStream[*anthropicTypes.StreamEvent](ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return p.routing.GetChannelByProvider(ctx, req.Model, "anthropic", "messages")
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			return p.request.NativeStream(reqCtx, req, ch, req.Model, output)
+		},
+		streamCompatFallback(ctx, options, errors.ErrCodeEndpointNotFound, func() <-chan *anthropicTypes.StreamEvent {
+			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+				"request_mode", "compat",
+				"model", req.Model,
+				"provider", "anthropic",
+				"endpoint_variant", "messages",
+			)
+			return p.nativeAnthropicStreamCompatFallback(ctx, req)
+		}),
+	)
 }
