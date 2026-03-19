@@ -65,11 +65,6 @@ var classifyRules = []classifyRule{
 	{matchMessage, "额度", errors.ErrorFromServer},
 }
 
-// isJSONContentType 检查 Content-Type 是否为 JSON 类型
-func isJSONContentType(contentType string) bool {
-	return strings.Contains(strings.ToLower(contentType), "application/json")
-}
-
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, contentType string, body []byte) error {
 	if len(body) == 0 {
