@@ -29,9 +29,9 @@ func TestGetErrorFrom(t *testing.T) {
 			want: ErrorFromClient,
 		},
 		{
-			name: "枚举 upstream_dependency",
-			err:  New(ErrCodeInternal, "内部错误").WithContext("error_from", ErrorFromUpstreamDependency),
-			want: ErrorFromUpstreamDependency,
+			name: "枚举 upstream",
+			err:  New(ErrCodeInternal, "内部错误").WithContext("error_from", ErrorFromUpstream),
+			want: ErrorFromUpstream,
 		},
 		{
 			name: "非法字符串",
@@ -66,18 +66,18 @@ func TestIsRetryable_ErrorFromMatrixAndFallback(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "server 按白名单可重试",
-			err:  New(ErrCodeUnavailable, "不可用").WithContext("error_from", string(ErrorFromServer)),
+			name: "gateway 按白名单可重试",
+			err:  New(ErrCodeUnavailable, "不可用").WithContext("error_from", string(ErrorFromGateway)),
+			want: true,
+		},
+		{
+			name: "server 始终可重试",
+			err:  New(ErrCodeInvalidArgument, "无效参数").WithContext("error_from", string(ErrorFromServer)),
 			want: true,
 		},
 		{
 			name: "upstream 始终可重试",
-			err:  New(ErrCodeInvalidArgument, "无效参数").WithContext("error_from", string(ErrorFromUpstream)),
-			want: true,
-		},
-		{
-			name: "upstream_dependency 始终可重试",
-			err:  New(ErrCodeAuthenticationFailed, "认证失败").WithContext("error_from", string(ErrorFromUpstreamDependency)),
+			err:  New(ErrCodeAuthenticationFailed, "认证失败").WithContext("error_from", string(ErrorFromUpstream)),
 			want: true,
 		},
 		{
@@ -101,8 +101,8 @@ func TestIsRetryable_ErrorFromMatrixAndFallback(t *testing.T) {
 	}
 }
 
-func TestIsFromUpstreamAndGetErrorLevel_UpstreamDependency(t *testing.T) {
-	err := New(ErrCodeAuthenticationFailed, "认证失败").WithContext("error_from", string(ErrorFromUpstreamDependency))
+func TestIsFromUpstreamAndGetErrorLevel_Upstream(t *testing.T) {
+	err := New(ErrCodeAuthenticationFailed, "认证失败").WithContext("error_from", string(ErrorFromUpstream))
 
 	if !isFromUpstream(err) {
 		t.Fatalf("isFromUpstream() = false, want true")

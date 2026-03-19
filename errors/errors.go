@@ -377,18 +377,18 @@ var RetryableErrorCodes = map[ErrorCode]bool{
 // IsRetryable 检查错误是否可重试
 // 策略：
 // - client：不可重试
-// - server：按白名单重试
-// - upstream / upstream_dependency：可重试
+// - gateway：按白名单重试
+// - server / upstream：可重试
 // - 无 error_from：按白名单重试（向后兼容）
 func IsRetryable(err error) bool {
 	switch GetErrorFrom(err) {
 	case ErrorFromClient:
 		return false
-	case ErrorFromUpstream, ErrorFromUpstreamDependency:
+	case ErrorFromServer, ErrorFromUpstream:
 		return true
 	}
 
-	// server 或未设置 error_from 的错误，按白名单判断
+	// gateway 或未设置 error_from 的错误，按白名单判断
 	code := GetCode(err)
 	return RetryableErrorCodes[code]
 }
