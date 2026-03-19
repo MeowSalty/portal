@@ -130,7 +130,7 @@ func (p *Request) ChatCompletionStream(
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithHTTPStatus(http.StatusInternalServerError).
 			WithContext("format", channel.Provider).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 

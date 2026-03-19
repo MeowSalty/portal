@@ -48,7 +48,7 @@ func (p *Request) Native(
 		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return nil, errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithContext("format", channel.Provider).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 
@@ -142,7 +142,7 @@ func (p *Request) NativeStream(
 		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithContext("format", channel.Provider).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 	log.DebugContext(ctx, "获取适配器成功", "adapter", adapter.Name())
 

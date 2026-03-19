@@ -10,7 +10,7 @@ import (
 func TestFillRequestLogErrorFields_ResponseBodyJSON_CodeString(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", 429).
-		WithContext("error_from", "upstream").
+		WithContext("error_from", "server").
 		WithContext("response_body", `{"error":{"type":"invalid_request_error","code":"rate_limit_exceeded","message":"Too many requests","param":"model"}}`)
 
 	fillRequestLogErrorFields(log, err)
@@ -24,8 +24,8 @@ func TestFillRequestLogErrorFields_ResponseBodyJSON_CodeString(t *testing.T) {
 	if log.HTTPStatus == nil || *log.HTTPStatus != 429 {
 		t.Fatalf("HTTPStatus 期望 429，实际：%+v", log.HTTPStatus)
 	}
-	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream" {
-		t.Fatalf("ErrorFrom 期望 upstream，实际：%+v", log.ErrorFrom)
+	if log.ErrorFrom == nil || *log.ErrorFrom != "server" {
+		t.Fatalf("ErrorFrom 期望 server，实际：%+v", log.ErrorFrom)
 	}
 	if log.UpstreamErrorType == nil || *log.UpstreamErrorType != "invalid_request_error" {
 		t.Fatalf("UpstreamErrorType 不符合预期：%+v", log.UpstreamErrorType)
@@ -50,7 +50,7 @@ func TestFillRequestLogErrorFields_ResponseBodyJSON_CodeString(t *testing.T) {
 func TestFillRequestLogErrorFields_ResponseBodyJSON_CodeNumber(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", 400).
-		WithContext("error_from", "upstream").
+		WithContext("error_from", "server").
 		WithContext("response_body", `{"error":{"type":"invalid_request_error","code":400,"message":"Bad request"}}`)
 
 	fillRequestLogErrorFields(log, err)
@@ -112,10 +112,10 @@ func TestFillRequestLogErrorFields_ResponseBodyNonJSON_Nginx(t *testing.T) {
 	}
 }
 
-func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstream(t *testing.T) {
+func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromServer(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.New(errors.ErrCodeUnavailable, "服务不可用").
-		WithContext("error_from", "upstream")
+		WithContext("error_from", "server")
 
 	fillRequestLogErrorFields(log, err)
 
@@ -124,15 +124,15 @@ func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstream(t *test
 	}
 }
 
-func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstreamDependency(t *testing.T) {
+func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstream(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.New(errors.ErrCodeAuthenticationFailed, "认证失败").
-		WithContext("error_from", "upstream_dependency")
+		WithContext("error_from", "upstream")
 
 	fillRequestLogErrorFields(log, err)
 
-	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream_dependency" {
-		t.Fatalf("ErrorFrom 期望 upstream_dependency，实际：%+v", log.ErrorFrom)
+	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream" {
+		t.Fatalf("ErrorFrom 期望 upstream，实际：%+v", log.ErrorFrom)
 	}
 	if log.ErrorLevel == nil || *log.ErrorLevel != "model" {
 		t.Fatalf("ErrorLevel 期望 model，实际：%+v", log.ErrorLevel)
