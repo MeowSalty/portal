@@ -156,31 +156,6 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 	return errorType, errorCode, errorMessage
 }
 
-// classifyErrorFrom 根据已解析的 JSON 数据分类错误来源。
-//
-// 分类结果含义：
-// - errors.ErrorFromUpstream：目标服务器的上游依赖错误
-// - errors.ErrorFromServer：目标服务器错误
-// - errors.ErrorFromGateway：网关自身错误（兜底）
-func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) errors.ErrorFromValue {
-	errorType, errorCode, errorMessage := extractErrorFields(jsonData)
-	rawText := ""
-	if raw, err := json.Marshal(jsonData); err == nil {
-		rawText = strings.ToLower(stripHTML(string(raw)))
-	}
-
-	input := errorClassifyInput{
-		errorType:    errorType,
-		errorCode:    errorCode,
-		errorMessage: errorMessage,
-		rawText:      rawText,
-		hasBody:      true,
-		isStructured: errorType != "" || errorCode != "" || errorMessage != "",
-	}
-
-	return classifyErrorFromInput(input)
-}
-
 // classifyErrorFromInput 统一分类错误来源。
 //
 // 优先级：

@@ -194,138 +194,139 @@ func TestCleanWhitespace(t *testing.T) {
 	}
 }
 
-func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
-	a := &Adapter{}
-
+func TestClassifyErrorFromInput_ByTypeCodeMessageRules(t *testing.T) {
 	tests := []struct {
-		name string
-		data map[string]interface{}
-		want portalErrors.ErrorFromValue
+		name  string
+		input errorClassifyInput
+		want  portalErrors.ErrorFromValue
 	}{
 		{
 			name: "按 type 命中 upstream",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type": "openai_error",
-				},
+			input: errorClassifyInput{
+				errorType:    "openai_error",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 code 命中 upstream",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"code": "do_request_failed",
-				},
+			input: errorClassifyInput{
+				errorCode:    "do_request_failed",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 message 命中 upstream",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"message": "failed to retrieve proxy group",
-				},
+			input: errorClassifyInput{
+				errorMessage: "failed to retrieve proxy group",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 type 命中 server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type": "one_hub_error",
-				},
+			input: errorClassifyInput{
+				errorType:    "one_hub_error",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "按 code 命中 server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"code": "model_not_found",
-				},
+			input: errorClassifyInput{
+				errorCode:    "model_not_found",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "按 message 命中 server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"message": "用户额度不足",
-				},
+			input: errorClassifyInput{
+				errorMessage: "用户额度不足",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "优先级 upstream 高于 server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type":    "openai_error",
-					"code":    "model_not_found",
-					"message": "用户额度不足",
-				},
+			input: errorClassifyInput{
+				errorType:    "openai_error",
+				errorCode:    "model_not_found",
+				errorMessage: "用户额度不足",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "未命中规则但有 type/code → 智能兜底 server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type":    "unknown",
-					"code":    "unknown",
-					"message": "unknown",
-				},
+			input: errorClassifyInput{
+				errorType:    "unknown",
+				errorCode:    "unknown",
+				errorMessage: "unknown",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "智能兜底：仅有 type → server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type": "totally_new_server_error",
-				},
+			input: errorClassifyInput{
+				errorType:    "totally_new_server_error",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "智能兜底：仅有 code → server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"code": "brand_new_server_code",
-				},
+			input: errorClassifyInput{
+				errorCode:    "brand_new_server_code",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "纯 message 无 type/code 且未命中规则 → server（hasBody=true 兜底）",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"message": "a plain unknown message",
-				},
+			input: errorClassifyInput{
+				errorMessage: "a plain unknown message",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "空 error 对象 → server（hasBody=true 兜底）",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{},
+			input: errorClassifyInput{
+				hasBody:      true,
+				isStructured: false,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "无 error 字段 → server（hasBody=true 兜底）",
-			data: map[string]interface{}{
-				"message": "no structured error object",
+			input: errorClassifyInput{
+				rawText:      "no structured error object",
+				hasBody:      true,
+				isStructured: false,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "用户示例：new_api_error + 额度用尽消息 → server",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type":    "new_api_error",
-					"message": "用户额度不足，请充值",
-				},
+			input: errorClassifyInput{
+				errorType:    "new_api_error",
+				errorMessage: "用户额度不足，请充值",
+				hasBody:      true,
+				isStructured: true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
@@ -333,9 +334,9 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := a.classifyErrorFrom(tt.data)
+			got := classifyErrorFromInput(tt.input)
 			if got != tt.want {
-				t.Fatalf("classifyErrorFrom() = %v, want %v", got, tt.want)
+				t.Fatalf("classifyErrorFromInput() = %v, want %v", got, tt.want)
 			}
 		})
 	}
