@@ -219,29 +219,50 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 
 	isJSON := true
 	log.ResponseBodyIsJSON = &isJSON
-	log.ResponseBodyRaw = nil
 
-	errObj, ok := payload["error"].(map[string]any)
-	if !ok {
+	extracted := false
+	if errValue, ok := payload["error"]; ok {
+		switch errObj := errValue.(type) {
+		case map[string]any:
+			if s, ok := contextValueToString(errObj["type"]); ok {
+				log.UpstreamErrorType = &s
+				extracted = true
+			}
+			if s, ok := contextValueToString(errObj["code"]); ok {
+				log.UpstreamErrorCode = &s
+				extracted = true
+			}
+			if s, ok := contextValueToString(errObj["param"]); ok {
+				log.UpstreamErrorParam = &s
+				extracted = true
+			}
+			if s, ok := contextValueToString(errObj["message"]); ok {
+				s = clipLongField(s)
+				log.UpstreamErrorMessage = &s
+				extracted = true
+				if requestID := extractUpstreamRequestID(s); requestID != "" {
+					log.UpstreamRequestID = &requestID
+				}
+			}
+		case string:
+			if s, ok := contextValueToString(errObj); ok {
+				s = clipLongField(s)
+				log.UpstreamErrorMessage = &s
+				extracted = true
+				if requestID := extractUpstreamRequestID(s); requestID != "" {
+					log.UpstreamRequestID = &requestID
+				}
+			}
+		}
+	}
+
+	if extracted {
+		log.ResponseBodyRaw = nil
 		return
 	}
 
-	if s, ok := contextValueToString(errObj["type"]); ok {
-		log.UpstreamErrorType = &s
-	}
-	if s, ok := contextValueToString(errObj["code"]); ok {
-		log.UpstreamErrorCode = &s
-	}
-	if s, ok := contextValueToString(errObj["param"]); ok {
-		log.UpstreamErrorParam = &s
-	}
-	if s, ok := contextValueToString(errObj["message"]); ok {
-		s = clipLongField(s)
-		log.UpstreamErrorMessage = &s
-		if requestID := extractUpstreamRequestID(s); requestID != "" {
-			log.UpstreamRequestID = &requestID
-		}
-	}
+	raw := clipLongField(responseBody)
+	log.ResponseBodyRaw = &raw
 }
 
 // errorLevelToString 将错误层级枚举转换为对前端稳定的字符串。

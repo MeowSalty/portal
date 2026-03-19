@@ -177,6 +177,43 @@ func TestFillRequestLogErrorFields_JSONSuccessWithoutRaw(t *testing.T) {
 	}
 }
 
+func TestFillRequestLogErrorFields_JSONSuccess_ErrorString(t *testing.T) {
+	log := &RequestLog{}
+	err := errors.NewWithHTTPStatus(errors.ErrCodePermissionDenied, "请求失败", 403).
+		WithContext("response_body", `{"error":"Model gpt-5.4 is not supported by any of your active plans"}`)
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ResponseBodyIsJSON == nil || !*log.ResponseBodyIsJSON {
+		t.Fatalf("ResponseBodyIsJSON 期望 true，实际：%+v", log.ResponseBodyIsJSON)
+	}
+	if log.UpstreamErrorMessage == nil || *log.UpstreamErrorMessage != "Model gpt-5.4 is not supported by any of your active plans" {
+		t.Fatalf("UpstreamErrorMessage 不符合预期：%+v", log.UpstreamErrorMessage)
+	}
+	if log.ResponseBodyRaw != nil {
+		t.Fatalf("ResponseBodyRaw 期望为 nil，实际：%+v", log.ResponseBodyRaw)
+	}
+}
+
+func TestFillRequestLogErrorFields_JSONSuccessButUnmatched_KeepRaw(t *testing.T) {
+	log := &RequestLog{}
+	raw := `{"detail":"permission denied"}`
+	err := errors.NewWithHTTPStatus(errors.ErrCodePermissionDenied, "请求失败", 403).
+		WithContext("response_body", raw)
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ResponseBodyIsJSON == nil || !*log.ResponseBodyIsJSON {
+		t.Fatalf("ResponseBodyIsJSON 期望 true，实际：%+v", log.ResponseBodyIsJSON)
+	}
+	if log.UpstreamErrorMessage != nil {
+		t.Fatalf("UpstreamErrorMessage 期望为 nil，实际：%+v", log.UpstreamErrorMessage)
+	}
+	if log.ResponseBodyRaw == nil || *log.ResponseBodyRaw != raw {
+		t.Fatalf("ResponseBodyRaw 不符合预期：%+v", log.ResponseBodyRaw)
+	}
+}
+
 func TestFillRequestLogErrorFields_JSONFailWithRaw(t *testing.T) {
 	log := &RequestLog{}
 	raw := "not a json body"
