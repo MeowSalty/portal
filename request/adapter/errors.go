@@ -22,19 +22,6 @@ var (
 	}
 )
 
-// ErrorFrom 表示错误来源
-// 网关 (A) → 服务器 (B) → 外部服务 (C)
-type ErrorFrom int
-
-const (
-	// ErrorFromServer B 产生的错误
-	ErrorFromServer ErrorFrom = iota
-	// ErrorFromUpstream C 产生的错误，经 B 转发
-	ErrorFromUpstream
-	// ErrorFromUpstreamDependency C 的上游依赖产生的错误，经 B 转发
-	ErrorFromUpstreamDependency
-)
-
 // isJSONContentType 检查 Content-Type 是否为 JSON 类型
 func isJSONContentType(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "application/json")
@@ -43,11 +30,11 @@ func isJSONContentType(contentType string) bool {
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, contentType string, body []byte) error {
 	if len(body) == 0 {
-		return a.createHTTPError(message, statusCode, "", ErrorFromServer)
+		return a.createHTTPError(message, statusCode, "", errors.ErrorFromGateway)
 	}
 
 	var bodyStr string
-	var errorFrom ErrorFrom
+	var errorFrom errors.ErrorFromValue
 
 	// 根据 Content-Type 决定处理方式
 	if isJSONContentType(contentType) {
@@ -58,7 +45,7 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 		if err != nil {
 			// JSON 解析失败，回退到 HTML/文本处理
 			bodyStr = stripHTML(string(body))
-			errorFrom = ErrorFromServer
+			errorFrom = errors.ErrorFromGateway
 		} else {
 			// JSON 解析成功
 			bodyStr = a.processBodyHTML(jsonData)
@@ -67,7 +54,7 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 	} else {
 		// 非 JSON 类型，直接处理为 HTML/文本
 		bodyStr = stripHTML(string(body))
-		errorFrom = ErrorFromServer
+		errorFrom = errors.ErrorFromGateway
 	}
 
 	// 根据错误来源和状态码处理错误
@@ -116,60 +103,66 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 }
 
 // classifyErrorFrom 根据已解析的 JSON 数据分类错误来源。
-func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) ErrorFrom {
+//
+// 分类结果含义：
+// - errors.ErrorFromUpstream：目标服务器的上游依赖错误
+// - errors.ErrorFromServer：目标服务器错误
+// - errors.ErrorFromGateway：网关自身错误（兜底）
+func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) errors.ErrorFromValue {
 	errorType, errorCode, errorMessage := extractErrorFields(jsonData)
 
-	// 1) 按 type 识别 upstream_dependency
+	// 1) 按 type 识别目标服务器上游错误
 	switch errorType {
 	case "upstream_error", "openai_error", "anthropic_error", "gemini_error":
-		return ErrorFromUpstreamDependency
+		return errors.ErrorFromUpstream
 	}
 
-	// 2) 按 code 识别 upstream_dependency
+	// 2) 按 code 识别目标服务器上游错误
 	switch errorCode {
 	case "bad_response_status_code", "do_request_failed":
-		return ErrorFromUpstreamDependency
+		return errors.ErrorFromUpstream
 	}
 
-	// 3) 按 message 识别 upstream_dependency
+	// 3) 按 message 识别目标服务器上游错误
 	if strings.Contains(errorMessage, "请求上游地址失败") ||
 		strings.Contains(errorMessage, "bad response status code") ||
-		strings.Contains(errorMessage, "failed to retrieve proxy group") {
-		return ErrorFromUpstreamDependency
+		strings.Contains(errorMessage, "failed to retrieve proxy group") ||
+		strings.Contains(errorMessage, "upstream error") {
+		return errors.ErrorFromUpstream
 	}
 
-	// 4) 按 type 识别 upstream
+	// 4) 按 type 识别目标服务器错误
 	switch errorType {
 	case "one_hub_error", "new_api_error", "veloera_error":
-		return ErrorFromUpstream
+		return errors.ErrorFromServer
 	}
 
-	// 5) 按 code 识别 upstream
+	// 5) 按 code 识别目标服务器错误
 	switch errorCode {
 	case "insufficient_user_quota", "model_not_found":
-		return ErrorFromUpstream
+		return errors.ErrorFromServer
 	}
 
-	// 6) 按 message 识别 upstream
+	// 6) 按 message 识别目标服务器错误
 	if strings.Contains(errorMessage, "无可用渠道") ||
 		strings.Contains(errorMessage, "用户额度不足") {
-		return ErrorFromUpstream
+		return errors.ErrorFromServer
 	}
 
-	// 兜底：保守归类为 portal 自身错误
-	return ErrorFromServer
+	// 兜底：保守归类为网关自身错误
+	return errors.ErrorFromGateway
 }
 
 // createHTTPError 根据错误来源和状态码创建适当的错误
-func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string, errorFrom ErrorFrom) error {
+func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string, errorFrom errors.ErrorFromValue) error {
 	// 定义错误码
 	var errCode errors.ErrorCode
 
 	switch errorFrom {
-	case ErrorFromServer:
+	case errors.ErrorFromGateway:
 		// B 产生的错误，根据 HTTP 状态码映射
 		errCode = mapHTTPStatusToErrorCode(statusCode)
-	case ErrorFromUpstream, ErrorFromUpstreamDependency:
+	case errors.ErrorFromServer, errors.ErrorFromUpstream:
 		// C 产生的错误，经 B 转发，视为请求错误
 		errCode = errors.ErrCodeRequestFailed
 	default:
@@ -179,7 +172,7 @@ func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string
 
 	return errors.NewWithHTTPStatus(errCode, message, statusCode).
 		WithContext("response_body", bodyStr).
-		WithContext("error_from", errorFromToString(errorFrom))
+		WithContext("error_from", string(errorFrom))
 }
 
 // mapHTTPStatusToErrorCode 将 HTTP 状态码映射到错误码
@@ -223,7 +216,7 @@ func (a *Adapter) handleParseError(operation string, err error, body []byte) err
 	return errors.Wrap(errors.ErrCodeInternal, "解析响应失败", err).
 		WithContext("operation", operation).
 		WithContext("response_body", string(body)).
-		WithContext("error_from", string(errors.ErrorFromServer))
+		WithContext("error_from", string(errors.ErrorFromGateway))
 }
 
 // extractHTMLError 从 HTML 页面中提取有效的错误信息
@@ -349,18 +342,4 @@ func stripErrorHTML(err error) error {
 
 	// 否则创建一个新的错误，包含清理后的消息
 	return errors.New(errors.ErrCodeRequestFailed, cleanMsg)
-}
-
-// errorFromToString 将错误来源转换为字符串描述
-func errorFromToString(errorFrom ErrorFrom) string {
-	switch errorFrom {
-	case ErrorFromServer:
-		return string(errors.ErrorFromServer)
-	case ErrorFromUpstream:
-		return string(errors.ErrorFromUpstream)
-	case ErrorFromUpstreamDependency:
-		return string(errors.ErrorFromUpstreamDependency)
-	default:
-		return "unknown"
-	}
 }

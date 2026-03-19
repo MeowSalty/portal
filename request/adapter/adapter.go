@@ -58,7 +58,7 @@ func (a *Adapter) ChatCompletion(
 	apiReq, err := a.provider.CreateRequest(request, channel)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInvalidArgument, "创建请求失败", err).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 发送请求
@@ -93,14 +93,14 @@ func (a *Adapter) ChatCompletionStream(
 	if !a.provider.SupportsStreaming() {
 		return errors.New(errors.ErrCodeUnimplemented, "提供商不支持流式传输").
 			WithContext("provider", a.provider.Name()).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 创建提供商特定请求
 	apiReq, err := a.provider.CreateRequest(request, channel)
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeInvalidArgument, "创建请求失败", err).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 启动流式处理协程
@@ -130,14 +130,14 @@ func (a *Adapter) Native(
 	if !a.provider.SupportsNative() {
 		return nil, errors.New(errors.ErrCodeUnimplemented, "提供商不支持原生 API 调用").
 			WithContext("provider", a.provider.Name()).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 构建原生请求（不再返回 endpoint）
 	body, err := a.provider.BuildNativeRequest(channel, payload)
 	if err != nil {
 		return nil, errors.Wrap(errors.ErrCodeInvalidArgument, "构建原生请求失败", err).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 发送请求（使用 channel.APIEndpointConfig）
@@ -187,14 +187,14 @@ func (a *Adapter) NativeStream(
 	if !a.provider.SupportsNative() {
 		return errors.New(errors.ErrCodeUnimplemented, "提供商不支持原生 API 调用").
 			WithContext("provider", a.provider.Name()).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 构建原生请求（不再返回 endpoint）
 	body, err := a.provider.BuildNativeRequest(channel, payload)
 	if err != nil {
 		return errors.Wrap(errors.ErrCodeInvalidArgument, "构建原生请求失败", err).
-			WithContext("error_from", string(errors.ErrorFromServer))
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 启动原生流式处理协程

@@ -200,64 +200,64 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 	tests := []struct {
 		name string
 		data map[string]interface{}
-		want ErrorFrom
+		want portalErrors.ErrorFromValue
 	}{
 		{
-			name: "按 type 命中 upstream_dependency",
+			name: "按 type 命中 upstream",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
 					"type": "openai_error",
 				},
 			},
-			want: ErrorFromUpstreamDependency,
-		},
-		{
-			name: "按 code 命中 upstream_dependency",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"code": "do_request_failed",
-				},
-			},
-			want: ErrorFromUpstreamDependency,
-		},
-		{
-			name: "按 message 命中 upstream_dependency",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"message": "failed to retrieve proxy group",
-				},
-			},
-			want: ErrorFromUpstreamDependency,
-		},
-		{
-			name: "按 type 命中 upstream",
-			data: map[string]interface{}{
-				"error": map[string]interface{}{
-					"type": "one_hub_error",
-				},
-			},
-			want: ErrorFromUpstream,
+			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 code 命中 upstream",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
-					"code": "model_not_found",
+					"code": "do_request_failed",
 				},
 			},
-			want: ErrorFromUpstream,
+			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 message 命中 upstream",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
+					"message": "failed to retrieve proxy group",
+				},
+			},
+			want: portalErrors.ErrorFromUpstream,
+		},
+		{
+			name: "按 type 命中 server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type": "one_hub_error",
+				},
+			},
+			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "按 code 命中 server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"code": "model_not_found",
+				},
+			},
+			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "按 message 命中 server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
 					"message": "用户额度不足",
 				},
 			},
-			want: ErrorFromUpstream,
+			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "优先级 upstream_dependency 高于 upstream",
+			name: "优先级 upstream 高于 server",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
 					"type":    "openai_error",
@@ -265,10 +265,10 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 					"message": "用户额度不足",
 				},
 			},
-			want: ErrorFromUpstreamDependency,
+			want: portalErrors.ErrorFromUpstream,
 		},
 		{
-			name: "未命中规则回退 server",
+			name: "未命中规则回退 gateway",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
 					"type":    "unknown",
@@ -276,7 +276,7 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 					"message": "unknown",
 				},
 			},
-			want: ErrorFromServer,
+			want: portalErrors.ErrorFromGateway,
 		},
 	}
 
@@ -290,7 +290,7 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 	}
 }
 
-func TestHandleParseError_SetsErrorFromServer(t *testing.T) {
+func TestHandleParseError_SetsErrorFromGateway(t *testing.T) {
 	a := &Adapter{}
 	innerErr := portalErrors.New(portalErrors.ErrCodeInvalidArgument, "无效参数")
 
@@ -300,8 +300,8 @@ func TestHandleParseError_SetsErrorFromServer(t *testing.T) {
 		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeInternal)
 	}
 
-	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
-		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromGateway {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromGateway)
 	}
 
 	ctx := portalErrors.GetContext(err)
