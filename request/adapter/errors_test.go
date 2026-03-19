@@ -268,7 +268,7 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
-			name: "未命中规则回退 gateway",
+			name: "未命中规则但有 type/code → 智能兜底 server",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
 					"type":    "unknown",
@@ -276,7 +276,58 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 					"message": "unknown",
 				},
 			},
+			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "智能兜底：仅有 type → server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type": "totally_new_server_error",
+				},
+			},
+			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "智能兜底：仅有 code → server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"code": "brand_new_server_code",
+				},
+			},
+			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "纯 message 无 type/code → gateway",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"message": "a plain unknown message",
+				},
+			},
 			want: portalErrors.ErrorFromGateway,
+		},
+		{
+			name: "空 error 对象 → gateway",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{},
+			},
+			want: portalErrors.ErrorFromGateway,
+		},
+		{
+			name: "无 error 字段 → gateway",
+			data: map[string]interface{}{
+				"message": "no structured error object",
+			},
+			want: portalErrors.ErrorFromGateway,
+		},
+		{
+			name: "用户示例：new_api_error + 额度用尽消息 → server",
+			data: map[string]interface{}{
+				"error": map[string]interface{}{
+					"type":    "new_api_error",
+					"message": "用户额度不足，请充值",
+				},
+			},
+			want: portalErrors.ErrorFromServer,
 		},
 	}
 

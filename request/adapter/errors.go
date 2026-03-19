@@ -22,6 +22,49 @@ var (
 	}
 )
 
+type classifyField int
+
+const (
+	matchType    classifyField = iota // 精确匹配 error.type
+	matchCode                         // 精确匹配 error.code
+	matchMessage                      // 子串匹配 error.message
+)
+
+type classifyRule struct {
+	field   classifyField
+	pattern string                // 小写匹配串
+	result  errors.ErrorFromValue // 分类结果
+}
+
+// classifyRules 按优先级排列的分类规则，先匹配先生效。
+// upstream 规则优先于 server 规则。
+// 扩展方式：在对应分组末尾追加新条目即可。
+var classifyRules = []classifyRule{
+	// ── upstream：按 type ──
+	{matchType, "upstream_error", errors.ErrorFromUpstream},
+	{matchType, "openai_error", errors.ErrorFromUpstream},
+	{matchType, "anthropic_error", errors.ErrorFromUpstream},
+	{matchType, "gemini_error", errors.ErrorFromUpstream},
+	// ── upstream：按 code ──
+	{matchCode, "bad_response_status_code", errors.ErrorFromUpstream},
+	{matchCode, "do_request_failed", errors.ErrorFromUpstream},
+	// ── upstream：按 message ──
+	{matchMessage, "上游", errors.ErrorFromUpstream},
+	{matchMessage, "bad response status code", errors.ErrorFromUpstream},
+	{matchMessage, "failed to retrieve proxy group", errors.ErrorFromUpstream},
+	{matchMessage, "upstream", errors.ErrorFromUpstream},
+	// ── server：按 type ──
+	{matchType, "one_hub_error", errors.ErrorFromServer},
+	{matchType, "new_api_error", errors.ErrorFromServer},
+	{matchType, "veloera_error", errors.ErrorFromServer},
+	// ── server：按 code ──
+	{matchCode, "insufficient_user_quota", errors.ErrorFromServer},
+	{matchCode, "model_not_found", errors.ErrorFromServer},
+	// ── server：按 message ──
+	{matchMessage, "渠道", errors.ErrorFromServer},
+	{matchMessage, "额度", errors.ErrorFromServer},
+}
+
 // isJSONContentType 检查 Content-Type 是否为 JSON 类型
 func isJSONContentType(contentType string) bool {
 	return strings.Contains(strings.ToLower(contentType), "application/json")
@@ -111,45 +154,33 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) errors.ErrorFromValue {
 	errorType, errorCode, errorMessage := extractErrorFields(jsonData)
 
-	// 1) 按 type 识别目标服务器上游错误
-	switch errorType {
-	case "upstream_error", "openai_error", "anthropic_error", "gemini_error":
-		return errors.ErrorFromUpstream
+	for _, rule := range classifyRules {
+		var field string
+		var matched bool
+
+		switch rule.field {
+		case matchType:
+			field = errorType
+			matched = field == rule.pattern
+		case matchCode:
+			field = errorCode
+			matched = field == rule.pattern
+		case matchMessage:
+			field = errorMessage
+			matched = strings.Contains(field, rule.pattern)
+		}
+
+		if field != "" && matched {
+			return rule.result
+		}
 	}
 
-	// 2) 按 code 识别目标服务器上游错误
-	switch errorCode {
-	case "bad_response_status_code", "do_request_failed":
-		return errors.ErrorFromUpstream
-	}
-
-	// 3) 按 message 识别目标服务器上游错误
-	if strings.Contains(errorMessage, "请求上游地址失败") ||
-		strings.Contains(errorMessage, "bad response status code") ||
-		strings.Contains(errorMessage, "failed to retrieve proxy group") ||
-		strings.Contains(errorMessage, "upstream error") {
-		return errors.ErrorFromUpstream
-	}
-
-	// 4) 按 type 识别目标服务器错误
-	switch errorType {
-	case "one_hub_error", "new_api_error", "veloera_error":
+	// 智能兜底：响应体包含非空 type 或 code 说明来自目标服务器，
+	// 而非网关自身（网关错误不经过此函数）。
+	if errorType != "" || errorCode != "" {
 		return errors.ErrorFromServer
 	}
 
-	// 5) 按 code 识别目标服务器错误
-	switch errorCode {
-	case "insufficient_user_quota", "model_not_found":
-		return errors.ErrorFromServer
-	}
-
-	// 6) 按 message 识别目标服务器错误
-	if strings.Contains(errorMessage, "无可用渠道") ||
-		strings.Contains(errorMessage, "用户额度不足") {
-		return errors.ErrorFromServer
-	}
-
-	// 兜底：保守归类为网关自身错误
 	return errors.ErrorFromGateway
 }
 
