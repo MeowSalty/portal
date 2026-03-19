@@ -95,7 +95,7 @@ func getSharedHTTPClient() *http.Client {
 				MaxIdleConns:          1000,
 				MaxIdleConnsPerHost:   100,
 				IdleConnTimeout:       90 * time.Second,
-				TLSHandshakeTimeout:  10 * time.Second,
+				TLSHandshakeTimeout:   10 * time.Second,
 				ExpectContinueTimeout: 1 * time.Second,
 				ReadBufferSize:        32 * 1024,
 				WriteBufferSize:       32 * 1024,
@@ -190,7 +190,8 @@ func (a *Adapter) sendHTTPRequest(
 			"is_stream", isStream,
 			"error", err,
 		)
-		return nil, errors.Wrap(errors.ErrCodeUnavailable, "HTTP 请求失败", stripErrorHTML(err))
+		return nil, errors.Wrap(errors.ErrCodeUnavailable, "HTTP 请求失败", stripErrorHTML(err)).
+			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
 	// 记录调试日志：HTTP 响应状态
