@@ -297,27 +297,27 @@ func TestClassifyErrorFrom_ByTypeCodeMessageRules(t *testing.T) {
 			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "纯 message 无 type/code → gateway",
+			name: "纯 message 无 type/code 且未命中规则 → server（hasBody=true 兜底）",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{
 					"message": "a plain unknown message",
 				},
 			},
-			want: portalErrors.ErrorFromGateway,
+			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "空 error 对象 → gateway",
+			name: "空 error 对象 → server（hasBody=true 兜底）",
 			data: map[string]interface{}{
 				"error": map[string]interface{}{},
 			},
-			want: portalErrors.ErrorFromGateway,
+			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "无 error 字段 → gateway",
+			name: "无 error 字段 → server（hasBody=true 兜底）",
 			data: map[string]interface{}{
 				"message": "no structured error object",
 			},
-			want: portalErrors.ErrorFromGateway,
+			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "用户示例：new_api_error + 额度用尽消息 → server",
@@ -394,5 +394,74 @@ func TestHandleHTTPError_JSONBodyWithNonJSONContentType_ClassifiesAsUpstream(t *
 
 	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
 		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	}
+}
+
+func TestHandleHTTPError_PlainTextBody_ClassifiesAsServer(t *testing.T) {
+	a := &Adapter{}
+
+	err := a.handleHTTPError("API 返回错误状态码", 502, []byte("simple backend failure"))
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	}
+
+	ctx := portalErrors.GetContext(err)
+	if got, ok := ctx["response_body"].(string); !ok || got != "simple backend failure" {
+		t.Fatalf("response_body 上下文不符合预期：%+v", ctx["response_body"])
+	}
+}
+
+func TestHandleHTTPError_HTMLBody_ClassifiesAsServerAndExtractReadableText(t *testing.T) {
+	a := &Adapter{}
+	body := []byte(`<html><head><title>502 Bad Gateway</title></head><body><h1>502 Bad Gateway</h1><p>The web server reported a bad gateway error.</p></body></html>`)
+
+	err := a.handleHTTPError("API 返回错误状态码", 502, body)
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	}
+
+	ctx := portalErrors.GetContext(err)
+	if got, ok := ctx["response_body"].(string); !ok || got != "502 Bad Gateway: The web server reported a bad gateway error." {
+		t.Fatalf("response_body 上下文不符合预期：%+v", ctx["response_body"])
+	}
+}
+
+func TestHandleHTTPError_NonJSONTextWithUpstreamKeyword_ClassifiesAsUpstream(t *testing.T) {
+	a := &Adapter{}
+
+	err := a.handleHTTPError("API 返回错误状态码", 502, []byte("upstream timeout while contacting model provider"))
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromUpstream {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromUpstream)
+	}
+}
+
+func TestHandleHTTPError_InvalidJSONButNonEmptyBody_ClassifiesAsServer(t *testing.T) {
+	a := &Adapter{}
+
+	err := a.handleHTTPError("API 返回错误状态码", 500, []byte(`{"error":`))
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	}
+
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	}
+}
+
+func TestHandleHTTPError_EmptyBody_ClassifiesAsGateway(t *testing.T) {
+	a := &Adapter{}
+
+	err := a.handleHTTPError("API 返回错误状态码", 504, nil)
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromGateway {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromGateway)
+	}
+
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeDeadlineExceeded {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeDeadlineExceeded)
 	}
 }

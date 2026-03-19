@@ -36,6 +36,16 @@ type classifyRule struct {
 	result  errors.ErrorFromValue // 分类结果
 }
 
+// errorClassifyInput 统一错误来源分类输入。
+type errorClassifyInput struct {
+	errorType    string
+	errorCode    string
+	errorMessage string
+	rawText      string
+	hasBody      bool
+	isStructured bool
+}
+
 // classifyRules 按优先级排列的分类规则，先匹配先生效。
 // upstream 规则优先于 server 规则。
 // 扩展方式：在对应分组末尾追加新条目即可。
@@ -71,27 +81,38 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) e
 		return a.createHTTPError(message, statusCode, "", errors.ErrorFromGateway)
 	}
 
-	var bodyStr string
-	var errorFrom errors.ErrorFromValue
+	bodyStr, classifyInput := a.normalizeHTTPErrorBody(body)
+	errorFrom := classifyErrorFromInput(classifyInput)
+
+	return a.createHTTPError(message, statusCode, bodyStr, errorFrom)
+}
+
+// normalizeHTTPErrorBody 规范化 HTTP 错误体，并构造统一分类输入。
+func (a *Adapter) normalizeHTTPErrorBody(body []byte) (string, errorClassifyInput) {
+	input := errorClassifyInput{hasBody: len(body) > 0}
+	if !input.hasBody {
+		return "", input
+	}
 
 	// 优先尝试解析 JSON：部分服务端返回 JSON 但 Content-Type 非 application/json。
 	var jsonData map[string]interface{}
-	err := json.Unmarshal(body, &jsonData)
+	if err := json.Unmarshal(body, &jsonData); err == nil {
+		bodyStr := a.processBodyHTML(jsonData)
+		errorType, errorCode, errorMessage := extractErrorFields(jsonData)
 
-	if err == nil {
-		// JSON 解析成功
-		bodyStr = a.processBodyHTML(jsonData)
-		errorFrom = a.classifyErrorFrom(jsonData)
-	} else {
-		// JSON 解析失败，回退到 HTML/文本处理
-		// Content-Type 是 JSON 时，这里代表服务端返回了非法 JSON；
-		// Content-Type 非 JSON 时，可能是 HTML/纯文本错误页面。
-		bodyStr = stripHTML(string(body))
-		errorFrom = errors.ErrorFromGateway
+		input.errorType = errorType
+		input.errorCode = errorCode
+		input.errorMessage = errorMessage
+		input.isStructured = errorType != "" || errorCode != "" || errorMessage != ""
+		input.rawText = strings.ToLower(stripHTML(bodyStr))
+
+		return bodyStr, input
 	}
 
-	// 根据错误来源和状态码处理错误
-	return a.createHTTPError(message, statusCode, bodyStr, errorFrom)
+	bodyStr := stripHTML(string(body))
+	input.rawText = strings.ToLower(bodyStr)
+
+	return bodyStr, input
 }
 
 // processBodyHTML 处理已解析的 JSON 数据中的 HTML 内容
@@ -143,31 +164,66 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 // - errors.ErrorFromGateway：网关自身错误（兜底）
 func (a *Adapter) classifyErrorFrom(jsonData map[string]interface{}) errors.ErrorFromValue {
 	errorType, errorCode, errorMessage := extractErrorFields(jsonData)
+	rawText := ""
+	if raw, err := json.Marshal(jsonData); err == nil {
+		rawText = strings.ToLower(stripHTML(string(raw)))
+	}
 
-	for _, rule := range classifyRules {
-		var field string
-		var matched bool
+	input := errorClassifyInput{
+		errorType:    errorType,
+		errorCode:    errorCode,
+		errorMessage: errorMessage,
+		rawText:      rawText,
+		hasBody:      true,
+		isStructured: errorType != "" || errorCode != "" || errorMessage != "",
+	}
 
-		switch rule.field {
-		case matchType:
-			field = errorType
-			matched = field == rule.pattern
-		case matchCode:
-			field = errorCode
-			matched = field == rule.pattern
-		case matchMessage:
-			field = errorMessage
-			matched = strings.Contains(field, rule.pattern)
-		}
+	return classifyErrorFromInput(input)
+}
 
-		if field != "" && matched {
-			return rule.result
+// classifyErrorFromInput 统一分类错误来源。
+//
+// 优先级：
+// 1. 结构化字段（type/code/message）
+// 2. 非结构化文本（rawText）
+// 3. 兜底：hasBody=true -> server，hasBody=false -> gateway
+func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
+	if input.isStructured {
+		for _, rule := range classifyRules {
+			var field string
+			var matched bool
+
+			switch rule.field {
+			case matchType:
+				field = input.errorType
+				matched = field == rule.pattern
+			case matchCode:
+				field = input.errorCode
+				matched = field == rule.pattern
+			case matchMessage:
+				field = input.errorMessage
+				matched = strings.Contains(field, rule.pattern)
+			}
+
+			if field != "" && matched {
+				return rule.result
+			}
 		}
 	}
 
-	// 智能兜底：响应体包含非空 type 或 code 说明来自目标服务器，
-	// 而非网关自身（网关错误不经过此函数）。
-	if errorType != "" || errorCode != "" {
+	rawText := strings.ToLower(strings.TrimSpace(input.rawText))
+	if rawText != "" {
+		for _, rule := range classifyRules {
+			if rule.field != matchMessage {
+				continue
+			}
+			if strings.Contains(rawText, rule.pattern) {
+				return rule.result
+			}
+		}
+	}
+
+	if input.hasBody {
 		return errors.ErrorFromServer
 	}
 
