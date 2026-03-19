@@ -3,6 +3,7 @@ package request
 import (
 	"context"
 	"encoding/json"
+	stdErrors "errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -48,6 +49,9 @@ type RequestLog struct {
 	// Deprecated: ErrorMsg 为展示型错误信息（失败时），后续将逐步下线；
 	// 请优先使用结构化错误字段（如 ErrorCode/ErrorLevel/HTTPStatus/ErrorFrom 及上游错误字段）。
 	ErrorMsg *string `json:"error_msg,omitempty"`
+
+	// CauseMessage 为底层原因文本，用于排障与审计；非稳定展示字段。
+	CauseMessage *string `json:"cause_message,omitempty"`
 
 	// 结构化错误字段（建议前端优先消费）。
 	ErrorCode  *string `json:"error_code,omitempty"`
@@ -150,6 +154,11 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 	errMsg := err.Error()
 	log.ErrorMsg = &errMsg
 
+	if causeMsg := extractCauseMessage(err); causeMsg != "" && causeMsg != errMsg {
+		causeMsg = clipLongField(causeMsg)
+		log.CauseMessage = &causeMsg
+	}
+
 	var portalErr *portalErrors.Error
 	if !portalErrors.As(err, &portalErr) {
 		return
@@ -199,6 +208,28 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 	}
 
 	parseAndFillResponseBody(log, responseBody)
+}
+
+// extractCauseMessage 获取错误链最底层 cause 的文本。
+func extractCauseMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	cause := err
+	for {
+		next := stdErrors.Unwrap(cause)
+		if next == nil {
+			break
+		}
+		cause = next
+	}
+
+	if cause == err {
+		return ""
+	}
+
+	return cause.Error()
 }
 
 // parseAndFillResponseBody 解析 response_body 并填充上游错误字段。

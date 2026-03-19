@@ -1,11 +1,39 @@
 package request
 
 import (
+	stdErrors "errors"
 	"strings"
 	"testing"
 
 	"github.com/MeowSalty/portal/errors"
 )
+
+func TestFillRequestLogErrorFields_CauseMessage_FromWrappedCause(t *testing.T) {
+	log := &RequestLog{}
+	root := stdErrors.New("dial tcp 127.0.0.1:443: connectex: connection refused")
+	err := errors.Wrap(errors.ErrCodeUnavailable, "HTTP 请求失败", root).
+		WithContext("error_from", "gateway")
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.CauseMessage == nil || *log.CauseMessage != root.Error() {
+		t.Fatalf("CauseMessage 不符合预期：%+v", log.CauseMessage)
+	}
+	if log.ErrorMsg == nil || *log.ErrorMsg == "" {
+		t.Fatalf("ErrorMsg 期望不为空")
+	}
+}
+
+func TestFillRequestLogErrorFields_CauseMessage_EmptyWhenNoWrappedCause(t *testing.T) {
+	log := &RequestLog{}
+	err := errors.New(errors.ErrCodeUnavailable, "服务不可用")
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.CauseMessage != nil {
+		t.Fatalf("CauseMessage 期望为 nil，实际：%+v", log.CauseMessage)
+	}
+}
 
 func TestFillRequestLogErrorFields_ResponseBodyJSON_CodeString(t *testing.T) {
 	log := &RequestLog{}
@@ -234,6 +262,7 @@ func TestFillRequestLogErrorFields_ClipLongFields(t *testing.T) {
 	log := &RequestLog{}
 	longRaw := strings.Repeat("a", requestLogLongFieldMaxLength+100)
 	longMsg := strings.Repeat("b", requestLogLongFieldMaxLength+100)
+	longCause := strings.Repeat("c", requestLogLongFieldMaxLength+100)
 	err := errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", 500).
 		WithContext("response_body", longRaw)
 
@@ -255,5 +284,16 @@ func TestFillRequestLogErrorFields_ClipLongFields(t *testing.T) {
 	}
 	if got := len([]rune(*log2.UpstreamErrorMessage)); got != requestLogLongFieldMaxLength {
 		t.Fatalf("UpstreamErrorMessage 长度期望 %d，实际 %d", requestLogLongFieldMaxLength, got)
+	}
+
+	log3 := &RequestLog{}
+	err3 := errors.Wrap(errors.ErrCodeUnavailable, "HTTP 请求失败", stdErrors.New(longCause))
+
+	fillRequestLogErrorFields(log3, err3)
+	if log3.CauseMessage == nil {
+		t.Fatalf("CauseMessage 期望不为 nil")
+	}
+	if got := len([]rune(*log3.CauseMessage)); got != requestLogLongFieldMaxLength {
+		t.Fatalf("CauseMessage 长度期望 %d，实际 %d", requestLogLongFieldMaxLength, got)
 	}
 }
