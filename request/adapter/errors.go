@@ -66,7 +66,7 @@ var classifyRules = []classifyRule{
 }
 
 // handleHTTPError 处理 HTTP 错误
-func (a *Adapter) handleHTTPError(message string, statusCode int, contentType string, body []byte) error {
+func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) error {
 	if len(body) == 0 {
 		return a.createHTTPError(message, statusCode, "", errors.ErrorFromGateway)
 	}

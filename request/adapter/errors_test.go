@@ -361,23 +361,18 @@ func TestHandleParseError_SetsErrorFromGateway(t *testing.T) {
 	}
 
 	if got, ok := ctx["operation"].(string); !ok || got != "响应解析错误" {
-		t.Fatalf("operation 上下文不符合预期: %+v", ctx["operation"])
+		t.Fatalf("operation 上下文不符合预期：%+v", ctx["operation"])
 	}
 
 	if got, ok := ctx["response_body"].(string); !ok || got != "bad body" {
-		t.Fatalf("response_body 上下文不符合预期: %+v", ctx["response_body"])
+		t.Fatalf("response_body 上下文不符合预期：%+v", ctx["response_body"])
 	}
 }
 
 func TestHandleHTTPError_JSONBodyWithNonJSONContentType_ClassifiesAsServer(t *testing.T) {
 	a := &Adapter{}
 
-	err := a.handleHTTPError(
-		"API 返回错误状态码",
-		500,
-		"text/plain; charset=utf-8",
-		[]byte(`{"error":{"message":"auth_unavailable: no auth available","type":"server_error","code":"internal_server_error"}}`),
-	)
+	err := a.handleHTTPError("API 返回错误状态码", 500, []byte(`{"error":{"message":"auth_unavailable: no auth available","type":"server_error","code":"internal_server_error"}}`))
 
 	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
 		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
@@ -391,12 +386,7 @@ func TestHandleHTTPError_JSONBodyWithNonJSONContentType_ClassifiesAsServer(t *te
 func TestHandleHTTPError_JSONBodyWithNonJSONContentType_ClassifiesAsUpstream(t *testing.T) {
 	a := &Adapter{}
 
-	err := a.handleHTTPError(
-		"API 返回错误状态码",
-		403,
-		"text/html",
-		[]byte(`{"error":{"message":"request_error","type":"bad_response_status_code","code":"bad_response_status_code"}}`),
-	)
+	err := a.handleHTTPError("API 返回错误状态码", 403, []byte(`{"error":{"message":"request_error","type":"bad_response_status_code","code":"bad_response_status_code"}}`))
 
 	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromUpstream {
 		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromUpstream)

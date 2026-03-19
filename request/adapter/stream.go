@@ -49,7 +49,7 @@ func (a *Adapter) handleStreaming(
 		} else {
 			body = []byte{}
 		}
-		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, body)
+		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, body)
 	}
 
 	// 检查 BodyStream 是否为 nil
@@ -184,7 +184,7 @@ func (a *Adapter) handleNativeStreaming(
 			"status_code", httpResp.StatusCode,
 			"response_body", string(body),
 		)
-		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, httpResp.ContentType, body)
+		return a.handleHTTPError("API 返回错误状态码", httpResp.StatusCode, body)
 	}
 
 	// 检查 BodyStream 是否为 nil
