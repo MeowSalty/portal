@@ -79,23 +79,18 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, contentType st
 	var bodyStr string
 	var errorFrom errors.ErrorFromValue
 
-	// 根据 Content-Type 决定处理方式
-	if isJSONContentType(contentType) {
-		// Content-Type 表明是 JSON，尝试解析
-		var jsonData map[string]interface{}
-		err := json.Unmarshal(body, &jsonData)
+	// 优先尝试解析 JSON：部分服务端返回 JSON 但 Content-Type 非 application/json。
+	var jsonData map[string]interface{}
+	err := json.Unmarshal(body, &jsonData)
 
-		if err != nil {
-			// JSON 解析失败，回退到 HTML/文本处理
-			bodyStr = stripHTML(string(body))
-			errorFrom = errors.ErrorFromGateway
-		} else {
-			// JSON 解析成功
-			bodyStr = a.processBodyHTML(jsonData)
-			errorFrom = a.classifyErrorFrom(jsonData)
-		}
+	if err == nil {
+		// JSON 解析成功
+		bodyStr = a.processBodyHTML(jsonData)
+		errorFrom = a.classifyErrorFrom(jsonData)
 	} else {
-		// 非 JSON 类型，直接处理为 HTML/文本
+		// JSON 解析失败，回退到 HTML/文本处理
+		// Content-Type 是 JSON 时，这里代表服务端返回了非法 JSON；
+		// Content-Type 非 JSON 时，可能是 HTML/纯文本错误页面。
 		bodyStr = stripHTML(string(body))
 		errorFrom = errors.ErrorFromGateway
 	}
