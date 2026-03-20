@@ -67,9 +67,17 @@ type Logger interface {
 	//
 	// args 参数应该是成对的键值对，例如：
 	//   logger.With("key1", "value1", "key2", 123)
+	//
+	// 使用边界：
+	//   - 用于在当前日志链路上补充新增上下文字段
+	//   - 不用于表达层级语义，层级语义应使用 WithGroup
 	With(args ...any) Logger
 
 	// WithGroup 返回一个新的 Logger，后续日志将属于指定的组
+	//
+	// 使用边界：
+	//   - 仅用于稳定的层级语义（例如 portal/request/adapter/audit）
+	//   - 避免使用动态值作为 group 名称
 	WithGroup(name string) Logger
 }
 

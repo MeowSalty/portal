@@ -22,8 +22,16 @@ func New(cfg Config) (*Portal, error) {
 	if log == nil {
 		log = logger.NewNopLogger()
 	}
+
+	// 构建入口主链路 logger：
+	// - group 仅表达稳定层级语义
+	// - component 用于核心检索字段统一
+	rootLog := log.WithGroup("portal")
+	portalLog := rootLog.With("component", "portal")
+	requestLog := rootLog.WithGroup("request").With("component", "request")
+
 	// 初始化全局默认日志记录器
-	logger.SetDefault(log)
+	logger.SetDefault(rootLog)
 
 	routing, err := routing.New(context.TODO(), routing.Config{
 		PlatformRepo:  cfg.PlatformRepo,
@@ -38,8 +46,8 @@ func New(cfg Config) (*Portal, error) {
 	portal := &Portal{
 		session:    session.New(),
 		routing:    routing,
-		request:    request.New(cfg.LogRepo, log.WithGroup("request")),
-		logger:     log,
+		request:    request.New(cfg.LogRepo, requestLog),
+		logger:     portalLog,
 		middleware: middleware.NewChain(cfg.Middlewares...),
 	}
 	return portal, nil
