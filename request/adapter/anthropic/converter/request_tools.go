@@ -1,7 +1,6 @@
 package converter
 
 import (
-	"github.com/MeowSalty/portal/logger"
 	anthropicTypes "github.com/MeowSalty/portal/request/adapter/anthropic/types"
 	"github.com/MeowSalty/portal/request/adapter/types"
 )
@@ -21,7 +20,10 @@ func convertToolCallFromContract(tc *types.ToolCall) (*anthropicTypes.ContentBlo
 	// 解析 Arguments
 	if tc.Arguments != nil {
 		input, err := DeserializeToolInput(*tc.Arguments)
-		if err == nil && input != nil {
+		if err != nil {
+			return nil, err
+		}
+		if input != nil {
 			toolUseBlock.Input = input
 		}
 	}
@@ -61,7 +63,7 @@ func convertToolsFromContract(tools []types.Tool, vendorExtras map[string]interf
 				if found, err := GetVendorExtra("cache_control", tool.VendorExtras, &cc); err == nil && found {
 					customTool.CacheControl = &cc
 				} else if err != nil {
-					logger.Default().Warn("读取工具缓存配置失败", "error", err)
+					return nil, err
 				} else if fallback, ok := tool.VendorExtras["cache_control"].(*anthropicTypes.CacheControlEphemeral); ok {
 					customTool.CacheControl = fallback
 				}
@@ -78,7 +80,7 @@ func convertToolsFromContract(tools []types.Tool, vendorExtras map[string]interf
 	if found, err := GetVendorExtra("tools_extras", vendorExtras, &toolsExtras); err == nil && found {
 		// keep toolsExtras
 	} else if err != nil {
-		logger.Default().Warn("读取特殊工具扩展失败", "error", err)
+		return nil, err
 	} else if vendorExtras != nil {
 		if fallback, ok := vendorExtras["tools_extras"].([]map[string]interface{}); ok {
 			toolsExtras = fallback
@@ -189,9 +191,7 @@ func convertToolsToContract(tools []anthropicTypes.ToolUnion) ([]types.Tool, []m
 			// CacheControl 放入 VendorExtras
 			if tool.Custom.CacheControl != nil {
 				contractTool.VendorExtras = make(map[string]interface{})
-				if err := SaveVendorExtra("cache_control", tool.Custom.CacheControl, contractTool.VendorExtras); err != nil {
-					logger.Default().Warn("保存工具缓存配置失败", "error", err)
-				}
+				_ = SaveVendorExtra("cache_control", tool.Custom.CacheControl, contractTool.VendorExtras)
 				SetVendorSource(&contractTool, string(types.VendorSourceAnthropic))
 			}
 

@@ -18,9 +18,9 @@ func convertResponseToMessage(resp *anthropicTypes.Response, log logger.Logger) 
 
 	// 保存原始 Content blocks 到 Extras（用于反向转换）
 	if len(resp.Content) > 0 {
-		contentBlocksJSON := SafeMarshal(resp.Content)
-		if len(contentBlocksJSON) == 0 {
-			log.Warn("序列化 content blocks 失败", "error", nil)
+		contentBlocksJSON, err := SafeMarshal(resp.Content)
+		if err != nil {
+			log.Warn("序列化 content blocks 失败", "error", err)
 		} else if err := SaveVendorExtraRaw("anthropic.content_blocks", contentBlocksJSON, message.Extras); err != nil {
 			log.Warn("保存 content blocks 失败", "error", err)
 		}
@@ -211,7 +211,7 @@ func convertMessageToResponseContent(message *types.ResponseMessage, log logger.
 	// 优先使用 Extras 中保存的原始 content_blocks
 	if contentBlocksJSON, ok := GetVendorExtraRaw("anthropic.content_blocks", message.Extras); ok {
 		var blocks []anthropicTypes.ResponseContentBlock
-		if SafeUnmarshal(contentBlocksJSON, &blocks) {
+		if err := SafeUnmarshal(contentBlocksJSON, &blocks); err == nil {
 			return blocks, nil
 		}
 		log.Warn("反序列化原始 content blocks 失败，将从 Parts 重建", "error", nil)

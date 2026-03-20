@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	"github.com/MeowSalty/portal/errors"
-	"github.com/MeowSalty/portal/logger"
 	geminiTypes "github.com/MeowSalty/portal/request/adapter/gemini/types"
 	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 )
@@ -53,8 +52,7 @@ func ResponseFromContract(contract *adapterTypes.ResponseContract) (*geminiTypes
 		for _, choice := range contract.Choices {
 			candidate, err := convertChoiceToCandidate(&choice)
 			if err != nil {
-				logger.Default().Warn("转换候选响应失败", "error", err)
-				continue
+				return nil, err
 			}
 			resp.Candidates = append(resp.Candidates, *candidate)
 		}

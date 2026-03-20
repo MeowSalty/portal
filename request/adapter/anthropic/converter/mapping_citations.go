@@ -1,7 +1,6 @@
 package converter
 
 import (
-	"github.com/MeowSalty/portal/logger"
 	anthropicTypes "github.com/MeowSalty/portal/request/adapter/anthropic/types"
 	"github.com/MeowSalty/portal/request/adapter/types"
 )
@@ -22,100 +21,48 @@ func convertCitationsToAnnotations(citations []anthropicTypes.TextCitation) ([]t
 			annotation.FileID = &citation.CharLocation.FileID
 
 			// 保存完整的原始结构到 Extras
-			if err := SaveVendorExtra("anthropic.citation_type", "char_location", annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 类型失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.cited_text", citation.CharLocation.CitedText, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文本失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_index", citation.CharLocation.DocumentIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档索引失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_title", citation.CharLocation.DocumentTitle, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档标题失败", "error", err)
-			}
+			_ = SaveVendorExtra("anthropic.citation_type", "char_location", annotation.Extras)
+			_ = SaveVendorExtra("anthropic.cited_text", citation.CharLocation.CitedText, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_index", citation.CharLocation.DocumentIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_title", citation.CharLocation.DocumentTitle, annotation.Extras)
 		} else if citation.PageLocation != nil {
 			annotation.Type = "file_citation"
 			annotation.FileID = &citation.PageLocation.FileID
 
-			if err := SaveVendorExtra("anthropic.citation_type", "page_location", annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 类型失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.cited_text", citation.PageLocation.CitedText, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文本失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_index", citation.PageLocation.DocumentIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档索引失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_title", citation.PageLocation.DocumentTitle, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档标题失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.start_page_number", citation.PageLocation.StartPageNumber, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 页码起始失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.end_page_number", citation.PageLocation.EndPageNumber, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 页码结束失败", "error", err)
-			}
+			_ = SaveVendorExtra("anthropic.citation_type", "page_location", annotation.Extras)
+			_ = SaveVendorExtra("anthropic.cited_text", citation.PageLocation.CitedText, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_index", citation.PageLocation.DocumentIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_title", citation.PageLocation.DocumentTitle, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.start_page_number", citation.PageLocation.StartPageNumber, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.end_page_number", citation.PageLocation.EndPageNumber, annotation.Extras)
 		} else if citation.ContentBlockLocation != nil {
 			annotation.Type = "file_citation"
 			annotation.FileID = &citation.ContentBlockLocation.FileID
 
-			if err := SaveVendorExtra("anthropic.citation_type", "content_block_location", annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 类型失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.cited_text", citation.ContentBlockLocation.CitedText, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文本失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_index", citation.ContentBlockLocation.DocumentIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档索引失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.document_title", citation.ContentBlockLocation.DocumentTitle, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文档标题失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.start_block_index", citation.ContentBlockLocation.StartBlockIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 块起始失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.end_block_index", citation.ContentBlockLocation.EndBlockIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 块结束失败", "error", err)
-			}
+			_ = SaveVendorExtra("anthropic.citation_type", "content_block_location", annotation.Extras)
+			_ = SaveVendorExtra("anthropic.cited_text", citation.ContentBlockLocation.CitedText, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_index", citation.ContentBlockLocation.DocumentIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.document_title", citation.ContentBlockLocation.DocumentTitle, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.start_block_index", citation.ContentBlockLocation.StartBlockIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.end_block_index", citation.ContentBlockLocation.EndBlockIndex, annotation.Extras)
 		} else if citation.WebSearchResult != nil {
 			annotation.Type = "url_citation"
 			annotation.URL = &citation.WebSearchResult.URL
 			annotation.Title = &citation.WebSearchResult.Title
 
-			if err := SaveVendorExtra("anthropic.citation_type", "web_search_result", annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 类型失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.cited_text", citation.WebSearchResult.CitedText, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文本失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.encrypted_index", citation.WebSearchResult.EncryptedIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 加密索引失败", "error", err)
-			}
+			_ = SaveVendorExtra("anthropic.citation_type", "web_search_result", annotation.Extras)
+			_ = SaveVendorExtra("anthropic.cited_text", citation.WebSearchResult.CitedText, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.encrypted_index", citation.WebSearchResult.EncryptedIndex, annotation.Extras)
 		} else if citation.SearchResult != nil {
 			annotation.Type = "other"
 
-			if err := SaveVendorExtra("anthropic.citation_type", "search_result", annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 类型失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.cited_text", citation.SearchResult.CitedText, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 文本失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.start_block_index", citation.SearchResult.StartBlockIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 块起始失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.end_block_index", citation.SearchResult.EndBlockIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 块结束失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.search_result_index", citation.SearchResult.SearchResultIndex, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 搜索索引失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.source", citation.SearchResult.Source, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 来源失败", "error", err)
-			}
-			if err := SaveVendorExtra("anthropic.title", citation.SearchResult.Title, annotation.Extras); err != nil {
-				logger.Default().Warn("保存 Citation 标题失败", "error", err)
-			}
+			_ = SaveVendorExtra("anthropic.citation_type", "search_result", annotation.Extras)
+			_ = SaveVendorExtra("anthropic.cited_text", citation.SearchResult.CitedText, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.start_block_index", citation.SearchResult.StartBlockIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.end_block_index", citation.SearchResult.EndBlockIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.search_result_index", citation.SearchResult.SearchResultIndex, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.source", citation.SearchResult.Source, annotation.Extras)
+			_ = SaveVendorExtra("anthropic.title", citation.SearchResult.Title, annotation.Extras)
 		}
 
 		annotations = append(annotations, annotation)
@@ -133,7 +80,7 @@ func convertAnnotationsToCitations(annotations []types.ResponseAnnotation) ([]an
 
 		citationType := ""
 		if found, err := GetVendorExtra("anthropic.citation_type", annotation.Extras, &citationType); err != nil {
-			logger.Default().Warn("读取 Citation 类型失败", "error", err)
+			return nil, err
 		} else if !found {
 			if fallback, ok := annotation.Extras["anthropic.citation_type"].(string); ok {
 				citationType = fallback

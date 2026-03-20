@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	portalErrors "github.com/MeowSalty/portal/errors"
-	"github.com/MeowSalty/portal/logger"
 )
 
 // SerializeToolInput 将工具输入参数序列化为 JSON 字符串。
@@ -20,7 +19,6 @@ func SerializeToolInput(input interface{}, existingArgs *string) (string, error)
 
 	if input == nil {
 		err := portalErrors.New(portalErrors.ErrCodeInvalidArgument, "工具输入为空")
-		logger.Default().Warn("序列化工具输入失败", "error", err)
 		return "", err
 	}
 
@@ -41,7 +39,6 @@ func SerializeToolInput(input interface{}, existingArgs *string) (string, error)
 		data, err := json.Marshal(v)
 		if err != nil {
 			wrapped := portalErrors.Wrap(portalErrors.ErrCodeInternal, "序列化工具输入失败", err)
-			logger.Default().Warn("序列化工具输入失败", "error", wrapped)
 			return "", wrapped
 		}
 		return string(data), nil
@@ -52,14 +49,12 @@ func SerializeToolInput(input interface{}, existingArgs *string) (string, error)
 func SerializePayload(payload map[string]interface{}) (string, error) {
 	if payload == nil {
 		err := portalErrors.New(portalErrors.ErrCodeInvalidArgument, "Payload 为空")
-		logger.Default().Warn("序列化 Payload 失败", "error", err)
 		return "", err
 	}
 
 	data, err := json.Marshal(payload)
 	if err != nil {
 		wrapped := portalErrors.Wrap(portalErrors.ErrCodeInternal, "序列化 Payload 失败", err)
-		logger.Default().Warn("序列化 Payload 失败", "error", wrapped)
 		return "", wrapped
 	}
 
@@ -75,14 +70,12 @@ func DeserializeToolInput(args string) (map[string]interface{}, error) {
 	var input interface{}
 	if err := json.Unmarshal([]byte(args), &input); err != nil {
 		wrapped := portalErrors.Wrap(portalErrors.ErrCodeInternal, "反序列化工具输入失败", err)
-		logger.Default().Warn("反序列化工具输入失败", "error", wrapped)
 		return nil, wrapped
 	}
 
 	mapped, ok := input.(map[string]interface{})
 	if !ok {
 		err := portalErrors.New(portalErrors.ErrCodeInvalidArgument, "工具输入不是对象")
-		logger.Default().Warn("反序列化工具输入失败", "error", err)
 		return nil, err
 	}
 
@@ -98,7 +91,6 @@ func DeserializePayload(jsonStr string) (map[string]interface{}, error) {
 	var payload map[string]interface{}
 	if err := json.Unmarshal([]byte(jsonStr), &payload); err != nil {
 		wrapped := portalErrors.Wrap(portalErrors.ErrCodeInternal, "反序列化 Payload 失败", err)
-		logger.Default().Warn("反序列化 Payload 失败", "error", wrapped)
 		return nil, wrapped
 	}
 

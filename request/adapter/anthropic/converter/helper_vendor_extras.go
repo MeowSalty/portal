@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 
 	portalErrors "github.com/MeowSalty/portal/errors"
-	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/request/adapter/types"
 )
 
@@ -254,37 +253,32 @@ func IsAnthropicVendor(contract interface{}) bool {
 	return GetVendorSource(contract) == string(types.VendorSourceAnthropic)
 }
 
-// SafeMarshal 安全序列化，失败时记录 WARN 日志并返回 nil。
-func SafeMarshal(v interface{}) json.RawMessage {
+// SafeMarshal 安全序列化，失败时返回错误。
+func SafeMarshal(v interface{}) (json.RawMessage, error) {
 	if v == nil {
-		logger.Default().Warn("序列化失败", "error", portalErrors.New(portalErrors.ErrCodeInvalidArgument, "序列化对象为空"))
-		return nil
+		return nil, portalErrors.New(portalErrors.ErrCodeInvalidArgument, "序列化对象为空")
 	}
 
 	data, err := json.Marshal(v)
 	if err != nil {
-		logger.Default().Warn("序列化失败", "error", err)
-		return nil
+		return nil, portalErrors.Wrap(portalErrors.ErrCodeInternal, "序列化失败", err)
 	}
 
-	return json.RawMessage(data)
+	return json.RawMessage(data), nil
 }
 
-// SafeUnmarshal 安全反序列化，失败时记录 WARN 日志并返回 false。
-func SafeUnmarshal(data []byte, v interface{}) bool {
+// SafeUnmarshal 安全反序列化，失败时返回错误。
+func SafeUnmarshal(data []byte, v interface{}) error {
 	if len(data) == 0 {
-		logger.Default().Warn("反序列化失败", "error", portalErrors.New(portalErrors.ErrCodeInvalidArgument, "反序列化数据为空"))
-		return false
+		return portalErrors.New(portalErrors.ErrCodeInvalidArgument, "反序列化数据为空")
 	}
 	if v == nil {
-		logger.Default().Warn("反序列化失败", "error", portalErrors.New(portalErrors.ErrCodeInvalidArgument, "反序列化目标为空"))
-		return false
+		return portalErrors.New(portalErrors.ErrCodeInvalidArgument, "反序列化目标为空")
 	}
 
 	if err := json.Unmarshal(data, v); err != nil {
-		logger.Default().Warn("反序列化失败", "error", err)
-		return false
+		return portalErrors.Wrap(portalErrors.ErrCodeInternal, "反序列化失败", err)
 	}
 
-	return true
+	return nil
 }
