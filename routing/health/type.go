@@ -34,8 +34,17 @@ type Health struct {
 	BackoffDuration int64      // 当前退避时长 (秒)
 
 	// 状态详情
-	LastError     string     // 最后错误信息
-	LastErrorCode int        // 最后错误码
+	// Deprecated: LastError 为展示型历史字段，语义不稳定；请优先使用 LastErrorMessage。
+	LastError string // 最后错误信息（历史兼容）
+	// Deprecated: LastErrorCode 为历史兼容字段；存在 HTTP 状态码时写入状态码，否则写入 0。
+	LastErrorCode int // 最后错误码（历史兼容）
+
+	LastErrorMessage        string // 最后错误展示消息
+	LastStructuredErrorCode string // 最后稳定错误码
+	LastHTTPStatus          *int   // 最后 HTTP 状态码（无 HTTP 响应时为空）
+	LastErrorFrom           string // 最后错误来源
+	LastCauseMessage        string // 最后根因文本
+
 	LastCheckAt   time.Time  // 最后检查时间
 	LastSuccessAt *time.Time // 最后成功时间
 
@@ -45,4 +54,13 @@ type Health struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// ErrorSnapshot 表示健康状态写入所需的轻量错误摘要。
+type ErrorSnapshot struct {
+	Message      string // 展示消息
+	Code         string // 稳定错误码
+	HTTPStatus   *int   // HTTP 状态码
+	ErrorFrom    string // 错误来源
+	CauseMessage string // 根因文本
 }

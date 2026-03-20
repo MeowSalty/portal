@@ -96,8 +96,7 @@ func (m *Service) GetStatus(resourceType ResourceType, resourceID uint) (*Health
 //   - resourceType: 资源类型
 //   - resourceID: 资源 ID
 //   - success: 是否成功
-//   - errorMessage: 错误信息（如果失败）
-//   - errorCode: 错误代码（如果失败）
+//   - snapshot: 错误摘要（失败时写入，成功时忽略）
 //
 // 返回值：
 //   - error: 错误信息
@@ -105,8 +104,7 @@ func (m *Service) UpdateStatus(
 	resourceType ResourceType,
 	resourceID uint,
 	success bool,
-	errorMessage string,
-	errorCode int,
+	snapshot ErrorSnapshot,
 ) error {
 	// 获取或创建健康状态
 	status, err := m.GetStatus(resourceType, resourceID)
@@ -125,6 +123,11 @@ func (m *Service) UpdateStatus(
 		status.LastSuccessAt = &now
 		status.LastError = ""
 		status.LastErrorCode = 0
+		status.LastErrorMessage = ""
+		status.LastStructuredErrorCode = ""
+		status.LastHTTPStatus = nil
+		status.LastErrorFrom = ""
+		status.LastCauseMessage = ""
 		status.ErrorCount = 0
 
 		// 使用退避策略重置状态
@@ -132,8 +135,19 @@ func (m *Service) UpdateStatus(
 	} else {
 		// 失败情况：应用退避策略
 		status.ErrorCount++
-		status.LastError = errorMessage
-		status.LastErrorCode = errorCode
+		status.LastErrorMessage = snapshot.Message
+		status.LastStructuredErrorCode = snapshot.Code
+		status.LastHTTPStatus = snapshot.HTTPStatus
+		status.LastErrorFrom = snapshot.ErrorFrom
+		status.LastCauseMessage = snapshot.CauseMessage
+
+		// 历史字段兼容写入
+		status.LastError = status.LastErrorMessage
+		if status.LastHTTPStatus != nil {
+			status.LastErrorCode = *status.LastHTTPStatus
+		} else {
+			status.LastErrorCode = 0
+		}
 
 		// 使用退避策略更新状态
 		m.backoff.Apply(status)

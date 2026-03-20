@@ -2,6 +2,7 @@ package routing
 
 import (
 	"context"
+	stdErrors "errors"
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
@@ -39,8 +40,7 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 		health.ResourceTypePlatform,
 		c.PlatformID,
 		true, // 成功
-		"",   // 无错误信息
-		0,    // 无错误码
+		health.ErrorSnapshot{},
 	)
 
 	// 更新模型级别的健康状态
@@ -48,8 +48,7 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 		health.ResourceTypeModel,
 		c.ModelID,
 		true, // 成功
-		"",   // 无错误信息
-		0,    // 无错误码
+		health.ErrorSnapshot{},
 	)
 
 	// 更新 API 密钥级别的健康状态
@@ -57,8 +56,7 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 		health.ResourceTypeAPIKey,
 		c.APIKeyID,
 		true, // 成功
-		"",   // 无错误信息
-		0,    // 无错误码
+		health.ErrorSnapshot{},
 	)
 }
 
@@ -68,8 +66,7 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 		return
 	}
 
-	errorCode := errors.GetHTTPStatus(err)
-	errorMessage := err.(*errors.Error).Error()
+	snapshot := buildHealthErrorSnapshot(err)
 
 	// 根据错误层级确定资源类型和资源 ID
 	errorLevel := errors.GetErrorLevel(err)
@@ -93,10 +90,57 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	c.healthService.UpdateStatus(
 		resourceType,
 		resourceID,
-		false,        // 失败
-		errorMessage, // 错误信息
-		errorCode,    // 错误码
+		false, // 失败
+		snapshot,
 	)
+}
+
+// buildHealthErrorSnapshot 提取健康状态需要的轻量错误摘要。
+func buildHealthErrorSnapshot(err error) health.ErrorSnapshot {
+	if err == nil {
+		return health.ErrorSnapshot{}
+	}
+
+	message := errors.GetMessage(err)
+	if message == "" {
+		message = err.Error()
+	}
+
+	var httpStatus *int
+	if errors.HasHTTPStatus(err) {
+		status := errors.GetHTTPStatus(err)
+		httpStatus = &status
+	}
+
+	return health.ErrorSnapshot{
+		Message:      message,
+		Code:         string(errors.GetCode(err)),
+		HTTPStatus:   httpStatus,
+		ErrorFrom:    string(errors.GetErrorFrom(err)),
+		CauseMessage: extractErrorCauseMessage(err),
+	}
+}
+
+// extractErrorCauseMessage 沿错误链提取最底层 cause 文本。
+func extractErrorCauseMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	cause := err
+	for {
+		next := stdErrors.Unwrap(cause)
+		if next == nil {
+			break
+		}
+		cause = next
+	}
+
+	if cause == err {
+		return ""
+	}
+
+	return cause.Error()
 }
 
 // IsHealthy 检查通道是否健康
