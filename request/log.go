@@ -95,48 +95,35 @@ func (p *Request) recordRequestLog(
 	// 计算耗时
 	requestDuration := time.Since(requestLog.Timestamp)
 	requestLog.Duration = requestDuration
+	requestLog.Success = success
+
+	debugArgs := []any{
+		"duration", requestDuration.String(),
+		"success", success,
+	}
 
 	// 如果记录了首字节时间，则计算首字节耗时
 	if firstByteTime != nil && !firstByteTime.IsZero() {
 		firstByteDuration := firstByteTime.Sub(requestLog.Timestamp)
 		requestLog.FirstByteTime = &firstByteDuration
-
-		log.Debug("记录请求统计信息",
-			"duration", requestDuration.String(),
-			"first_byte_time", firstByteDuration.String(),
-			"success", success,
-		)
-	} else {
-		log.Debug("记录请求统计信息",
-			"duration", requestDuration.String(),
-			"success", success,
-		)
+		debugArgs = append(debugArgs, "first_byte_time", firstByteDuration.String())
 	}
 
-	// 记录 Token 使用情况
+	// 将运行态耗时与 Token 统计收敛为结束摘要（调试级别）
 	if requestLog.PromptTokens != nil && requestLog.CompletionTokens != nil && requestLog.TotalTokens != nil {
-		log.Debug("Token 使用统计",
+		debugArgs = append(debugArgs,
 			"prompt_tokens", *requestLog.PromptTokens,
 			"completion_tokens", *requestLog.CompletionTokens,
 			"total_tokens", *requestLog.TotalTokens,
 		)
 	}
-
-	// 记录错误信息
-	if !success && requestLog.ErrorMsg != nil {
-		log.Error("请求失败",
-			"error", *requestLog.ErrorMsg,
-		)
-	}
-
-	requestLog.Success = success
+	log.Debug("请求结束摘要", debugArgs...)
 
 	// 保存到数据库
 	err := p.repo.CreateRequestLog(context.Background(), requestLog)
 	if err != nil {
-		log.Error("保存请求日志失败", "error", err)
-	} else {
-		log.Debug("请求日志保存成功")
+		// 审计层仅记录自身持久化异常，不重复输出业务请求失败。
+		log.Error("audit_log_persist_failed", "error", err)
 	}
 }
 
