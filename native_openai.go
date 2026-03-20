@@ -42,7 +42,7 @@ func (p *Portal) NativeOpenAIChatCompletion(
 			return r, nil
 		},
 		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*openaiChat.Response, error) {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", req.Model,
 				"provider", "openai",
@@ -80,7 +80,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 			return p.request.NativeStream(reqCtx, req, ch, req.Model, output)
 		},
 		streamCompatFallback(ctx, options, errors.ErrCodeEndpointNotFound, func() <-chan *openaiChat.StreamEvent {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", req.Model,
 				"provider", "openai",
@@ -130,7 +130,7 @@ func (p *Portal) NativeOpenAIResponses(
 			return r, nil
 		},
 		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*openaiResponses.Response, error) {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", modelName,
 				"provider", "openai",
@@ -174,7 +174,7 @@ func (p *Portal) NativeOpenAIResponsesStream(
 			return p.request.NativeStream(reqCtx, req, ch, modelName, output)
 		},
 		streamCompatFallback(ctx, options, errors.ErrCodeEndpointNotFound, func() <-chan *openaiResponses.StreamEvent {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", modelName,
 				"provider", "openai",

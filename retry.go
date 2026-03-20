@@ -52,7 +52,7 @@ func retryNonStream[T any](
 			"model_id", channel.ModelID,
 			"api_key_id", channel.APIKeyID,
 		)
-		channelLogger.DebugContext(ctx, "获取到通道")
+		channelLogger.DebugContext(ctx, "channel_selected")
 
 		err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) error {
 			defer reqCancel()
@@ -64,18 +64,18 @@ func retryNonStream[T any](
 		if err != nil {
 			if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
 				cancelErr := errors.NormalizeCanceled(err)
-				channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+				channelLogger.InfoContext(ctx, "request_canceled", "error", cancelErr)
 				return result, cancelErr
 			}
 
 			if errors.IsRetryable(err) {
 				if ctx.Err() != nil {
 					cancelErr := errors.NormalizeCanceled(ctx.Err())
-					channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+					channelLogger.InfoContext(ctx, "request_canceled", "error", cancelErr)
 					return result, cancelErr
 				}
 
-				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
+				channelLogger.WarnContext(ctx, "request_retry_scheduled", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
@@ -84,7 +84,7 @@ func retryNonStream[T any](
 			return result, err
 		}
 		channel.MarkSuccess(ctx)
-		channelLogger.InfoContext(ctx, "请求处理成功")
+		channelLogger.InfoContext(ctx, "request_finished", "status", "completed")
 		return result, nil
 	}
 }
@@ -135,7 +135,7 @@ func retryNativeStream[T any](
 				"model_id", channel.ModelID,
 				"api_key_id", channel.APIKeyID,
 			)
-			channelLogger.DebugContext(ctx, "获取到通道")
+			channelLogger.DebugContext(ctx, "channel_selected")
 
 			nativeOutput := make(chan any)
 			done := make(chan struct{})
@@ -147,19 +147,19 @@ func retryNativeStream[T any](
 			if err != nil {
 				if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
 					cancelErr := errors.NormalizeCanceled(err)
-					channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", cancelErr)
 					close(out)
 					return
 				}
 
 				if errors.IsRetryable(err) {
 					if ctx.Err() != nil {
-						channelLogger.InfoContext(ctx, "操作终止", "error", errors.NormalizeCanceled(ctx.Err()))
+						channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
 						close(out)
 						return
 					}
 
-					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
+					channelLogger.WarnContext(ctx, "request_retry_scheduled", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
@@ -169,7 +169,7 @@ func retryNativeStream[T any](
 				return
 			}
 			channel.MarkSuccess(ctx)
-			channelLogger.InfoContext(ctx, "流处理成功")
+			channelLogger.InfoContext(ctx, "stream_finished", "status", "completed")
 
 			go func() {
 				defer close(out)

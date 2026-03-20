@@ -43,7 +43,7 @@ func (p *Portal) NativeGeminiGenerateContent(
 			return r, nil
 		},
 		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*geminiTypes.Response, error) {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", modelName,
 				"provider", "google",
@@ -83,7 +83,7 @@ func (p *Portal) NativeGeminiStreamGenerateContent(
 			return p.request.NativeStream(reqCtx, req, ch, modelName, output)
 		},
 		streamCompatFallback(ctx, options, errors.ErrCodeEndpointNotFound, func() <-chan *geminiTypes.StreamEvent {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", modelName,
 				"provider", "google",

@@ -49,7 +49,11 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 		for {
 			channel, err := p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
-				p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
+				if errors.IsCode(err, errors.ErrCodeAborted) || errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
+					p.logger.InfoContext(ctx, "stream_finished", "model", request.Model, "status", "canceled", "error", errors.NormalizeCanceled(err))
+				} else {
+					p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
+				}
 				message := errors.GetMessage(err)
 				if message == "" {
 					message = err.Error()
@@ -94,7 +98,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 			// 检查错误是否可以重试
 			if err != nil {
 				if errors.IsRetryable(err) {
-					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
+					channelLogger.WarnContext(ctx, "request_retry_scheduled", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}

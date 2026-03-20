@@ -41,7 +41,7 @@ func (p *Portal) NativeAnthropicMessages(
 			return r, nil
 		},
 		compatFallback(options, errors.ErrCodeEndpointNotFound, func() (*anthropicTypes.Response, error) {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", req.Model,
 				"provider", "anthropic",
@@ -79,7 +79,7 @@ func (p *Portal) NativeAnthropicMessagesStream(
 			return p.request.NativeStream(reqCtx, req, ch, req.Model, output)
 		},
 		streamCompatFallback(ctx, options, errors.ErrCodeEndpointNotFound, func() <-chan *anthropicTypes.StreamEvent {
-			p.logger.WithGroup("native_compat").WarnContext(ctx, "原生端点未找到，降级到默认端点",
+			p.logger.WithGroup("native_compat").InfoContext(ctx, "compat_fallback_applied",
 				"request_mode", "compat",
 				"model", req.Model,
 				"provider", "anthropic",
