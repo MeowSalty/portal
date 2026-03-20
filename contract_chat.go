@@ -11,7 +11,7 @@ import (
 
 // ChatCompletion 处理聊天完成请求（非流式）
 func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContract) (*types.ResponseContract, error) {
-	p.logger.DebugContext(ctx, "开始处理聊天完成请求", "model", request.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", request.Model)
 
 	response, err := retryNonStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
@@ -29,9 +29,9 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContr
 	}
 
 	if err != nil {
-		p.logger.ErrorContext(ctx, "聊天完成请求失败", "model", request.Model, "error", err)
+		p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
 	} else {
-		p.logger.InfoContext(ctx, "聊天完成请求成功", "model", request.Model)
+		p.logger.InfoContext(ctx, "request_finished", "model", request.Model)
 	}
 
 	return response, err
@@ -39,7 +39,7 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContr
 
 // ChatCompletionStream 处理流式聊天完成请求
 func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.RequestContract) <-chan *types.StreamEventContract {
-	p.logger.DebugContext(ctx, "开始处理流式聊天完成请求", "model", request.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", request.Model)
 
 	// 创建内部流（用于接收原始响应）
 	internalStream := make(chan *types.StreamEventContract, StreamBufferSize)
@@ -49,7 +49,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 		for {
 			channel, err := p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
-				p.logger.ErrorContext(ctx, "流式聊天完成请求失败", "model", request.Model, "error", err)
+				p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
 				message := errors.GetMessage(err)
 				if message == "" {
 					message = err.Error()
@@ -86,8 +86,6 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				"model_id", channel.ModelID,
 				"api_key_id", channel.APIKeyID)
 
-			channelLogger.DebugContext(ctx, "获取到通道")
-
 			err = p.session.WithSession(ctx, func(reqCtx context.Context, reqCancel context.CancelFunc) (err error) {
 				defer reqCancel()
 				return p.request.ChatCompletionStream(reqCtx, request, internalStream, channel)
@@ -100,18 +98,20 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 					channel.MarkFailure(ctx, err)
 					continue
 				}
-				// 特殊处理：操作终止时标记成功
-				if errors.IsCode(err, errors.ErrCodeAborted) {
-					channelLogger.InfoContext(ctx, "操作终止")
+				// 特殊处理：主动取消/操作终止不视为失败噪音
+				if errors.IsCode(err, errors.ErrCodeAborted) || errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
+					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled")
 					channel.MarkSuccess(ctx)
+					close(internalStream)
+					break
 				}
-				p.logger.ErrorContext(ctx, "流式聊天完成请求失败", "model", request.Model, "error", err)
+				p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
 				channel.MarkFailure(ctx, err)
 				close(internalStream)
 				break
 			}
 			channel.MarkSuccess(ctx)
-			p.logger.InfoContext(ctx, "流式聊天完成请求成功", "model", request.Model)
+			p.logger.InfoContext(ctx, "stream_finished", "model", request.Model, "status", "completed")
 			break
 		}
 	}()

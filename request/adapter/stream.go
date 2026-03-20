@@ -154,16 +154,11 @@ func (a *Adapter) handleNativeStreaming(
 	)
 
 	// 发送 HTTP 请求
-	log.Debug("开始发送流式请求")
+	log.Debug("request_started")
 	httpResp, err := a.sendHTTPRequest(ctx, channel, headers, payload, true)
 	if err != nil {
 		return err
 	}
-
-	log.Debug("收到 HTTP 响应",
-		"status_code", httpResp.StatusCode,
-		"content_type", string(httpResp.ContentType),
-	)
 
 	if httpResp.StatusCode != http.StatusOK {
 		// 读取响应体以获取详细错误信息
@@ -195,8 +190,6 @@ func (a *Adapter) handleNativeStreaming(
 			WithContext("error_from", string(errors.ErrorFromGateway))
 	}
 
-	log.Debug("开始处理流式响应")
-
 	// 首字节标记
 	firstChunkReceived := false
 
@@ -211,7 +204,13 @@ func (a *Adapter) handleNativeStreaming(
 					hooks.OnComplete(time.Now())
 				}
 			}
-			log.Debug("流式响应处理完成", "error", streamErr)
+			if streamErr == nil {
+				log.Info("stream_finished", "status", "completed")
+			} else if errors.IsCanceled(streamErr) {
+				log.Info("stream_finished", "status", "canceled", "error", streamErr)
+			} else {
+				log.Warn("stream_finished", "status", "aborted", "error", streamErr)
+			}
 			close(output)
 			if httpResp.body != nil {
 				httpResp.body.Close()
@@ -224,7 +223,6 @@ func (a *Adapter) handleNativeStreaming(
 			select {
 			case <-ctx.Done():
 				// 上下文已取消，停止流处理
-				log.Debug("上下文已取消，停止流处理", "context_err", ctx.Err())
 				streamErr = errors.NormalizeCanceled(ctx.Err())
 				return
 			default:
@@ -234,9 +232,7 @@ func (a *Adapter) handleNativeStreaming(
 				lineBytes = bytes.TrimSpace(lineBytes)
 				if len(lineBytes) > 0 && bytes.HasPrefix(lineBytes, sseDataPrefix) {
 					data := bytes.TrimSpace(lineBytes[5:])
-					log.Debug("读取到流数据行", "data", string(data[:min(len(data), 100)])) // 只记录前 100 个字符避免日志过长
 					if bytes.Equal(data, sseDoneMarker) {
-						log.Debug("流式传输正常完成")
 						// 流式传输正常完成
 						return
 					}
@@ -253,6 +249,7 @@ func (a *Adapter) handleNativeStreaming(
 					// 触发 OnFirstChunk Hook（首次收到有效事件）
 					if !firstChunkReceived && hooks != nil {
 						hooks.OnFirstChunk(time.Now())
+						log.Debug("first_chunk_received")
 						firstChunkReceived = true
 					}
 
@@ -276,18 +273,15 @@ func (a *Adapter) handleNativeStreaming(
 					select {
 					case <-ctx.Done():
 						// 上下文已取消，停止发送响应块
-						log.Debug("上下文已取消，停止发送响应块", "context_err", ctx.Err())
 						streamErr = errors.NormalizeCanceled(ctx.Err())
 						return
 					case output <- event:
-						log.Debug("成功发送事件到输出通道")
 					}
 				}
 
 				// 检查错误
 				if err != nil {
 					if err == io.EOF {
-						log.Debug("流已结束 (EOF)")
 						// 流已结束
 						return
 					}

@@ -28,7 +28,7 @@ func (p *Portal) NativeGeminiGenerateContent(
 	modelName := req.Model
 	options := applyNativeOptions(opts)
 
-	p.logger.DebugContext(ctx, "开始处理 Gemini GenerateContent 原生请求", "model", modelName)
+	p.logger.DebugContext(ctx, "request_started", "model", modelName)
 
 	return retryNonStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {
@@ -73,7 +73,7 @@ func (p *Portal) NativeGeminiStreamGenerateContent(
 	modelName := req.Model
 	options := applyNativeOptions(opts)
 
-	p.logger.DebugContext(ctx, "开始处理 Gemini StreamGenerateContent 原生流式请求", "model", modelName)
+	p.logger.DebugContext(ctx, "request_started", "model", modelName)
 
 	return retryNativeStream(ctx, p,
 		func(ctx context.Context) (*routing.Channel, error) {

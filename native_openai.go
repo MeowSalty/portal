@@ -26,7 +26,7 @@ func (p *Portal) NativeOpenAIChatCompletion(
 	req *openaiChat.Request,
 	opts ...NativeOption,
 ) (*openaiChat.Response, error) {
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生请求", "model", req.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", req.Model)
 	options := applyNativeOptions(opts)
 
 	return retryNonStream(ctx, p,
@@ -69,7 +69,7 @@ func (p *Portal) NativeOpenAIChatCompletionStream(
 	req *openaiChat.Request,
 	opts ...NativeOption,
 ) <-chan *openaiChat.StreamEvent {
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Chat 原生流式请求", "model", req.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", req.Model)
 	options := applyNativeOptions(opts)
 
 	return retryNativeStream(ctx, p,
@@ -114,7 +114,7 @@ func (p *Portal) NativeOpenAIResponses(
 		modelName = *req.Model
 	}
 
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生请求", "model", modelName)
+	p.logger.DebugContext(ctx, "request_started", "model", modelName)
 	options := applyNativeOptions(opts)
 
 	return retryNonStream(ctx, p,
@@ -163,7 +163,7 @@ func (p *Portal) NativeOpenAIResponsesStream(
 		modelName = *req.Model
 	}
 
-	p.logger.DebugContext(ctx, "开始处理 OpenAI Responses 原生流式请求", "model", modelName)
+	p.logger.DebugContext(ctx, "request_started", "model", modelName)
 	options := applyNativeOptions(opts)
 
 	return retryNativeStream(ctx, p,

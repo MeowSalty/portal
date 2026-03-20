@@ -25,7 +25,7 @@ func (p *Portal) NativeAnthropicMessages(
 	req *anthropicTypes.Request,
 	opts ...NativeOption,
 ) (*anthropicTypes.Response, error) {
-	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生请求", "model", req.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", req.Model)
 	options := applyNativeOptions(opts)
 
 	return retryNonStream(ctx, p,
@@ -68,7 +68,7 @@ func (p *Portal) NativeAnthropicMessagesStream(
 	req *anthropicTypes.Request,
 	opts ...NativeOption,
 ) <-chan *anthropicTypes.StreamEvent {
-	p.logger.DebugContext(ctx, "开始处理 Anthropic Messages 原生流式请求", "model", req.Model)
+	p.logger.DebugContext(ctx, "request_started", "model", req.Model)
 	options := applyNativeOptions(opts)
 
 	return retryNativeStream(ctx, p,
