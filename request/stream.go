@@ -126,7 +126,6 @@ func (p *Request) ChatCompletionStream(
 	log.DebugContext(ctx, "获取适配器", "format", channel.Provider)
 	adapter, err := p.getAdapter(channel.Provider)
 	if err != nil {
-		log.ErrorContext(ctx, "获取适配器失败", "error", err, "format", channel.Provider)
 		return errors.Wrap(errors.ErrCodeAdapterNotFound, "获取适配器失败", err).
 			WithHTTPStatus(http.StatusInternalServerError).
 			WithContext("format", channel.Provider).
@@ -164,8 +163,6 @@ func (p *Request) ChatCompletionStream(
 
 		fillRequestLogErrorFields(requestLog, err)
 		p.recordRequestLog(requestLog, nil, false)
-
-		log.ErrorContext(ctx, "流式聊天完成请求失败", "error", err)
 		return err
 	}
 
@@ -201,19 +198,6 @@ func (p *Request) handleStreamData(
 		if err := p.checkResponseError(response); err != nil {
 			if errors.IsCanceled(err) {
 				err = errors.NormalizeCanceled(err)
-			}
-
-			var portalError *errors.Error
-			if errors.As(err, &portalError) {
-				switch errors.GetCode(portalError) {
-				case errors.ErrCodeEmptyResponse:
-					log.ErrorContext(ctx, "响应中 Choices 为空", "error", portalError.Error())
-				case errors.ErrCodeStreamError:
-					log.ErrorContext(ctx, "流处理错误", "error", portalError.Error())
-				default:
-					// 兜底：处理其他错误码
-					log.ErrorContext(ctx, "流数据错误", "error", portalError.Error(), "code", portalError.Code)
-				}
 			}
 
 			fillRequestLogErrorFields(requestLog, err)
@@ -269,11 +253,6 @@ func (p *Request) handleStreamData(
 
 			fillRequestLogErrorFields(requestLog, err)
 			p.recordRequestLog(requestLog, nil, false)
-
-			log.ErrorContext(ctx, "发送响应失败",
-				"error", err,
-				"message_count", messageCount,
-			)
 			return err
 		}
 	}
@@ -323,8 +302,6 @@ func (p *Request) sendResponse(
 		return nil
 	case <-ctx.Done():
 		err := errors.NormalizeCanceled(ctx.Err())
-
-		log.WarnContext(ctx, "连接被终止", "error", ctx.Err())
 		return err
 	}
 }

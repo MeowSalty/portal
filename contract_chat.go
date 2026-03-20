@@ -26,9 +26,12 @@ func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContr
 	// 通过中间件链处理响应
 	if response != nil && p.middleware != nil {
 		response, err = p.middleware.Process(ctx, request, response)
-		if err != nil {
-			p.logger.ErrorContext(ctx, "中间件处理失败", "error", err)
-		}
+	}
+
+	if err != nil {
+		p.logger.ErrorContext(ctx, "聊天完成请求失败", "model", request.Model, "error", err)
+	} else {
+		p.logger.InfoContext(ctx, "聊天完成请求成功", "model", request.Model)
 	}
 
 	return response, err
@@ -46,7 +49,7 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 		for {
 			channel, err := p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
-				p.logger.ErrorContext(ctx, "获取通道失败", "model", request.Model, "error", err)
+				p.logger.ErrorContext(ctx, "流式聊天完成请求失败", "model", request.Model, "error", err)
 				message := errors.GetMessage(err)
 				if message == "" {
 					message = err.Error()
@@ -102,13 +105,13 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 					channelLogger.InfoContext(ctx, "操作终止")
 					channel.MarkSuccess(ctx)
 				}
-				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
+				p.logger.ErrorContext(ctx, "流式聊天完成请求失败", "model", request.Model, "error", err)
 				channel.MarkFailure(ctx, err)
 				close(internalStream)
 				break
 			}
 			channel.MarkSuccess(ctx)
-			channelLogger.InfoContext(ctx, "流处理成功")
+			p.logger.InfoContext(ctx, "流式聊天完成请求成功", "model", request.Model)
 			break
 		}
 	}()

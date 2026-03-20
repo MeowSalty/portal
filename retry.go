@@ -44,7 +44,6 @@ func retryNonStream[T any](
 					return r, e
 				}
 			}
-			p.logger.ErrorContext(ctx, "获取通道失败", "error", err)
 			return result, err
 		}
 
@@ -81,7 +80,6 @@ func retryNonStream[T any](
 				continue
 			}
 
-			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
 			channel.MarkFailure(ctx, err)
 			return result, err
 		}
@@ -128,7 +126,6 @@ func retryNativeStream[T any](
 					close(out)
 					return
 				}
-				p.logger.ErrorContext(ctx, "获取通道失败", "error", err)
 				close(out)
 				return
 			}
@@ -167,7 +164,6 @@ func retryNativeStream[T any](
 					continue
 				}
 
-				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
 				channel.MarkFailure(ctx, err)
 				close(out)
 				return

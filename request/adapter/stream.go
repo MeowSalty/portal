@@ -157,7 +157,6 @@ func (a *Adapter) handleNativeStreaming(
 	log.Debug("开始发送流式请求")
 	httpResp, err := a.sendHTTPRequest(ctx, channel, headers, payload, true)
 	if err != nil {
-		log.Error("发送 HTTP 请求失败", "error", err)
 		return err
 	}
 
@@ -189,7 +188,6 @@ func (a *Adapter) handleNativeStreaming(
 
 	// 检查 BodyStream 是否为 nil
 	if httpResp.BodyStream == nil {
-		log.Error("流式响应体为空")
 		if httpResp.body != nil {
 			httpResp.body.Close()
 		}
@@ -249,10 +247,6 @@ func (a *Adapter) handleNativeStreaming(
 						streamErr = errors.Wrap(errors.ErrCodeStreamError, "解析原生流块失败", stripErrorHTML(parseErr)).
 							WithContext("data", string(data)).
 							WithContext("error_from", string(errors.ErrorFromGateway))
-						log.Error("解析原生流块失败",
-							"data", string(data),
-							"error", streamErr,
-						)
 						return
 					}
 
@@ -309,9 +303,6 @@ func (a *Adapter) handleNativeStreaming(
 
 					streamErr = errors.Wrap(errors.ErrCodeStreamError, "读取流数据失败", stripErrorHTML(err)).
 						WithContext("error_from", string(errors.ErrorFromGateway))
-					log.Error("读取流数据失败",
-						"error", err,
-					)
 					return
 				}
 			}
