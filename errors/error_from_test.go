@@ -1,6 +1,9 @@
 package errors
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestGetErrorFrom(t *testing.T) {
 	tests := []struct {
@@ -88,6 +91,21 @@ func TestIsRetryable_ErrorFromMatrixAndFallback(t *testing.T) {
 		{
 			name: "无 error_from 回退到白名单-不可重试",
 			err:  New(ErrCodeInvalidArgument, "无效参数"),
+			want: false,
+		},
+		{
+			name: "context.Canceled 不可重试",
+			err:  context.Canceled,
+			want: false,
+		},
+		{
+			name: "context.DeadlineExceeded 不可重试",
+			err:  context.DeadlineExceeded,
+			want: false,
+		},
+		{
+			name: "NormalizeCanceled 后 ABORTED 不可重试",
+			err:  NormalizeCanceled(context.Canceled),
 			want: false,
 		},
 	}

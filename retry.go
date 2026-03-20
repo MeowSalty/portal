@@ -29,8 +29,16 @@ func retryNonStream[T any](
 ) (T, error) {
 	var result T
 	for {
+		if ctx.Err() != nil {
+			return result, errors.NormalizeCanceled(ctx.Err())
+		}
+
 		channel, err := getChannel(ctx)
 		if err != nil {
+			if ctx.Err() != nil || errors.IsCanceled(err) {
+				return result, errors.NormalizeCanceled(err)
+			}
+
 			if onChannelErr != nil {
 				if r, e, ok := onChannelErr(err); ok {
 					return r, e
@@ -55,15 +63,24 @@ func retryNonStream[T any](
 		})
 
 		if err != nil {
+			if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
+				cancelErr := errors.NormalizeCanceled(err)
+				channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+				return result, cancelErr
+			}
+
 			if errors.IsRetryable(err) {
+				if ctx.Err() != nil {
+					cancelErr := errors.NormalizeCanceled(ctx.Err())
+					channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+					return result, cancelErr
+				}
+
 				channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 				channel.MarkFailure(ctx, err)
 				continue
 			}
-			if errors.IsCode(err, errors.ErrCodeAborted) {
-				channelLogger.InfoContext(ctx, "操作终止")
-				channel.MarkSuccess(ctx)
-			}
+
 			channelLogger.ErrorContext(ctx, "请求处理失败", "error", err)
 			channel.MarkFailure(ctx, err)
 			return result, err
@@ -95,8 +112,18 @@ func retryNativeStream[T any](
 
 	go func() {
 		for {
+			if ctx.Err() != nil {
+				close(out)
+				return
+			}
+
 			channel, err := getChannel(ctx)
 			if err != nil {
+				if ctx.Err() != nil || errors.IsCanceled(err) {
+					close(out)
+					return
+				}
+
 				if onChannelErr != nil && onChannelErr(err, out) {
 					close(out)
 					return
@@ -121,15 +148,25 @@ func retryNativeStream[T any](
 			})
 
 			if err != nil {
+				if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
+					cancelErr := errors.NormalizeCanceled(err)
+					channelLogger.InfoContext(ctx, "操作终止", "error", cancelErr)
+					close(out)
+					return
+				}
+
 				if errors.IsRetryable(err) {
+					if ctx.Err() != nil {
+						channelLogger.InfoContext(ctx, "操作终止", "error", errors.NormalizeCanceled(ctx.Err()))
+						close(out)
+						return
+					}
+
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
 					continue
 				}
-				if errors.IsCode(err, errors.ErrCodeAborted) {
-					channelLogger.InfoContext(ctx, "操作终止")
-					channel.MarkSuccess(ctx)
-				}
+
 				channelLogger.ErrorContext(ctx, "流处理失败", "error", err)
 				channel.MarkFailure(ctx, err)
 				close(out)
