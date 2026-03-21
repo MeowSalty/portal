@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/MeowSalty/portal/errors"
 	"net/http"
+
+	"github.com/MeowSalty/portal/errors"
 
 	"github.com/MeowSalty/portal/routing/health"
 	"github.com/MeowSalty/portal/routing/selector"
@@ -204,13 +205,13 @@ func (r *Routing) buildChannelsForModelWithEndpoint(mwe ModelWithEndpoint) []*Ch
 	platform := mwe.Platform
 	endpoint := mwe.Endpoint
 
-	// 合并 CustomHeaders（Platform 级别 + Endpoint 级别，Endpoint 覆盖同名）
-	customHeaders := mergeCustomHeaders(platform.CustomHeaders, endpoint.CustomHeaders)
-
 	// 检查模型是否有关联的密钥
 	if len(model.APIKeys) == 0 {
 		return nil
 	}
+
+	// 合并 CustomHeaders（Platform 级别 + Endpoint 级别，Endpoint 覆盖同名）
+	customHeaders := mergeCustomHeaders(platform.CustomHeaders, endpoint.CustomHeaders)
 
 	// 为每个 APIKey 创建一个 Channel
 	var channels []*Channel
@@ -236,7 +237,11 @@ func (r *Routing) buildChannelsForModelWithEndpoint(mwe ModelWithEndpoint) []*Ch
 // mergeCustomHeaders 合并 Platform 和 Endpoint 的 CustomHeaders
 // Endpoint 的头部优先级更高，会覆盖 Platform 同名头部
 func mergeCustomHeaders(platform, endpoint map[string]string) map[string]string {
-	result := make(map[string]string)
+	if len(platform) == 0 && len(endpoint) == 0 {
+		return nil
+	}
+
+	result := make(map[string]string, len(platform)+len(endpoint))
 	for k, v := range platform {
 		result[k] = v
 	}
