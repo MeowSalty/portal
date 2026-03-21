@@ -255,6 +255,7 @@ func TestConversationUnion(t *testing.T) {
 		jsonInput string
 		wantType  string // "string" or "object"
 		wantValue interface{}
+		wantErr   bool
 	}{
 		{
 			name:      "字符串会话 ID",
@@ -274,16 +275,24 @@ func TestConversationUnion(t *testing.T) {
 			wantType:  "none",
 		},
 		{
-			name:      "空对象（无效，应被忽略）",
+			name:      "空对象（无效，应报错）",
 			jsonInput: `{}`,
-			wantType:  "none",
+			wantErr:   true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var conv ConversationUnion
-			if err := json.Unmarshal([]byte(tt.jsonInput), &conv); err != nil {
+			err := json.Unmarshal([]byte(tt.jsonInput), &conv)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("期望反序列化失败，但成功了")
+				}
+				return
+			}
+
+			if err != nil {
 				t.Fatalf("Unmarshal 失败: %v", err)
 			}
 
@@ -745,6 +754,7 @@ func TestTextFormatUnion(t *testing.T) {
 		name      string
 		jsonInput string
 		wantType  string
+		wantErr   bool
 	}{
 		{
 			name:      "text 类型",
@@ -768,9 +778,9 @@ func TestTextFormatUnion(t *testing.T) {
 			wantType:  "json_object",
 		},
 		{
-			name:      "空 type（默认为 text）",
+			name:      "空 type（无效，应报错）",
 			jsonInput: `{}`,
-			wantType:  "text",
+			wantErr:   true,
 		},
 		{
 			name:      "null 值",
@@ -782,7 +792,15 @@ func TestTextFormatUnion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var tf TextFormatUnion
-			if err := json.Unmarshal([]byte(tt.jsonInput), &tf); err != nil {
+			err := json.Unmarshal([]byte(tt.jsonInput), &tf)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("期望反序列化失败，但成功了")
+				}
+				return
+			}
+
+			if err != nil {
 				t.Fatalf("Unmarshal 失败: %v", err)
 			}
 
