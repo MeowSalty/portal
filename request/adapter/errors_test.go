@@ -203,132 +203,155 @@ func TestClassifyErrorFromInput_ByTypeCodeMessageRules(t *testing.T) {
 		{
 			name: "按 type 命中 upstream",
 			input: errorClassifyInput{
-				errorType:    "openai_error",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "openai_error",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 code 命中 upstream",
 			input: errorClassifyInput{
-				errorCode:    "do_request_failed",
-				hasBody:      true,
-				isStructured: true,
+				errorCode:       "do_request_failed",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 message 命中 upstream",
 			input: errorClassifyInput{
-				errorMessage: "failed to retrieve proxy group",
-				hasBody:      true,
-				isStructured: true,
+				errorMessage:    "failed to retrieve proxy group",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "按 type 命中 server",
 			input: errorClassifyInput{
-				errorType:    "one_hub_error",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "one_hub_error",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "按 code 命中 server",
 			input: errorClassifyInput{
-				errorCode:    "model_not_found",
-				hasBody:      true,
-				isStructured: true,
+				errorCode:       "model_not_found",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "按 message 命中 server",
 			input: errorClassifyInput{
-				errorMessage: "用户额度不足",
-				hasBody:      true,
-				isStructured: true,
+				errorMessage:    "用户额度不足",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "优先级 upstream 高于 server",
 			input: errorClassifyInput{
-				errorType:    "openai_error",
-				errorCode:    "model_not_found",
-				errorMessage: "用户额度不足",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "openai_error",
+				errorCode:       "model_not_found",
+				errorMessage:    "用户额度不足",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromUpstream,
 		},
 		{
 			name: "未命中规则但有 type/code → 智能兜底 server",
 			input: errorClassifyInput{
-				errorType:    "unknown",
-				errorCode:    "unknown",
-				errorMessage: "unknown",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "unknown",
+				errorCode:       "unknown",
+				errorMessage:    "unknown",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "智能兜底：仅有 type → server",
 			input: errorClassifyInput{
-				errorType:    "totally_new_server_error",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "totally_new_server_error",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "智能兜底：仅有 code → server",
 			input: errorClassifyInput{
-				errorCode:    "brand_new_server_code",
-				hasBody:      true,
-				isStructured: true,
+				errorCode:       "brand_new_server_code",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "纯 message 无 type/code 且未命中规则 → server（hasBody=true 兜底）",
+			name: "纯 message 无 type/code 且未命中规则 → server（hasHTTPResponse=true 兜底）",
 			input: errorClassifyInput{
-				errorMessage: "a plain unknown message",
-				hasBody:      true,
-				isStructured: true,
+				errorMessage:    "a plain unknown message",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "空 error 对象 → server（hasBody=true 兜底）",
+			name: "空 error 对象 → server（hasHTTPResponse=true 兜底）",
 			input: errorClassifyInput{
-				hasBody:      true,
-				isStructured: false,
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    false,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
-			name: "无 error 字段 → server（hasBody=true 兜底）",
+			name: "无 error 字段 → server（hasHTTPResponse=true 兜底）",
 			input: errorClassifyInput{
-				rawText:      "no structured error object",
-				hasBody:      true,
-				isStructured: false,
+				rawText:         "no structured error object",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    false,
 			},
 			want: portalErrors.ErrorFromServer,
 		},
 		{
 			name: "用户示例：new_api_error + 额度用尽消息 → server",
 			input: errorClassifyInput{
-				errorType:    "new_api_error",
-				errorMessage: "用户额度不足，请充值",
-				hasBody:      true,
-				isStructured: true,
+				errorType:       "new_api_error",
+				errorMessage:    "用户额度不足，请充值",
+				hasBody:         true,
+				hasHTTPResponse: true,
+				isStructured:    true,
 			},
 			want: portalErrors.ErrorFromServer,
+		},
+		{
+			name: "未收到 HTTP 响应时兜底为 gateway",
+			input: errorClassifyInput{
+				rawText:      "network dial failed",
+				hasBody:      false,
+				isStructured: false,
+			},
+			want: portalErrors.ErrorFromGateway,
 		},
 	}
 
@@ -453,16 +476,21 @@ func TestHandleHTTPError_InvalidJSONButNonEmptyBody_ClassifiesAsServer(t *testin
 	}
 }
 
-func TestHandleHTTPError_EmptyBody_ClassifiesAsGateway(t *testing.T) {
+func TestHandleHTTPError_EmptyBody_ClassifiesAsServer(t *testing.T) {
 	a := &Adapter{}
 
 	err := a.handleHTTPError("API 返回错误状态码", 504, nil)
 
-	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromGateway {
-		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromGateway)
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
 	}
 
-	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeDeadlineExceeded {
-		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeDeadlineExceeded)
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	}
+
+	ctx := portalErrors.GetContext(err)
+	if got, ok := ctx["http_response_received"].(bool); !ok || !got {
+		t.Fatalf("http_response_received 上下文不符合预期：%+v", ctx["http_response_received"])
 	}
 }

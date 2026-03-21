@@ -43,7 +43,10 @@ type errorClassifyInput struct {
 	errorMessage string
 	rawText      string
 	hasBody      bool
-	isStructured bool
+	// hasHTTPResponse 表示是否已收到目标服务器的 HTTP 响应。
+	// 语义优先级高于 hasBody：即使响应体为空，只要已收到响应，也应默认归类为 server。
+	hasHTTPResponse bool
+	isStructured    bool
 }
 
 // classifyRules 按优先级排列的分类规则，先匹配先生效。
@@ -77,11 +80,9 @@ var classifyRules = []classifyRule{
 
 // handleHTTPError 处理 HTTP 错误
 func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) error {
-	if len(body) == 0 {
-		return a.createHTTPError(message, statusCode, "", errors.ErrorFromGateway)
-	}
-
 	bodyStr, classifyInput := a.normalizeHTTPErrorBody(body)
+	// handleHTTPError 仅在已拿到 HTTP 响应时调用。
+	classifyInput.hasHTTPResponse = true
 	errorFrom := classifyErrorFromInput(classifyInput)
 
 	return a.createHTTPError(message, statusCode, bodyStr, errorFrom)
@@ -161,7 +162,7 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 // 优先级：
 // 1. 结构化字段（type/code/message）
 // 2. 非结构化文本（rawText）
-// 3. 兜底：hasBody=true -> server，hasBody=false -> gateway
+// 3. 兜底：hasHTTPResponse=true -> server，hasHTTPResponse=false -> gateway
 func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
 	if input.isStructured {
 		for _, rule := range classifyRules {
@@ -198,7 +199,7 @@ func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
 		}
 	}
 
-	if input.hasBody {
+	if input.hasHTTPResponse {
 		return errors.ErrorFromServer
 	}
 
@@ -224,6 +225,7 @@ func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string
 
 	return errors.NewWithHTTPStatus(errCode, message, statusCode).
 		WithContext("response_body", bodyStr).
+		WithContext("http_response_received", true).
 		WithContext("error_from", string(errorFrom))
 }
 
