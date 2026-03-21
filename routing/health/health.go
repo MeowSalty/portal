@@ -12,6 +12,9 @@ type Service struct {
 	storage Storage         // 存储接口
 	backoff BackoffStrategy // 退避策略
 	filter  Filter          // 健康状态过滤器
+	// allowProbing 控制 Unavailable 状态在退避结束后是否允许探测。
+	// 该配置与 filter 保持一致，用于避免重复存储读取时在 Service 层复用同一判定语义。
+	allowProbing bool
 }
 
 // Config 管理器配置
@@ -43,9 +46,10 @@ func New(cfg Config) (*Service, error) {
 	filter := NewFilter(cfg.Storage, cfg.AllowProbing)
 
 	m := &Service{
-		storage: cfg.Storage,
-		backoff: cfg.Backoff,
-		filter:  filter,
+		storage:      cfg.Storage,
+		backoff:      cfg.Backoff,
+		filter:       filter,
+		allowProbing: cfg.AllowProbing,
 	}
 
 	return m, nil
@@ -207,26 +211,66 @@ type ChannelHealthResult struct {
 //   - ChannelHealthResult: 通道健康检查结果，包括状态和最后检查时间
 func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) ChannelHealthResult {
 	now := time.Now()
+	platformStatus, modelStatus, apiKeyStatus := m.getChannelStatuses(platformID, modelID, apiKeyID)
+	return m.evaluateChannelHealth(now, platformStatus, modelStatus, apiKeyStatus)
+}
 
-	// 检查所有资源是否都健康
-	platformHealthy := m.filter.IsHealthy(ResourceTypePlatform, platformID, now)
-	modelHealthy := m.filter.IsHealthy(ResourceTypeModel, modelID, now)
-	apiKeyHealthy := m.filter.IsHealthy(ResourceTypeAPIKey, apiKeyID, now)
+// GetChannelHealthAndLastTryTimes 一次性获取通道健康状态与平台/模型/密钥最近尝试时间。
+//
+// 该方法用于选路热路径，避免先检查健康再二次读取最近尝试时间导致的重复 I/O。
+func (m *Service) GetChannelHealthAndLastTryTimes(
+	platformID,
+	modelID,
+	apiKeyID uint,
+) (ChannelHealthResult, time.Time, time.Time, time.Time) {
+	now := time.Now()
+	platformStatus, modelStatus, apiKeyStatus := m.getChannelStatuses(platformID, modelID, apiKeyID)
+	result := m.evaluateChannelHealth(now, platformStatus, modelStatus, apiKeyStatus)
 
-	// 获取所有资源的健康状态
-	// 如果存储层出现错误，将状态视为 nil（未知）
+	platformLastTry := now
+	if platformStatus != nil {
+		platformLastTry = platformStatus.LastCheckAt
+	}
+
+	modelLastTry := now
+	if modelStatus != nil {
+		modelLastTry = modelStatus.LastCheckAt
+	}
+
+	keyLastTry := now
+	if apiKeyStatus != nil {
+		keyLastTry = apiKeyStatus.LastCheckAt
+	}
+
+	return result, platformLastTry, modelLastTry, keyLastTry
+}
+
+// getChannelStatuses 获取平台/模型/密钥状态。
+// 如果存储层读取失败，则将对应状态视为 nil（未知）。
+func (m *Service) getChannelStatuses(platformID, modelID, apiKeyID uint) (*Health, *Health, *Health) {
 	platformStatus, err := m.storage.Get(ResourceTypePlatform, platformID)
 	if err != nil {
 		platformStatus = nil
 	}
+
 	modelStatus, err := m.storage.Get(ResourceTypeModel, modelID)
 	if err != nil {
 		modelStatus = nil
 	}
+
 	apiKeyStatus, err := m.storage.Get(ResourceTypeAPIKey, apiKeyID)
 	if err != nil {
 		apiKeyStatus = nil
 	}
+
+	return platformStatus, modelStatus, apiKeyStatus
+}
+
+// evaluateChannelHealth 基于资源状态计算通道健康结果。
+func (m *Service) evaluateChannelHealth(now time.Time, platformStatus, modelStatus, apiKeyStatus *Health) ChannelHealthResult {
+	platformHealthy := m.isResourceHealthyByStatus(platformStatus, now)
+	modelHealthy := m.isResourceHealthyByStatus(modelStatus, now)
+	apiKeyHealthy := m.isResourceHealthyByStatus(apiKeyStatus, now)
 
 	// 计算最后检查时间：从平台、密钥、模型中取最新的值
 	lastCheckAt := getLatestCheckTime(now, platformStatus, modelStatus, apiKeyStatus)
@@ -251,6 +295,25 @@ func (m *Service) CheckChannelHealth(platformID, modelID, apiKeyID uint) Channel
 	return ChannelHealthResult{
 		Status:      ChannelStatusAvailable,
 		LastCheckAt: lastCheckAt,
+	}
+}
+
+// isResourceHealthyByStatus 在已获取资源状态的前提下执行健康判定。
+func (m *Service) isResourceHealthyByStatus(status *Health, now time.Time) bool {
+	if status == nil {
+		// 如果存储中不存在或读取失败，视为未知状态（可以尝试）
+		return true
+	}
+
+	switch status.Status {
+	case HealthStatusAvailable, HealthStatusUnknown:
+		return true
+	case HealthStatusWarning:
+		return status.NextAvailableAt != nil && now.After(*status.NextAvailableAt)
+	case HealthStatusUnavailable:
+		return m.allowProbing && status.NextAvailableAt != nil && now.After(*status.NextAvailableAt)
+	default:
+		return false
 	}
 }
 

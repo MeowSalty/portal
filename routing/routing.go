@@ -125,20 +125,15 @@ func (r *Routing) selectChannelFromModelsWithEndpoint(modelsWithEndpoint []Model
 
 		// 使用 health 验证通道是否可用
 		for _, ch := range channels {
-			result := r.healthService.CheckChannelHealth(ch.PlatformID, ch.ModelID, ch.APIKeyID)
+			result, platformLastTry, modelLastTry, keyLastTry := r.healthService.GetChannelHealthAndLastTryTimes(
+				ch.PlatformID,
+				ch.ModelID,
+				ch.APIKeyID,
+			)
 
 			switch result.Status {
 			case health.ChannelStatusAvailable:
 				availableChannels = append(availableChannels, ch)
-				platformLastTry, modelLastTry, keyLastTry, err := r.healthService.GetLastTryTimes(
-					ch.PlatformID,
-					ch.ModelID,
-					ch.APIKeyID,
-				)
-				if err != nil {
-					return nil, errors.Wrap(errors.ErrCodeInternal, "获取最近尝试时间失败", err).
-						WithHTTPStatus(http.StatusInternalServerError)
-				}
 				channelInfos = append(channelInfos, selector.ChannelInfo{
 					ID:              fmt.Sprintf("%d-%d-%d", ch.PlatformID, ch.ModelID, ch.APIKeyID),
 					PlatformID:      ch.PlatformID,
