@@ -18,6 +18,10 @@ import (
 
 const httpRequestBodyPreviewMaxBytes = 512
 
+// 大响应体直接转移所有权，避免热路径额外 O(n) 拷贝。
+// 仅在不回收当前底层数组到池时启用，保证内存安全。
+const responseBodyDirectReturnMinBytes = 64 * 1024
+
 var (
 	sharedClient *http.Client
 	clientOnce   sync.Once
@@ -56,6 +60,15 @@ func readResponseBody(resp *http.Response) ([]byte, error) {
 		*bufp = buf
 		responseBodyPool.Put(bufp)
 		return nil, err
+	}
+
+	// 对大响应体，直接将读取结果转移给调用方，避免额外拷贝。
+	// 为防止池复用污染返回值，当前底层数组不回收到池；改为回收一个基准容量切片。
+	if len(buf) >= responseBodyDirectReturnMinBytes {
+		result := buf
+		*bufp = make([]byte, 0, 8*1024)
+		responseBodyPool.Put(bufp)
+		return result, nil
 	}
 
 	result := make([]byte, len(buf))

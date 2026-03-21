@@ -1,6 +1,10 @@
 package adapter
 
 import (
+	"bytes"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 	"unicode/utf8"
 )
@@ -29,5 +33,41 @@ func TestBuildRequestBodyPreview_TruncateWithUTF8Boundary(t *testing.T) {
 	}
 	if !utf8.ValidString(preview) {
 		t.Fatalf("预览应保持有效 UTF-8")
+	}
+}
+
+func TestReadResponseBody_SmallBody(t *testing.T) {
+	t.Parallel()
+
+	body := []byte("small response body")
+	resp := &http.Response{
+		ContentLength: int64(len(body)),
+		Body:          io.NopCloser(bytes.NewReader(body)),
+	}
+
+	got, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("读取响应体失败: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("响应体不匹配，got=%q want=%q", string(got), string(body))
+	}
+}
+
+func TestReadResponseBody_LargeBody(t *testing.T) {
+	t.Parallel()
+
+	body := []byte(strings.Repeat("a", responseBodyDirectReturnMinBytes+1024))
+	resp := &http.Response{
+		ContentLength: int64(len(body)),
+		Body:          io.NopCloser(bytes.NewReader(body)),
+	}
+
+	got, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("读取响应体失败: %v", err)
+	}
+	if !bytes.Equal(got, body) {
+		t.Fatalf("大响应体内容不匹配，got_len=%d want_len=%d", len(got), len(body))
 	}
 }
