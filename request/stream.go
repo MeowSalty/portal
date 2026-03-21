@@ -26,6 +26,31 @@ type RequestLogHooks struct {
 	finalizeOnce sync.Once
 }
 
+// completeAt 执行成功收尾并返回本次是否实际完成收尾。
+//
+// 返回 true 表示本次调用完成了最终收尾；
+// 返回 false 表示收尾已在其他路径完成或日志对象为空。
+func (h *RequestLogHooks) completeAt(end time.Time) bool {
+	if h.log == nil {
+		return false
+	}
+
+	completed := false
+	h.finalizeOnce.Do(func() {
+		// 计算总耗时
+		h.log.Duration = end.Sub(h.log.Timestamp)
+		h.log.Success = true
+
+		// 同步记录请求日志，避免并发修改导致重复持久化
+		if h.request != nil {
+			h.request.recordRequestLog(h.log, nil, true)
+		}
+		completed = true
+	})
+
+	return completed
+}
+
 // OnFirstChunk 在第一次解析出有效事件时触发。
 //
 // 该方法计算并记录首字时间（Time to First Token, TTFT），这是衡量流式响应性能的重要指标。
@@ -64,19 +89,7 @@ func (h *RequestLogHooks) OnUsage(u types.Usage) {
 //
 // 参数 end 表示流结束的时间戳。
 func (h *RequestLogHooks) OnComplete(end time.Time) {
-	if h.log == nil {
-		return
-	}
-	h.finalizeOnce.Do(func() {
-		// 计算总耗时
-		h.log.Duration = end.Sub(h.log.Timestamp)
-		h.log.Success = true
-
-		// 同步记录请求日志，避免并发修改导致重复持久化
-		if h.request != nil {
-			h.request.recordRequestLog(h.log, nil, true)
-		}
-	})
+	_ = h.completeAt(end)
 }
 
 // OnError 在流异常结束时触发。
@@ -276,7 +289,13 @@ func (p *Request) handleStreamData(
 
 	// 触发 OnComplete Hook
 	if hooks != nil {
-		hooks.OnComplete(time.Now())
+		if requestHooks, ok := hooks.(*RequestLogHooks); ok {
+			// Contract 流的最终完成事件由 Request 层统一收敛，
+			// 避免与原生流适配层的完成回调产生重复完成语义。
+			_ = requestHooks.completeAt(time.Now())
+		} else {
+			hooks.OnComplete(time.Now())
+		}
 	} else {
 		p.recordRequestLog(requestLog, nil, true)
 	}
