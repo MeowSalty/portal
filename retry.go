@@ -171,21 +171,29 @@ func retryNativeStream[T any](
 				channel.MarkFailure(ctx, err)
 				return
 			}
+			for event := range nativeOutput {
+				evt, ok := event.(T)
+				if !ok {
+					continue
+				}
+
+				select {
+				case <-ctx.Done():
+					closeDone()
+					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
+					return
+				case out <- evt:
+				}
+			}
+
+			closeDone()
+			if ctx.Err() != nil {
+				channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
+				return
+			}
+
 			channel.MarkSuccess(ctx)
 			channelLogger.InfoContext(ctx, "stream_finished", "status", "completed")
-
-			go func() {
-				defer closeDone()
-				for event := range nativeOutput {
-					if evt, ok := event.(T); ok {
-						select {
-						case <-ctx.Done():
-							return
-						case out <- evt:
-						}
-					}
-				}
-			}()
 			return
 		}
 	}()
