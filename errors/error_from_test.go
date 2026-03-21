@@ -69,8 +69,8 @@ func TestIsRetryable_ErrorFromMatrixAndFallback(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "gateway 按白名单可重试",
-			err:  New(ErrCodeUnavailable, "不可用").WithContext("error_from", string(ErrorFromGateway)),
+			name: "gateway 始终可重试（即使错误码不在白名单）",
+			err:  New(ErrCodeInvalidArgument, "无效参数").WithContext("error_from", string(ErrorFromGateway)),
 			want: true,
 		},
 		{
@@ -84,12 +84,12 @@ func TestIsRetryable_ErrorFromMatrixAndFallback(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "无 error_from 回退到白名单-可重试",
+			name: "无 error_from 回退到白名单 - 可重试",
 			err:  New(ErrCodeUnavailable, "不可用"),
 			want: true,
 		},
 		{
-			name: "无 error_from 回退到白名单-不可重试",
+			name: "无 error_from 回退到白名单 - 不可重试",
 			err:  New(ErrCodeInvalidArgument, "无效参数"),
 			want: false,
 		},
