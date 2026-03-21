@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"sync"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/routing"
@@ -109,24 +110,22 @@ func retryNativeStream[T any](
 	out := make(chan T, StreamBufferSize)
 
 	go func() {
+		defer close(out)
+
 		for {
 			if ctx.Err() != nil {
-				close(out)
 				return
 			}
 
 			channel, err := getChannel(ctx)
 			if err != nil {
 				if ctx.Err() != nil || errors.IsCanceled(err) {
-					close(out)
 					return
 				}
 
 				if onChannelErr != nil && onChannelErr(err, out) {
-					close(out)
 					return
 				}
-				close(out)
 				return
 			}
 
@@ -139,23 +138,28 @@ func retryNativeStream[T any](
 
 			nativeOutput := make(chan any)
 			done := make(chan struct{})
+			var doneOnce sync.Once
+			closeDone := func() {
+				doneOnce.Do(func() {
+					close(done)
+				})
+			}
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				return execute(reqCtx, channel, nativeOutput)
 			})
 
 			if err != nil {
+				closeDone()
 				if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
 					cancelErr := errors.NormalizeCanceled(err)
 					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", cancelErr)
-					close(out)
 					return
 				}
 
 				if errors.IsRetryable(err) {
 					if ctx.Err() != nil {
 						channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
-						close(out)
 						return
 					}
 
@@ -165,15 +169,13 @@ func retryNativeStream[T any](
 				}
 
 				channel.MarkFailure(ctx, err)
-				close(out)
 				return
 			}
 			channel.MarkSuccess(ctx)
 			channelLogger.InfoContext(ctx, "stream_finished", "status", "completed")
 
 			go func() {
-				defer close(out)
-				defer close(done)
+				defer closeDone()
 				for event := range nativeOutput {
 					if evt, ok := event.(T); ok {
 						select {

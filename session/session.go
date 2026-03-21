@@ -43,19 +43,19 @@ func (sm *Session) WithSession(ctx context.Context, fn func(reqCtx context.Conte
 		return errors.New(errors.ErrCodeUnavailable, "服务正在关闭")
 	}
 	sm.activeSessions.Add(1)
+	defer sm.activeSessions.Done()
 
 	// 创建可取消的请求上下文
 	reqCtx, reqCancel := context.WithCancel(ctx)
+	defer reqCancel()
 
-	// 启动一个 goroutine 监听关闭信号和上下文完成信号
-	// 这个 goroutine 会在流结束时自动清理
+	// 启动一个 goroutine 监听关闭信号。
+	// 注意：activeSessions 的生命周期与 fn 的执行时长绑定，
+	// 不能由 reqCtx.Done() 决定，否则可能提前 Done。
 	go func() {
-		defer sm.activeSessions.Done()
-		defer reqCancel()
-
 		select {
 		case <-sm.shutdownCtx.Done():
-			// 服务关闭
+			reqCancel()
 		case <-reqCtx.Done():
 			// 请求完成或被客户端取消
 		}
@@ -87,24 +87,36 @@ func (sm *Session) WithSessionStream(ctx context.Context, done <-chan struct{}, 
 	// 创建可取消的请求上下文
 	reqCtx, reqCancel := context.WithCancel(ctx)
 
+	var finishOnce sync.Once
+	finish := func() {
+		finishOnce.Do(func() {
+			reqCancel()
+			sm.activeSessions.Done()
+		})
+	}
+
 	// 启动一个 goroutine 监听关闭信号和上下文完成信号
 	// 这个 goroutine 会在流结束时自动清理
 	go func() {
-		defer sm.activeSessions.Done()
-		defer reqCancel()
-
 		select {
 		case <-sm.shutdownCtx.Done():
 			// 服务关闭
-		case <-ctx.Done():
-			// 请求完成或被客户端取消
+		case <-reqCtx.Done():
+			// 请求完成、被客户端取消或被内部主动取消
 		case <-done:
 			// 流结束
 		}
+		finish()
 	}()
 
 	// 执行会话函数
-	return fn(reqCtx)
+	err := fn(reqCtx)
+	if err != nil {
+		finish()
+		return err
+	}
+
+	return nil
 }
 
 // Shutdown 优雅地关闭服务

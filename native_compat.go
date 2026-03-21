@@ -3,6 +3,7 @@ package portal
 import (
 	"context"
 	"strconv"
+	"sync"
 
 	"github.com/MeowSalty/portal/errors"
 	anthropicConverter "github.com/MeowSalty/portal/request/adapter/anthropic/converter"
@@ -169,12 +170,19 @@ func (p *Portal) nativeOpenAIChatStreamCompatFallback(
 
 			contractStream := make(chan *adapterTypes.StreamEventContract, StreamBufferSize)
 			done := make(chan struct{})
+			var doneOnce sync.Once
+			closeDone := func() {
+				doneOnce.Do(func() {
+					close(done)
+				})
+			}
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				return p.request.ChatCompletionStream(reqCtx, contractReq, contractStream, channel)
 			})
 
 			if err != nil {
+				closeDone()
 				if errors.IsRetryable(err) {
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
@@ -204,7 +212,7 @@ func (p *Portal) nativeOpenAIChatStreamCompatFallback(
 				if convertErr != nil {
 					compatLogger.ErrorContext(ctx, "转换流事件失败", "error", convertErr)
 					p.sendNativeCompatOpenAIChatStreamErrorEvent(outputStream, convertErr)
-					close(done)
+					closeDone()
 					return
 				}
 				if nativeEvent == nil {
@@ -212,13 +220,13 @@ func (p *Portal) nativeOpenAIChatStreamCompatFallback(
 				}
 				select {
 				case <-ctx.Done():
-					close(done)
+					closeDone()
 					return
 				case outputStream <- nativeEvent:
 				}
 			}
 
-			close(done)
+			closeDone()
 			return
 		}
 	}()
@@ -268,12 +276,19 @@ func (p *Portal) nativeOpenAIResponsesStreamCompatFallback(
 
 			contractStream := make(chan *adapterTypes.StreamEventContract, StreamBufferSize)
 			done := make(chan struct{})
+			var doneOnce sync.Once
+			closeDone := func() {
+				doneOnce.Do(func() {
+					close(done)
+				})
+			}
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				return p.request.ChatCompletionStream(reqCtx, contractReq, contractStream, channel)
 			})
 
 			if err != nil {
+				closeDone()
 				if errors.IsRetryable(err) {
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
@@ -304,7 +319,7 @@ func (p *Portal) nativeOpenAIResponsesStreamCompatFallback(
 				if convertErr != nil {
 					compatLogger.ErrorContext(ctx, "转换流事件失败", "error", convertErr)
 					p.sendNativeCompatOpenAIResponsesStreamErrorEvent(outputStream, convertErr)
-					close(done)
+					closeDone()
 					return
 				}
 				for _, nativeEvent := range nativeEvents {
@@ -313,14 +328,14 @@ func (p *Portal) nativeOpenAIResponsesStreamCompatFallback(
 					}
 					select {
 					case <-ctx.Done():
-						close(done)
+						closeDone()
 						return
 					case outputStream <- nativeEvent:
 					}
 				}
 			}
 
-			close(done)
+			closeDone()
 			return
 		}
 	}()
@@ -365,12 +380,19 @@ func (p *Portal) nativeAnthropicStreamCompatFallback(
 
 			contractStream := make(chan *adapterTypes.StreamEventContract, StreamBufferSize)
 			done := make(chan struct{})
+			var doneOnce sync.Once
+			closeDone := func() {
+				doneOnce.Do(func() {
+					close(done)
+				})
+			}
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				return p.request.ChatCompletionStream(reqCtx, contractReq, contractStream, channel)
 			})
 
 			if err != nil {
+				closeDone()
 				if errors.IsRetryable(err) {
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
@@ -400,7 +422,7 @@ func (p *Portal) nativeAnthropicStreamCompatFallback(
 				if convertErr != nil {
 					compatLogger.ErrorContext(ctx, "转换流事件失败", "error", convertErr)
 					p.sendNativeCompatAnthropicStreamErrorEvent(outputStream, convertErr)
-					close(done)
+					closeDone()
 					return
 				}
 				if nativeEvent == nil {
@@ -408,13 +430,13 @@ func (p *Portal) nativeAnthropicStreamCompatFallback(
 				}
 				select {
 				case <-ctx.Done():
-					close(done)
+					closeDone()
 					return
 				case outputStream <- nativeEvent:
 				}
 			}
 
-			close(done)
+			closeDone()
 			return
 		}
 	}()
@@ -459,12 +481,19 @@ func (p *Portal) nativeGeminiStreamCompatFallback(
 
 			contractStream := make(chan *adapterTypes.StreamEventContract, StreamBufferSize)
 			done := make(chan struct{})
+			var doneOnce sync.Once
+			closeDone := func() {
+				doneOnce.Do(func() {
+					close(done)
+				})
+			}
 
 			err = p.session.WithSessionStream(ctx, done, func(reqCtx context.Context) error {
 				return p.request.ChatCompletionStream(reqCtx, contractReq, contractStream, channel)
 			})
 
 			if err != nil {
+				closeDone()
 				if errors.IsRetryable(err) {
 					channelLogger.WarnContext(ctx, "请求失败，尝试重试", "error", err)
 					channel.MarkFailure(ctx, err)
@@ -494,7 +523,7 @@ func (p *Portal) nativeGeminiStreamCompatFallback(
 				if convertErr != nil {
 					compatLogger.ErrorContext(ctx, "转换流事件失败", "error", convertErr)
 					p.sendNativeCompatGeminiStreamErrorEvent(outputStream, convertErr)
-					close(done)
+					closeDone()
 					return
 				}
 				if nativeEvent == nil {
@@ -502,13 +531,13 @@ func (p *Portal) nativeGeminiStreamCompatFallback(
 				}
 				select {
 				case <-ctx.Done():
-					close(done)
+					closeDone()
 					return
 				case outputStream <- nativeEvent:
 				}
 			}
 
-			close(done)
+			closeDone()
 			return
 		}
 	}()

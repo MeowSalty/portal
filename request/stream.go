@@ -2,6 +2,7 @@ package request
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"net/http"
@@ -19,6 +20,10 @@ type RequestLogHooks struct {
 	log *RequestLog
 	// request 指向 Request 实例，用于调用 recordRequestLog 方法
 	request *Request
+	// firstChunkOnce 确保首字时间只记录一次
+	firstChunkOnce sync.Once
+	// finalizeOnce 确保结束收尾（成功/失败）只执行一次
+	finalizeOnce sync.Once
 }
 
 // OnFirstChunk 在第一次解析出有效事件时触发。
@@ -30,10 +35,11 @@ func (h *RequestLogHooks) OnFirstChunk(t time.Time) {
 	if h.log == nil {
 		return
 	}
-
-	// 计算首字时间
-	elapsed := t.Sub(h.log.Timestamp)
-	h.log.FirstByteTime = &elapsed
+	h.firstChunkOnce.Do(func() {
+		// 计算首字时间
+		elapsed := t.Sub(h.log.Timestamp)
+		h.log.FirstByteTime = &elapsed
+	})
 }
 
 // OnUsage 当流中出现 usage 信息时触发。
@@ -61,15 +67,16 @@ func (h *RequestLogHooks) OnComplete(end time.Time) {
 	if h.log == nil {
 		return
 	}
+	h.finalizeOnce.Do(func() {
+		// 计算总耗时
+		h.log.Duration = end.Sub(h.log.Timestamp)
+		h.log.Success = true
 
-	// 计算总耗时
-	h.log.Duration = end.Sub(h.log.Timestamp)
-	h.log.Success = true
-
-	// 异步记录请求日志
-	if h.request != nil {
-		go h.request.recordRequestLog(h.log, nil, true)
-	}
+		// 同步记录请求日志，避免并发修改导致重复持久化
+		if h.request != nil {
+			h.request.recordRequestLog(h.log, nil, true)
+		}
+	})
 }
 
 // OnError 在流异常结束时触发。
@@ -81,20 +88,21 @@ func (h *RequestLogHooks) OnError(err error) {
 	if h.log == nil {
 		return
 	}
+	h.finalizeOnce.Do(func() {
+		// 计算总耗时
+		h.log.Duration = time.Since(h.log.Timestamp)
+		h.log.Success = false
 
-	// 计算总耗时
-	h.log.Duration = time.Since(h.log.Timestamp)
-	h.log.Success = false
+		// 记录错误信息
+		if err != nil {
+			fillRequestLogErrorFields(h.log, err)
+		}
 
-	// 记录错误信息
-	if err != nil {
-		fillRequestLogErrorFields(h.log, err)
-	}
-
-	// 异步记录请求日志
-	if h.request != nil {
-		go h.request.recordRequestLog(h.log, nil, false)
-	}
+		// 同步记录请求日志，避免并发修改导致重复持久化
+		if h.request != nil {
+			h.request.recordRequestLog(h.log, nil, false)
+		}
+	})
 }
 
 // ChatCompletionStream 处理流式聊天完成请求
@@ -160,9 +168,7 @@ func (p *Request) ChatCompletionStream(
 		if errors.IsCanceled(err) {
 			err = errors.NormalizeCanceled(err)
 		}
-
-		fillRequestLogErrorFields(requestLog, err)
-		p.recordRequestLog(requestLog, nil, false)
+		hooks.OnError(err)
 		return err
 	}
 
@@ -186,9 +192,9 @@ func (p *Request) handleStreamData(
 	)
 
 	log.DebugContext(ctx, "开始处理流数据")
+	defer close(output)
 
 	firstByteRecorded := false
-	var firstByteTime *time.Time
 	messageCount := 0
 
 	for response := range input {
@@ -199,9 +205,12 @@ func (p *Request) handleStreamData(
 			if errors.IsCanceled(err) {
 				err = errors.NormalizeCanceled(err)
 			}
-
-			fillRequestLogErrorFields(requestLog, err)
-			p.recordRequestLog(requestLog, nil, false)
+			if hooks != nil {
+				hooks.OnError(err)
+			} else {
+				fillRequestLogErrorFields(requestLog, err)
+				p.recordRequestLog(requestLog, nil, false)
+			}
 
 			return err
 		}
@@ -209,7 +218,6 @@ func (p *Request) handleStreamData(
 		// 记录首字节时间并触发 OnFirstChunk Hook
 		if !firstByteRecorded {
 			now := time.Now()
-			firstByteTime = &now
 			firstByteRecorded = true
 
 			firstByteDuration := now.Sub(requestLog.Timestamp)
@@ -250,9 +258,12 @@ func (p *Request) handleStreamData(
 			if errors.IsCanceled(err) {
 				err = errors.NormalizeCanceled(err)
 			}
-
-			fillRequestLogErrorFields(requestLog, err)
-			p.recordRequestLog(requestLog, nil, false)
+			if hooks != nil {
+				hooks.OnError(err)
+			} else {
+				fillRequestLogErrorFields(requestLog, err)
+				p.recordRequestLog(requestLog, nil, false)
+			}
 			return err
 		}
 	}
@@ -266,10 +277,9 @@ func (p *Request) handleStreamData(
 	// 触发 OnComplete Hook
 	if hooks != nil {
 		hooks.OnComplete(time.Now())
+	} else {
+		p.recordRequestLog(requestLog, nil, true)
 	}
-
-	close(output)
-	p.recordRequestLog(requestLog, firstByteTime, true)
 
 	log.InfoContext(ctx, "流式请求成功完成")
 	return nil
