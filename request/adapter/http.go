@@ -9,11 +9,14 @@ import (
 	"net/http"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/logger"
 	"github.com/MeowSalty/portal/routing"
 )
+
+const httpRequestBodyPreviewMaxBytes = 512
 
 var (
 	sharedClient *http.Client
@@ -79,6 +82,23 @@ func appendReader(buf []byte, r io.Reader) ([]byte, error) {
 	}
 }
 
+// buildRequestBodyPreview 构建请求体日志预览，避免热路径记录完整请求体。
+func buildRequestBodyPreview(body []byte, maxBytes int) (preview string, truncated bool) {
+	if maxBytes <= 0 || len(body) <= maxBytes {
+		return string(body), false
+	}
+
+	cut := maxBytes
+	for cut > 0 && !utf8.RuneStart(body[cut]) {
+		cut--
+	}
+	if cut == 0 {
+		cut = maxBytes
+	}
+
+	return string(body[:cut]), true
+}
+
 // getSharedHTTPClient 返回共享的 HTTP 客户端单例
 //
 // 使用 sync.Once 确保只初始化一次。http.Client 是线程安全的，
@@ -131,11 +151,14 @@ func (a *Adapter) sendHTTPRequest(
 		a.provider.APIEndpoint(channel.APIVariant, channel.ModelName, isStream, channel.APIEndpointConfig),
 	)
 
-	// 记录调试日志：请求 URL 和请求体
+	// 记录调试日志：请求 URL 与请求体摘要（默认不记录完整请求体）
+	requestBodyPreview, requestBodyPreviewTruncated := buildRequestBodyPreview(jsonData, httpRequestBodyPreviewMaxBytes)
 	log.Debug("HTTP 请求准备完成",
 		"url", url,
 		"is_stream", isStream,
-		"request_body", string(jsonData),
+		"request_body_size", len(jsonData),
+		"request_body_preview", requestBodyPreview,
+		"request_body_preview_truncated", requestBodyPreviewTruncated,
 	)
 
 	// 创建请求
