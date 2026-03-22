@@ -67,7 +67,8 @@ func (p *Request) Native(
 
 	// 执行原生请求
 	log.DebugContext(ctx, "执行原生请求")
-	response, err := adapter.Native(ctx, channel, nil, payload)
+	headers := extractNativeHeaders(payload)
+	response, err := adapter.Native(ctx, channel, headers, payload)
 
 	// 计算耗时
 	requestDuration := time.Since(now)
@@ -164,7 +165,8 @@ func (p *Request) NativeStream(
 
 	// 执行原生流式请求
 	log.DebugContext(ctx, "执行原生流式请求")
-	err = adapter.NativeStream(ctx, channel, nil, payload, output, hooks)
+	headers := extractNativeHeaders(payload)
+	err = adapter.NativeStream(ctx, channel, headers, payload, output, hooks)
 
 	// 只在 adapter.NativeStream 调用失败时返回错误
 	if err != nil {
