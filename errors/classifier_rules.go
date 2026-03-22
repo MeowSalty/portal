@@ -85,7 +85,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Stage:    ClassificationStageSource,
 			Priority: 90,
 			Conditions: RuleConditions{
-				AnyContains: []string{"upstream", "provider", "vendor", "bad_response_status_code", "do_request_failed"},
+				AnyContains: []string{
+					"upstream", "上游", "provider", "vendor",
+					"bad_response_status_code", "do_request_failed", "failed to retrieve proxy group",
+					"upstream_error", "openai_error", "anthropic_error", "gemini_error",
+				},
 			},
 			Decision: RuleDecision{
 				Source: ErrorFromUpstream,

@@ -166,3 +166,21 @@ func TestGetErrorLevel_兼容行为_按错误码回退(t *testing.T) {
 		})
 	}
 }
+
+func TestGetErrorLevel_仅纯兜底规则触发旧层级回退(t *testing.T) {
+	t.Run("仅命中 level-fallback-model 时回退旧逻辑", func(t *testing.T) {
+		err := New(ErrCodeInternal, "内部错误")
+
+		if got := GetErrorLevel(err); got != ErrorLevelPlatform {
+			t.Fatalf("GetErrorLevel() = %d, want %d", got, ErrorLevelPlatform)
+		}
+	})
+
+	t.Run("命中低置信度但非纯兜底规则时不回退", func(t *testing.T) {
+		err := NewWithHTTPStatus(ErrCodeInternal, "gateway timeout", 504)
+
+		if got := GetErrorLevel(err); got != ErrorLevelModel {
+			t.Fatalf("GetErrorLevel() = %d, want %d", got, ErrorLevelModel)
+		}
+	})
+}

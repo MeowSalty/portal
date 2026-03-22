@@ -130,74 +130,8 @@ func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
 		HTTPResponseReceived: input.hasHTTPResponse,
 	}
 
-	// 兼容历史行为：将旧规则识别结果作为显式来源提示交给统一分类器。
-	if hint := legacyErrorFromHint(input); hint != "" {
-		classifierInput.ErrorFrom = hint
-	}
-
 	result := errors.ClassifyError(classifierInput)
 	return result.Source.Value
-}
-
-// legacyErrorFromHint 基于旧规则生成来源提示，用于兼容历史行为。
-func legacyErrorFromHint(input errorClassifyInput) errors.ErrorFromValue {
-	if !input.isStructured && strings.TrimSpace(input.rawText) == "" {
-		return ""
-	}
-
-	if containsFold(input.errorType, []string{"upstream_error", "openai_error", "anthropic_error", "gemini_error"}) {
-		return errors.ErrorFromUpstream
-	}
-	if containsFold(input.errorCode, []string{"bad_response_status_code", "do_request_failed"}) {
-		return errors.ErrorFromUpstream
-	}
-	if containsAnyFold(input.errorMessage, []string{"上游", "bad response status code", "failed to retrieve proxy group", "upstream"}) {
-		return errors.ErrorFromUpstream
-	}
-	if containsAnyFold(input.rawText, []string{"上游", "bad response status code", "failed to retrieve proxy group", "upstream"}) {
-		return errors.ErrorFromUpstream
-	}
-
-	if containsFold(input.errorType, []string{"one_hub_error", "new_api_error", "veloera_error"}) {
-		return errors.ErrorFromServer
-	}
-	if containsFold(input.errorCode, []string{"insufficient_user_quota", "model_not_found"}) {
-		return errors.ErrorFromServer
-	}
-	if containsAnyFold(input.errorMessage, []string{"渠道", "额度"}) {
-		return errors.ErrorFromServer
-	}
-	if containsAnyFold(input.rawText, []string{"渠道", "额度"}) {
-		return errors.ErrorFromServer
-	}
-
-	return ""
-}
-
-func containsFold(value string, candidates []string) bool {
-	v := strings.ToLower(strings.TrimSpace(value))
-	if v == "" {
-		return false
-	}
-	for _, candidate := range candidates {
-		if v == strings.ToLower(candidate) {
-			return true
-		}
-	}
-	return false
-}
-
-func containsAnyFold(value string, keywords []string) bool {
-	v := strings.ToLower(value)
-	if strings.TrimSpace(v) == "" {
-		return false
-	}
-	for _, keyword := range keywords {
-		if strings.Contains(v, strings.ToLower(keyword)) {
-			return true
-		}
-	}
-	return false
 }
 
 // createHTTPError 根据错误来源和状态码创建适当的错误

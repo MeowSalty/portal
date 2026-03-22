@@ -85,7 +85,7 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 //
 // 优先使用统一分类器的 resource 决策；若无法映射，则回退到旧的 error level 推导。
 func (c *Channel) resolveFailureResource(err error) (health.ResourceType, uint) {
-	decision := errors.ClassifyError(buildClassifierInputForChannel(err)).Resource
+	decision := errors.ClassifyError(errors.BuildClassifierInput(err)).Resource
 	switch decision.Value {
 	case errors.ErrorResourcePlatform:
 		return health.ResourceTypePlatform, c.PlatformID
@@ -104,53 +104,6 @@ func (c *Channel) resolveFailureResource(err error) (health.ResourceType, uint) 
 	default:
 		return health.ResourceTypeModel, c.ModelID
 	}
-}
-
-// buildClassifierInputForChannel 构造通道失败归属所需分类输入。
-func buildClassifierInputForChannel(err error) errors.ClassifierInput {
-	if err == nil {
-		return errors.ClassifierInput{}
-	}
-
-	input := errors.ClassifierInput{
-		Code:      errors.GetCode(err),
-		Message:   errors.GetMessage(err),
-		ErrorFrom: errors.GetErrorFrom(err),
-	}
-
-	if input.Message == "" {
-		input.Message = err.Error()
-	}
-
-	if errors.HasHTTPStatus(err) {
-		input.HTTPStatus = errors.GetHTTPStatus(err)
-		input.HTTPResponseReceived = true
-	}
-
-	ctx := errors.GetContext(err)
-	if len(ctx) > 0 {
-		if v, ok := contextValueToString(ctx["response_body"]); ok {
-			input.ResponseBody = v
-		}
-		if v, ok := contextValueToString(ctx["error_type"]); ok {
-			input.ErrorType = strings.ToLower(v)
-		}
-		if v, ok := contextValueToString(ctx["error_code"]); ok {
-			input.VendorCode = strings.ToLower(v)
-		}
-		if v, ok := contextValueToString(ctx["error_message"]); ok {
-			input.ErrorMessage = v
-		}
-		if raw, ok := ctx["http_response_received"].(bool); ok {
-			input.HTTPResponseReceived = raw
-		}
-	}
-
-	if cause := extractErrorCauseMessage(err); cause != "" {
-		input.CauseMessage = cause
-	}
-
-	return input
 }
 
 // buildHealthErrorSnapshot 提取健康状态需要的轻量错误摘要。
