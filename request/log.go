@@ -74,6 +74,10 @@ type RequestLog struct {
 	PromptTokens     *int `json:"prompt_tokens"`     // 提示 Token 数
 	CompletionTokens *int `json:"completion_tokens"` // 完成 Token 数
 	TotalTokens      *int `json:"total_tokens"`      // 总 Token 数
+
+	// 以下字段仅用于运行时日志上下文，不持久化到存储。
+	errorClassifyExplain      string
+	errorClassifyMatchedRules string
 }
 
 // recordRequestLog 记录请求统计信息
@@ -116,6 +120,12 @@ func (p *Request) recordRequestLog(
 			"completion_tokens", *requestLog.CompletionTokens,
 			"total_tokens", *requestLog.TotalTokens,
 		)
+	}
+	if requestLog.errorClassifyExplain != "" {
+		debugArgs = append(debugArgs, "error_classify_explain", requestLog.errorClassifyExplain)
+	}
+	if requestLog.errorClassifyMatchedRules != "" {
+		debugArgs = append(debugArgs, "error_classify_matched_rules", requestLog.errorClassifyMatchedRules)
 	}
 	log.Debug("请求结束摘要", debugArgs...)
 
@@ -174,16 +184,40 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 		log.ErrorFrom = &s
 	}
 
+	classifierInput := portalErrors.ClassifierInput{
+		Code:    portalErr.Code,
+		Message: portalErr.Message,
+	}
+	if classifierInput.Message == "" {
+		classifierInput.Message = errMsg
+	}
+
+	if portalErr.HTTPStatus != nil {
+		classifierInput.HTTPStatus = *portalErr.HTTPStatus
+		classifierInput.HTTPResponseReceived = true
+	}
+
+	if errorFrom := portalErrors.GetErrorFrom(err); errorFrom != "" {
+		classifierInput.ErrorFrom = errorFrom
+	}
+
+	if log.CauseMessage != nil {
+		classifierInput.CauseMessage = *log.CauseMessage
+	}
+
 	// response_body 之外的上下文字段可作为兜底来源。
 	if s, ok := contextValueToString(ctx["error_type"]); ok {
 		log.UpstreamErrorType = &s
+		classifierInput.ErrorType = s
 	}
 	if s, ok := contextValueToString(ctx["error_code"]); ok {
 		log.UpstreamErrorCode = &s
+		classifierInput.VendorCode = s
 	}
 	if s, ok := contextValueToString(ctx["error_message"]); ok {
 		s = clipLongField(s)
 		log.UpstreamErrorMessage = &s
+		classifierInput.ErrorMessage = s
 		if requestID := extractUpstreamRequestID(s); requestID != "" {
 			log.UpstreamRequestID = &requestID
 		}
@@ -191,10 +225,51 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 
 	responseBody, ok := contextValueToString(ctx["response_body"])
 	if !ok {
+		fillRequestLogClassificationSummary(log, classifierInput)
 		return
 	}
 
-	parseAndFillResponseBody(log, responseBody)
+	classifierInput.ResponseBody = responseBody
+	upstreamFields := parseAndFillResponseBody(log, responseBody)
+	if upstreamFields.ErrorType != "" {
+		classifierInput.ErrorType = upstreamFields.ErrorType
+	}
+	if upstreamFields.ErrorCode != "" {
+		classifierInput.VendorCode = upstreamFields.ErrorCode
+	}
+	if upstreamFields.ErrorMessage != "" {
+		classifierInput.ErrorMessage = upstreamFields.ErrorMessage
+	}
+
+	fillRequestLogClassificationSummary(log, classifierInput)
+}
+
+type requestLogUpstreamFields struct {
+	ErrorType    string
+	ErrorCode    string
+	ErrorMessage string
+}
+
+func fillRequestLogClassificationSummary(log *RequestLog, input portalErrors.ClassifierInput) {
+	if log == nil {
+		return
+	}
+
+	result := portalErrors.ClassifyError(input)
+	if log.ErrorFrom == nil {
+		source := string(result.Source.Value)
+		if source != "" {
+			log.ErrorFrom = &source
+		}
+	}
+
+	log.errorClassifyExplain = strings.TrimSpace(result.Explain)
+	if len(result.MatchedRules) == 0 {
+		log.errorClassifyMatchedRules = ""
+		return
+	}
+
+	log.errorClassifyMatchedRules = strings.Join(result.MatchedRules, ",")
 }
 
 // extractCauseMessage 获取错误链最底层 cause 的文本。
@@ -220,10 +295,12 @@ func extractCauseMessage(err error) string {
 }
 
 // parseAndFillResponseBody 解析 response_body 并填充上游错误字段。
-func parseAndFillResponseBody(log *RequestLog, responseBody string) {
+func parseAndFillResponseBody(log *RequestLog, responseBody string) requestLogUpstreamFields {
+	upstreamFields := requestLogUpstreamFields{}
+
 	responseBody = strings.TrimSpace(responseBody)
 	if responseBody == "" {
-		return
+		return upstreamFields
 	}
 
 	var payload map[string]any
@@ -232,7 +309,7 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 		log.ResponseBodyIsJSON = &isJSON
 		raw := clipLongField(responseBody)
 		log.ResponseBodyRaw = &raw
-		return
+		return upstreamFields
 	}
 
 	isJSON := true
@@ -244,10 +321,12 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 		case map[string]any:
 			if s, ok := contextValueToString(errObj["type"]); ok {
 				log.UpstreamErrorType = &s
+				upstreamFields.ErrorType = s
 				extracted = true
 			}
 			if s, ok := contextValueToString(errObj["code"]); ok {
 				log.UpstreamErrorCode = &s
+				upstreamFields.ErrorCode = s
 				extracted = true
 			}
 			if s, ok := contextValueToString(errObj["param"]); ok {
@@ -257,6 +336,7 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 			if s, ok := contextValueToString(errObj["message"]); ok {
 				s = clipLongField(s)
 				log.UpstreamErrorMessage = &s
+				upstreamFields.ErrorMessage = s
 				extracted = true
 				if requestID := extractUpstreamRequestID(s); requestID != "" {
 					log.UpstreamRequestID = &requestID
@@ -266,6 +346,7 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 			if s, ok := contextValueToString(errObj); ok {
 				s = clipLongField(s)
 				log.UpstreamErrorMessage = &s
+				upstreamFields.ErrorMessage = s
 				extracted = true
 				if requestID := extractUpstreamRequestID(s); requestID != "" {
 					log.UpstreamRequestID = &requestID
@@ -276,11 +357,12 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) {
 
 	if extracted {
 		log.ResponseBodyRaw = nil
-		return
+		return upstreamFields
 	}
 
 	raw := clipLongField(responseBody)
 	log.ResponseBodyRaw = &raw
+	return upstreamFields
 }
 
 // errorLevelToString 将错误层级枚举转换为对前端稳定的字符串。

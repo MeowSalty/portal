@@ -119,9 +119,75 @@ func TestRecordRequestLog_AuditPersistFailureOnly(t *testing.T) {
 	}
 }
 
+func TestRecordRequestLog_DebugSummaryContainsClassifierContext_WhenPresent(t *testing.T) {
+	log := &capturedLogger{store: &capturedLogStore{}}
+	req := &Request{repo: &stubRequestLogRepo{}, logger: log}
+
+	requestLog := &RequestLog{
+		Timestamp:                 time.Now().Add(-120 * time.Millisecond),
+		errorClassifyExplain:      "source=upstream(high); level=2(medium); resource=model(medium)",
+		errorClassifyMatchedRules: "source-explicit-upstream,level-upstream-default-model,resource-upstream-default-model",
+	}
+	req.recordRequestLog(requestLog, nil, false)
+
+	entry, ok := findEntry(log.store.entries, "DEBUG", "请求结束摘要")
+	if !ok {
+		t.Fatalf("缺少请求结束摘要日志")
+	}
+
+	if !hasArgKey(entry.args, "error_classify_explain") {
+		t.Fatalf("请求结束摘要中缺少 error_classify_explain 字段")
+	}
+	if !hasArgKey(entry.args, "error_classify_matched_rules") {
+		t.Fatalf("请求结束摘要中缺少 error_classify_matched_rules 字段")
+	}
+}
+
+func TestRecordRequestLog_DebugSummaryNotContainsClassifierContext_WhenEmpty(t *testing.T) {
+	log := &capturedLogger{store: &capturedLogStore{}}
+	req := &Request{repo: &stubRequestLogRepo{}, logger: log}
+
+	requestLog := &RequestLog{Timestamp: time.Now().Add(-100 * time.Millisecond)}
+	req.recordRequestLog(requestLog, nil, true)
+
+	entry, ok := findEntry(log.store.entries, "DEBUG", "请求结束摘要")
+	if !ok {
+		t.Fatalf("缺少请求结束摘要日志")
+	}
+
+	if hasArgKey(entry.args, "error_classify_explain") {
+		t.Fatalf("分类上下文为空时，不应输出 error_classify_explain")
+	}
+	if hasArgKey(entry.args, "error_classify_matched_rules") {
+		t.Fatalf("分类上下文为空时，不应输出 error_classify_matched_rules")
+	}
+}
+
 func containsMessage(entries []capturedLogEntry, level, msg string) bool {
 	for _, entry := range entries {
 		if entry.level == level && entry.msg == msg {
+			return true
+		}
+	}
+	return false
+}
+
+func findEntry(entries []capturedLogEntry, level, msg string) (capturedLogEntry, bool) {
+	for _, entry := range entries {
+		if entry.level == level && entry.msg == msg {
+			return entry, true
+		}
+	}
+	return capturedLogEntry{}, false
+}
+
+func hasArgKey(args []any, key string) bool {
+	for i := 0; i+1 < len(args); i += 2 {
+		k, ok := args[i].(string)
+		if !ok {
+			continue
+		}
+		if k == key {
 			return true
 		}
 	}

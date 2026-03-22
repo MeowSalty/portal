@@ -297,3 +297,39 @@ func TestFillRequestLogErrorFields_ClipLongFields(t *testing.T) {
 		t.Fatalf("CauseMessage 长度期望 %d，实际 %d", requestLogLongFieldMaxLength, got)
 	}
 }
+
+func TestFillRequestLogErrorFields_ClassifierSummary_FromUnifiedClassifier(t *testing.T) {
+	log := &RequestLog{}
+	err := errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", 500).
+		WithContext("error_from", "upstream").
+		WithContext("response_body", `{"error":{"message":"upstream timeout"}}`)
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream" {
+		t.Fatalf("ErrorFrom 期望 upstream，实际：%+v", log.ErrorFrom)
+	}
+	if strings.TrimSpace(log.errorClassifyExplain) == "" {
+		t.Fatalf("errorClassifyExplain 期望不为空")
+	}
+	if !strings.Contains(log.errorClassifyMatchedRules, "source-explicit-upstream") {
+		t.Fatalf("errorClassifyMatchedRules 期望包含 source-explicit-upstream，实际：%s", log.errorClassifyMatchedRules)
+	}
+}
+
+func TestFillRequestLogErrorFields_ClassifierSummary_EmptyForNonPortalError(t *testing.T) {
+	log := &RequestLog{}
+	err := stdErrors.New("plain error")
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ErrorMsg == nil || *log.ErrorMsg == "" {
+		t.Fatalf("ErrorMsg 期望不为空")
+	}
+	if log.errorClassifyExplain != "" {
+		t.Fatalf("errorClassifyExplain 期望为空，实际：%s", log.errorClassifyExplain)
+	}
+	if log.errorClassifyMatchedRules != "" {
+		t.Fatalf("errorClassifyMatchedRules 期望为空，实际：%s", log.errorClassifyMatchedRules)
+	}
+}
