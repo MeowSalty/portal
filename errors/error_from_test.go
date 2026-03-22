@@ -134,3 +134,35 @@ func TestIsFromUpstreamAndGetErrorLevel_Upstream(t *testing.T) {
 		t.Fatalf("GetErrorLevel() = %q, want %q", got, ErrorLevelModel)
 	}
 }
+
+func TestGetErrorLevel_兼容行为_按错误码回退(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want ErrorLevel
+	}{
+		{
+			name: "认证失败仍为密钥层级",
+			err:  New(ErrCodeAuthenticationFailed, "认证失败"),
+			want: ErrorLevelKey,
+		},
+		{
+			name: "资源未找到仍为模型层级",
+			err:  New(ErrCodeNotFound, "资源未找到"),
+			want: ErrorLevelModel,
+		},
+		{
+			name: "未知错误默认平台层级",
+			err:  New(ErrCodeInternal, "内部错误"),
+			want: ErrorLevelPlatform,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := GetErrorLevel(tt.err); got != tt.want {
+				t.Fatalf("GetErrorLevel() = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

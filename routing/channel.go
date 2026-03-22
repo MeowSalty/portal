@@ -70,24 +70,7 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	}
 
 	snapshot := buildHealthErrorSnapshot(err)
-
-	// 根据错误层级确定资源类型和资源 ID
-	errorLevel := errors.GetErrorLevel(err)
-
-	var resourceType health.ResourceType
-	var resourceID uint
-
-	switch errorLevel {
-	case errors.ErrorLevelPlatform:
-		resourceType = health.ResourceTypePlatform
-		resourceID = c.PlatformID
-	case errors.ErrorLevelKey:
-		resourceType = health.ResourceTypeAPIKey
-		resourceID = c.APIKeyID
-	default:
-		resourceType = health.ResourceTypeModel
-		resourceID = c.ModelID
-	}
+	resourceType, resourceID := c.resolveFailureResource(err)
 
 	// 更新健康状态
 	c.healthService.UpdateStatus(
@@ -96,6 +79,78 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 		false, // 失败
 		snapshot,
 	)
+}
+
+// resolveFailureResource 解析失败归属资源。
+//
+// 优先使用统一分类器的 resource 决策；若无法映射，则回退到旧的 error level 推导。
+func (c *Channel) resolveFailureResource(err error) (health.ResourceType, uint) {
+	decision := errors.ClassifyError(buildClassifierInputForChannel(err)).Resource
+	switch decision.Value {
+	case errors.ErrorResourcePlatform:
+		return health.ResourceTypePlatform, c.PlatformID
+	case errors.ErrorResourceAPIKey:
+		return health.ResourceTypeAPIKey, c.APIKeyID
+	case errors.ErrorResourceModel:
+		return health.ResourceTypeModel, c.ModelID
+	}
+
+	// 兼容回退：沿用旧的 error level 归属逻辑。
+	switch errors.GetErrorLevel(err) {
+	case errors.ErrorLevelPlatform:
+		return health.ResourceTypePlatform, c.PlatformID
+	case errors.ErrorLevelKey:
+		return health.ResourceTypeAPIKey, c.APIKeyID
+	default:
+		return health.ResourceTypeModel, c.ModelID
+	}
+}
+
+// buildClassifierInputForChannel 构造通道失败归属所需分类输入。
+func buildClassifierInputForChannel(err error) errors.ClassifierInput {
+	if err == nil {
+		return errors.ClassifierInput{}
+	}
+
+	input := errors.ClassifierInput{
+		Code:      errors.GetCode(err),
+		Message:   errors.GetMessage(err),
+		ErrorFrom: errors.GetErrorFrom(err),
+	}
+
+	if input.Message == "" {
+		input.Message = err.Error()
+	}
+
+	if errors.HasHTTPStatus(err) {
+		input.HTTPStatus = errors.GetHTTPStatus(err)
+		input.HTTPResponseReceived = true
+	}
+
+	ctx := errors.GetContext(err)
+	if len(ctx) > 0 {
+		if v, ok := contextValueToString(ctx["response_body"]); ok {
+			input.ResponseBody = v
+		}
+		if v, ok := contextValueToString(ctx["error_type"]); ok {
+			input.ErrorType = strings.ToLower(v)
+		}
+		if v, ok := contextValueToString(ctx["error_code"]); ok {
+			input.VendorCode = strings.ToLower(v)
+		}
+		if v, ok := contextValueToString(ctx["error_message"]); ok {
+			input.ErrorMessage = v
+		}
+		if raw, ok := ctx["http_response_received"].(bool); ok {
+			input.HTTPResponseReceived = raw
+		}
+	}
+
+	if cause := extractErrorCauseMessage(err); cause != "" {
+		input.CauseMessage = cause
+	}
+
+	return input
 }
 
 // buildHealthErrorSnapshot 提取健康状态需要的轻量错误摘要。

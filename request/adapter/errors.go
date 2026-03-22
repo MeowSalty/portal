@@ -22,20 +22,6 @@ var (
 	}
 )
 
-type classifyField int
-
-const (
-	matchType    classifyField = iota // 精确匹配 error.type
-	matchCode                         // 精确匹配 error.code
-	matchMessage                      // 子串匹配 error.message
-)
-
-type classifyRule struct {
-	field   classifyField
-	pattern string                // 小写匹配串
-	result  errors.ErrorFromValue // 分类结果
-}
-
 // errorClassifyInput 统一错误来源分类输入。
 type errorClassifyInput struct {
 	errorType    string
@@ -47,35 +33,6 @@ type errorClassifyInput struct {
 	// 语义优先级高于 hasBody：即使响应体为空，只要已收到响应，也应默认归类为 server。
 	hasHTTPResponse bool
 	isStructured    bool
-}
-
-// classifyRules 按优先级排列的分类规则，先匹配先生效。
-// upstream 规则优先于 server 规则。
-// 扩展方式：在对应分组末尾追加新条目即可。
-var classifyRules = []classifyRule{
-	// ── upstream：按 type ──
-	{matchType, "upstream_error", errors.ErrorFromUpstream},
-	{matchType, "openai_error", errors.ErrorFromUpstream},
-	{matchType, "anthropic_error", errors.ErrorFromUpstream},
-	{matchType, "gemini_error", errors.ErrorFromUpstream},
-	// ── upstream：按 code ──
-	{matchCode, "bad_response_status_code", errors.ErrorFromUpstream},
-	{matchCode, "do_request_failed", errors.ErrorFromUpstream},
-	// ── upstream：按 message ──
-	{matchMessage, "上游", errors.ErrorFromUpstream},
-	{matchMessage, "bad response status code", errors.ErrorFromUpstream},
-	{matchMessage, "failed to retrieve proxy group", errors.ErrorFromUpstream},
-	{matchMessage, "upstream", errors.ErrorFromUpstream},
-	// ── server：按 type ──
-	{matchType, "one_hub_error", errors.ErrorFromServer},
-	{matchType, "new_api_error", errors.ErrorFromServer},
-	{matchType, "veloera_error", errors.ErrorFromServer},
-	// ── server：按 code ──
-	{matchCode, "insufficient_user_quota", errors.ErrorFromServer},
-	{matchCode, "model_not_found", errors.ErrorFromServer},
-	// ── server：按 message ──
-	{matchMessage, "渠道", errors.ErrorFromServer},
-	{matchMessage, "额度", errors.ErrorFromServer},
 }
 
 // handleHTTPError 处理 HTTP 错误
@@ -164,46 +121,83 @@ func extractErrorFields(jsonData map[string]interface{}) (errorType, errorCode, 
 // 2. 非结构化文本（rawText）
 // 3. 兜底：hasHTTPResponse=true -> server，hasHTTPResponse=false -> gateway
 func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
-	if input.isStructured {
-		for _, rule := range classifyRules {
-			var field string
-			var matched bool
-
-			switch rule.field {
-			case matchType:
-				field = input.errorType
-				matched = field == rule.pattern
-			case matchCode:
-				field = input.errorCode
-				matched = field == rule.pattern
-			case matchMessage:
-				field = input.errorMessage
-				matched = strings.Contains(field, rule.pattern)
-			}
-
-			if field != "" && matched {
-				return rule.result
-			}
-		}
+	classifierInput := errors.ClassifierInput{
+		ErrorType:            input.errorType,
+		VendorCode:           input.errorCode,
+		Message:              input.errorMessage,
+		ErrorMessage:         input.errorMessage,
+		RawText:              input.rawText,
+		HTTPResponseReceived: input.hasHTTPResponse,
 	}
 
-	rawText := strings.ToLower(strings.TrimSpace(input.rawText))
-	if rawText != "" {
-		for _, rule := range classifyRules {
-			if rule.field != matchMessage {
-				continue
-			}
-			if strings.Contains(rawText, rule.pattern) {
-				return rule.result
-			}
-		}
+	// 兼容历史行为：将旧规则识别结果作为显式来源提示交给统一分类器。
+	if hint := legacyErrorFromHint(input); hint != "" {
+		classifierInput.ErrorFrom = hint
 	}
 
-	if input.hasHTTPResponse {
+	result := errors.ClassifyError(classifierInput)
+	return result.Source.Value
+}
+
+// legacyErrorFromHint 基于旧规则生成来源提示，用于兼容历史行为。
+func legacyErrorFromHint(input errorClassifyInput) errors.ErrorFromValue {
+	if !input.isStructured && strings.TrimSpace(input.rawText) == "" {
+		return ""
+	}
+
+	if containsFold(input.errorType, []string{"upstream_error", "openai_error", "anthropic_error", "gemini_error"}) {
+		return errors.ErrorFromUpstream
+	}
+	if containsFold(input.errorCode, []string{"bad_response_status_code", "do_request_failed"}) {
+		return errors.ErrorFromUpstream
+	}
+	if containsAnyFold(input.errorMessage, []string{"上游", "bad response status code", "failed to retrieve proxy group", "upstream"}) {
+		return errors.ErrorFromUpstream
+	}
+	if containsAnyFold(input.rawText, []string{"上游", "bad response status code", "failed to retrieve proxy group", "upstream"}) {
+		return errors.ErrorFromUpstream
+	}
+
+	if containsFold(input.errorType, []string{"one_hub_error", "new_api_error", "veloera_error"}) {
+		return errors.ErrorFromServer
+	}
+	if containsFold(input.errorCode, []string{"insufficient_user_quota", "model_not_found"}) {
+		return errors.ErrorFromServer
+	}
+	if containsAnyFold(input.errorMessage, []string{"渠道", "额度"}) {
+		return errors.ErrorFromServer
+	}
+	if containsAnyFold(input.rawText, []string{"渠道", "额度"}) {
 		return errors.ErrorFromServer
 	}
 
-	return errors.ErrorFromGateway
+	return ""
+}
+
+func containsFold(value string, candidates []string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	if v == "" {
+		return false
+	}
+	for _, candidate := range candidates {
+		if v == strings.ToLower(candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyFold(value string, keywords []string) bool {
+	v := strings.ToLower(value)
+	if strings.TrimSpace(v) == "" {
+		return false
+	}
+	for _, keyword := range keywords {
+		if strings.Contains(v, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+	return false
 }
 
 // createHTTPError 根据错误来源和状态码创建适当的错误

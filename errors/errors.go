@@ -348,23 +348,135 @@ var (
 
 // GetErrorLevel 根据错误获取错误层级
 func GetErrorLevel(err error) ErrorLevel {
-	// 如果错误来自上游，归类为模型层级
-	if isFromUpstream(err) {
+	input := buildClassifierInputFromError(err)
+	decision := ClassifyError(input).Level
+
+	// 兼容历史行为：显式 server/upstream 来源始终按模型层级处理。
+	if input.ErrorFrom == ErrorFromServer || input.ErrorFrom == ErrorFromUpstream {
 		return ErrorLevelModel
 	}
 
-	code := GetCode(err)
-	switch code {
-	// 密钥层级
+	// 兼容历史行为：当分类器仅给出低置信度模型兜底时，保持原有层级判定。
+	if decision.Value == ErrorLevelModel && decision.Confidence == ConfidenceLow {
+		return getLegacyErrorLevel(input)
+	}
+
+	return decision.Value
+}
+
+// buildClassifierInputFromError 从错误中提取统一分类信号。
+func buildClassifierInputFromError(err error) ClassifierInput {
+	if err == nil {
+		return ClassifierInput{}
+	}
+
+	input := ClassifierInput{
+		Code:      GetCode(err),
+		Message:   GetMessage(err),
+		ErrorFrom: GetErrorFrom(err),
+	}
+
+	if input.Message == "" {
+		input.Message = err.Error()
+	}
+
+	if HasHTTPStatus(err) {
+		input.HTTPStatus = GetHTTPStatus(err)
+		input.HTTPResponseReceived = true
+	}
+
+	ctx := GetContext(err)
+	if len(ctx) > 0 {
+		if v, ok := contextStringValue(ctx, "response_body"); ok {
+			input.ResponseBody = v
+		}
+		if v, ok := contextStringValue(ctx, "error_type"); ok {
+			input.ErrorType = v
+		}
+		if v, ok := contextStringValue(ctx, "error_code"); ok {
+			input.VendorCode = v
+		}
+		if v, ok := contextStringValue(ctx, "error_message"); ok {
+			input.ErrorMessage = v
+		}
+		if v, ok := contextBoolValue(ctx, "http_response_received"); ok {
+			input.HTTPResponseReceived = v
+		}
+	}
+
+	if cause := extractCauseMessage(err); cause != "" {
+		input.CauseMessage = cause
+	}
+
+	return input
+}
+
+func getLegacyErrorLevel(input ClassifierInput) ErrorLevel {
+	if input.ErrorFrom == ErrorFromServer || input.ErrorFrom == ErrorFromUpstream {
+		return ErrorLevelModel
+	}
+
+	switch input.Code {
 	case ErrCodeAuthenticationFailed, ErrCodePermissionDenied:
 		return ErrorLevelKey
-	// 模型层级
 	case ErrCodeNotFound, ErrCodeDeadlineExceeded:
 		return ErrorLevelModel
-	// 平台层级（默认）
 	default:
 		return ErrorLevelPlatform
 	}
+}
+
+func contextStringValue(ctx map[string]interface{}, key string) (string, bool) {
+	v, ok := ctx[key]
+	if !ok {
+		return "", false
+	}
+
+	s, ok := v.(string)
+	if !ok {
+		return "", false
+	}
+
+	if strings.TrimSpace(s) == "" {
+		return "", false
+	}
+
+	return s, true
+}
+
+func contextBoolValue(ctx map[string]interface{}, key string) (bool, bool) {
+	v, ok := ctx[key]
+	if !ok {
+		return false, false
+	}
+
+	b, ok := v.(bool)
+	if !ok {
+		return false, false
+	}
+
+	return b, true
+}
+
+func extractCauseMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	cause := err
+	for {
+		next := errors.Unwrap(cause)
+		if next == nil {
+			break
+		}
+		cause = next
+	}
+
+	if cause == err {
+		return ""
+	}
+
+	return cause.Error()
 }
 
 // RetryableErrorCodes 定义可重试的错误码集合
