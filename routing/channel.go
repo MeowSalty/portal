@@ -2,7 +2,10 @@ package routing
 
 import (
 	"context"
+	"encoding/json"
 	stdErrors "errors"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/MeowSalty/portal/errors"
@@ -101,10 +104,7 @@ func buildHealthErrorSnapshot(err error) health.ErrorSnapshot {
 		return health.ErrorSnapshot{}
 	}
 
-	message := errors.GetMessage(err)
-	if message == "" {
-		message = err.Error()
-	}
+	message := resolveHealthDisplayMessage(err)
 
 	var httpStatus *int
 	if errors.HasHTTPStatus(err) {
@@ -118,6 +118,90 @@ func buildHealthErrorSnapshot(err error) health.ErrorSnapshot {
 		HTTPStatus:   httpStatus,
 		ErrorFrom:    string(errors.GetErrorFrom(err)),
 		CauseMessage: extractErrorCauseMessage(err),
+	}
+}
+
+// resolveHealthDisplayMessage 解析健康态展示优先错误消息。
+//
+// 优先级：
+//  1. response_body(JSON) 的 error.message 或 error(string)
+//  2. response_body 纯文本
+//  3. 最底层 cause 文本
+//  4. 结构化错误 Message
+//  5. err.Error()
+func resolveHealthDisplayMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	ctx := errors.GetContext(err)
+	if len(ctx) > 0 {
+		if responseBody, ok := contextValueToString(ctx["response_body"]); ok {
+			if msg := extractDisplayMessageFromResponseBody(responseBody); msg != "" {
+				return msg
+			}
+		}
+	}
+
+	if cause := extractErrorCauseMessage(err); cause != "" {
+		return cause
+	}
+
+	if message := errors.GetMessage(err); message != "" {
+		return message
+	}
+
+	return err.Error()
+}
+
+// extractDisplayMessageFromResponseBody 从 response_body 中提取可展示文本。
+func extractDisplayMessageFromResponseBody(responseBody string) string {
+	responseBody = strings.TrimSpace(responseBody)
+	if responseBody == "" {
+		return ""
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(responseBody), &payload); err != nil {
+		return responseBody
+	}
+
+	errValue, ok := payload["error"]
+	if !ok {
+		return ""
+	}
+
+	switch errObj := errValue.(type) {
+	case map[string]any:
+		if message, ok := contextValueToString(errObj["message"]); ok {
+			return strings.TrimSpace(message)
+		}
+	case string:
+		if message, ok := contextValueToString(errObj); ok {
+			return strings.TrimSpace(message)
+		}
+	}
+
+	return ""
+}
+
+// contextValueToString 将上下文值转换为字符串。
+func contextValueToString(v any) (string, bool) {
+	switch value := v.(type) {
+	case string:
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			return "", false
+		}
+		return trimmed, true
+	case fmt.Stringer:
+		trimmed := strings.TrimSpace(value.String())
+		if trimmed == "" {
+			return "", false
+		}
+		return trimmed, true
+	default:
+		return "", false
 	}
 }
 

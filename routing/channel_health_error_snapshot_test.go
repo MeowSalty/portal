@@ -10,11 +10,12 @@ import (
 func TestBuildHealthErrorSnapshot_HTTPError(t *testing.T) {
 	root := stdErrors.New("upstream 429")
 	err := errors.WrapWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", root, 429).
-		WithContext("error_from", "server")
+		WithContext("error_from", "server").
+		WithContext("response_body", "Gateway Timeout")
 
 	snapshot := buildHealthErrorSnapshot(err)
 
-	if snapshot.Message != "请求失败" {
+	if snapshot.Message != "Gateway Timeout" {
 		t.Fatalf("Message 不符合预期，actual=%q", snapshot.Message)
 	}
 	if snapshot.Code != "REQUEST_FAILED" {
@@ -38,7 +39,7 @@ func TestBuildHealthErrorSnapshot_ConnectionError(t *testing.T) {
 
 	snapshot := buildHealthErrorSnapshot(err)
 
-	if snapshot.Message != "连接上游失败" {
+	if snapshot.Message != root.Error() {
 		t.Fatalf("Message 不符合预期，actual=%q", snapshot.Message)
 	}
 	if snapshot.Code != "UNAVAILABLE" {
@@ -52,5 +53,18 @@ func TestBuildHealthErrorSnapshot_ConnectionError(t *testing.T) {
 	}
 	if snapshot.CauseMessage != root.Error() {
 		t.Fatalf("CauseMessage 不符合预期，actual=%q", snapshot.CauseMessage)
+	}
+}
+
+func TestBuildHealthErrorSnapshot_ResponseBodyJSONMessage(t *testing.T) {
+	root := stdErrors.New("upstream 504")
+	err := errors.WrapWithHTTPStatus(errors.ErrCodeRequestFailed, "API 返回错误状态码", root, 504).
+		WithContext("error_from", "server").
+		WithContext("response_body", `{"error":{"message":"上游超时"}}`)
+
+	snapshot := buildHealthErrorSnapshot(err)
+
+	if snapshot.Message != "上游超时" {
+		t.Fatalf("Message 不符合预期，actual=%q", snapshot.Message)
 	}
 }
