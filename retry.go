@@ -171,7 +171,31 @@ func retryNativeStream[T any](
 				channel.MarkFailure(ctx, err)
 				return
 			}
-			for event := range nativeOutput {
+			streamDrained := false
+			for {
+				var (
+					event any
+					ok    bool
+				)
+
+				// 优先尝试消费 nativeOutput，避免在“nativeOutput 已关闭”与“ctx.Done 可读”同时发生时误判为 canceled。
+				select {
+				case event, ok = <-nativeOutput:
+				default:
+					select {
+					case event, ok = <-nativeOutput:
+					case <-ctx.Done():
+						closeDone()
+						channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "phase", "forwarding", "before_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
+						return
+					}
+				}
+
+				if !ok {
+					streamDrained = true
+					break
+				}
+
 				evt, ok := event.(T)
 				if !ok {
 					continue
@@ -180,16 +204,17 @@ func retryNativeStream[T any](
 				select {
 				case <-ctx.Done():
 					closeDone()
-					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
+					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "phase", "forwarding", "before_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
 					return
 				case out <- evt:
 				}
 			}
 
 			closeDone()
-			if ctx.Err() != nil {
-				channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
-				return
+
+			cleanupCanceled := streamDrained && ctx.Err() != nil
+			if cleanupCanceled {
+				channelLogger.DebugContext(ctx, "stream_cleanup_canceled", "after_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
 			}
 
 			channel.MarkSuccess(ctx)

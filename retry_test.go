@@ -80,6 +80,41 @@ func countStreamFinishedByStatus(entries []retryLogEntry, status string) int {
 	return count
 }
 
+func countLogsByMessage(entries []retryLogEntry, msg string) int {
+	count := 0
+	for _, entry := range entries {
+		if entry.msg == msg {
+			count++
+		}
+	}
+	return count
+}
+
+func hasLogKeyValue(entry retryLogEntry, key string, value any) bool {
+	for i := 0; i+1 < len(entry.args); i += 2 {
+		k, ok := entry.args[i].(string)
+		if !ok || k != key {
+			continue
+		}
+		if entry.args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMessageWithKeyValue(entries []retryLogEntry, msg, key string, value any) bool {
+	for _, entry := range entries {
+		if entry.msg != msg {
+			continue
+		}
+		if hasLogKeyValue(entry, key, value) {
+			return true
+		}
+	}
+	return false
+}
+
 func TestRetryNonStream_RetryableThenSuccess(t *testing.T) {
 	p := &Portal{
 		session: session.New(),
@@ -369,6 +404,87 @@ func TestRetryNativeStream_CompletedLogsSingleCompletedWithoutCanceled(t *testin
 	}
 }
 
+func TestRetryNativeStream_TerminalThenCleanupCancelStillCompleted(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	out := retryNativeStream[string](ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			close(output)
+			cancel()
+			return nil
+		},
+		nil,
+	)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	if got := countStreamFinishedByStatus(entries, "completed"); got != 1 {
+		t.Fatalf("completed 日志数量期望 1，实际：%d", got)
+	}
+	if got := countStreamFinishedByStatus(entries, "canceled"); got != 0 {
+		t.Fatalf("terminal+cleanup cancel 场景不应出现 canceled 日志，实际：%d", got)
+	}
+	if got := countLogsByMessage(entries, "stream_finished"); got != 1 {
+		t.Fatalf("stream_finished 日志数量期望 1，实际：%d", got)
+	}
+	if got := countLogsByMessage(entries, "stream_cleanup_canceled"); got != 1 {
+		t.Fatalf("stream_cleanup_canceled 日志数量期望 1，实际：%d", got)
+	}
+	if !hasMessageWithKeyValue(entries, "stream_cleanup_canceled", "after_drain", true) {
+		t.Fatal("stream_cleanup_canceled 日志应包含 after_drain=true")
+	}
+}
+
+func TestRetryNativeStream_StartupCanceledLogsSingleCanceled(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	out := retryNativeStream[string](context.Background(), p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			return errors.NormalizeCanceled(context.Canceled)
+		},
+		nil,
+	)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	if got := countStreamFinishedByStatus(entries, "canceled"); got != 1 {
+		t.Fatalf("启动阶段取消应记录 1 条 canceled，实际：%d", got)
+	}
+	if got := countStreamFinishedByStatus(entries, "completed"); got != 0 {
+		t.Fatalf("启动阶段取消不应出现 completed 日志，实际：%d", got)
+	}
+	if got := countLogsByMessage(entries, "stream_finished"); got != 1 {
+		t.Fatalf("stream_finished 日志数量期望 1，实际：%d", got)
+	}
+}
+
 func TestRetryNativeStream_CanceledLogsSingleCanceledWithoutCompleted(t *testing.T) {
 	logStore := &retryLogStore{}
 	p := &Portal{
@@ -421,5 +537,11 @@ func TestRetryNativeStream_CanceledLogsSingleCanceledWithoutCompleted(t *testing
 	}
 	if completedCount != 0 {
 		t.Fatalf("canceled 场景不应出现 completed 日志，实际：%d", completedCount)
+	}
+	if !hasMessageWithKeyValue(entries, "stream_finished", "phase", "forwarding") {
+		t.Fatal("中途取消应记录 phase=forwarding")
+	}
+	if !hasMessageWithKeyValue(entries, "stream_finished", "before_drain", true) {
+		t.Fatal("中途取消应记录 before_drain=true")
 	}
 }
