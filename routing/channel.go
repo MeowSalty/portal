@@ -83,23 +83,13 @@ func (c *Channel) MarkFailure(ctx context.Context, err error) {
 
 // resolveFailureResource 解析失败归属资源。
 //
-// 优先使用统一分类器的 resource 决策；若无法映射，则回退到旧的 error level 推导。
+// 仅使用统一分类器的 resource 决策作为失败归属真相源。
 func (c *Channel) resolveFailureResource(err error) (health.ResourceType, uint) {
 	decision := errors.ClassifyError(errors.BuildClassifierInput(err)).Resource
 	switch decision.Value {
 	case errors.ErrorResourcePlatform:
 		return health.ResourceTypePlatform, c.PlatformID
 	case errors.ErrorResourceAPIKey:
-		return health.ResourceTypeAPIKey, c.APIKeyID
-	case errors.ErrorResourceModel:
-		return health.ResourceTypeModel, c.ModelID
-	}
-
-	// 兼容回退：沿用旧的 error level 归属逻辑。
-	switch errors.GetErrorLevel(err) {
-	case errors.ErrorLevelPlatform:
-		return health.ResourceTypePlatform, c.PlatformID
-	case errors.ErrorLevelKey:
 		return health.ResourceTypeAPIKey, c.APIKeyID
 	default:
 		return health.ResourceTypeModel, c.ModelID
