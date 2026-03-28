@@ -2,6 +2,7 @@ package portal
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -10,6 +11,74 @@ import (
 	"github.com/MeowSalty/portal/routing"
 	"github.com/MeowSalty/portal/session"
 )
+
+type retryLogEntry struct {
+	level string
+	msg   string
+	args  []any
+}
+
+type retryLogStore struct {
+	mu      sync.Mutex
+	entries []retryLogEntry
+}
+
+type retryCapturedLogger struct {
+	store *retryLogStore
+}
+
+func (l *retryCapturedLogger) append(level, msg string, args ...any) {
+	l.store.mu.Lock()
+	defer l.store.mu.Unlock()
+	l.store.entries = append(l.store.entries, retryLogEntry{level: level, msg: msg, args: append([]any(nil), args...)})
+}
+
+func (l *retryCapturedLogger) Debug(msg string, args ...any) { l.append("DEBUG", msg, args...) }
+
+func (l *retryCapturedLogger) DebugContext(_ context.Context, msg string, args ...any) {
+	l.Debug(msg, args...)
+}
+
+func (l *retryCapturedLogger) Info(msg string, args ...any) { l.append("INFO", msg, args...) }
+
+func (l *retryCapturedLogger) InfoContext(_ context.Context, msg string, args ...any) {
+	l.Info(msg, args...)
+}
+
+func (l *retryCapturedLogger) Warn(msg string, args ...any) { l.append("WARN", msg, args...) }
+
+func (l *retryCapturedLogger) WarnContext(_ context.Context, msg string, args ...any) {
+	l.Warn(msg, args...)
+}
+
+func (l *retryCapturedLogger) Error(msg string, args ...any) { l.append("ERROR", msg, args...) }
+
+func (l *retryCapturedLogger) ErrorContext(_ context.Context, msg string, args ...any) {
+	l.Error(msg, args...)
+}
+
+func (l *retryCapturedLogger) With(args ...any) logger.Logger { return l }
+
+func (l *retryCapturedLogger) WithGroup(name string) logger.Logger { return l }
+
+func countStreamFinishedByStatus(entries []retryLogEntry, status string) int {
+	count := 0
+	for _, entry := range entries {
+		if entry.msg != "stream_finished" {
+			continue
+		}
+		for i := 0; i+1 < len(entry.args); i += 2 {
+			key, ok := entry.args[i].(string)
+			if !ok || key != "status" {
+				continue
+			}
+			if val, ok := entry.args[i+1].(string); ok && val == status {
+				count++
+			}
+		}
+	}
+	return count
+}
 
 func TestRetryNonStream_RetryableThenSuccess(t *testing.T) {
 	p := &Portal{
@@ -259,5 +328,98 @@ func TestRetryNativeStream_CloseOutOnlyAfterProducerFinished(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("等待输出通道关闭超时")
+	}
+}
+
+func TestRetryNativeStream_CompletedLogsSingleCompletedWithoutCanceled(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	out := retryNativeStream[string](context.Background(), p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			go func() {
+				defer close(output)
+				output <- "evt"
+			}()
+			return nil
+		},
+		nil,
+	)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	completedCount := countStreamFinishedByStatus(entries, "completed")
+	canceledCount := countStreamFinishedByStatus(entries, "canceled")
+	if completedCount != 1 {
+		t.Fatalf("completed 日志数量期望 1，实际：%d", completedCount)
+	}
+	if canceledCount != 0 {
+		t.Fatalf("completed 场景不应出现 canceled 日志，实际：%d", canceledCount)
+	}
+}
+
+func TestRetryNativeStream_CanceledLogsSingleCanceledWithoutCompleted(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	releaseProducer := make(chan struct{})
+	out := retryNativeStream[string](ctx, p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			go func() {
+				defer close(output)
+				output <- "evt"
+				<-releaseProducer
+			}()
+			return nil
+		},
+		nil,
+	)
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("等待首个事件超时")
+	case _, ok := <-out:
+		if !ok {
+			t.Fatal("期望收到首个事件")
+		}
+	}
+
+	cancel()
+	close(releaseProducer)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	canceledCount := countStreamFinishedByStatus(entries, "canceled")
+	completedCount := countStreamFinishedByStatus(entries, "completed")
+	if canceledCount != 1 {
+		t.Fatalf("canceled 日志数量期望 1，实际：%d", canceledCount)
+	}
+	if completedCount != 0 {
+		t.Fatalf("canceled 场景不应出现 completed 日志，实际：%d", completedCount)
 	}
 }

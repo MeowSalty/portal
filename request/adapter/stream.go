@@ -204,12 +204,14 @@ func (a *Adapter) handleNativeStreaming(
 					hooks.OnComplete(time.Now())
 				}
 			}
+			// stream_finished 语义统一由上层重试/入口层记录，
+			// 适配层仅输出底层调试信息，避免 completed/canceled 重复记账。
 			if streamErr == nil {
-				log.Info("stream_finished", "status", "completed")
+				log.Debug("native_stream_worker_finished", "status", "completed")
 			} else if errors.IsCanceled(streamErr) {
-				log.Info("stream_finished", "status", "canceled", "error", streamErr)
+				log.Debug("native_stream_worker_finished", "status", "canceled", "error", streamErr)
 			} else {
-				log.Warn("stream_finished", "status", "aborted", "error", streamErr)
+				log.Warn("native_stream_worker_finished", "status", "aborted", "error", streamErr)
 			}
 			close(output)
 			if httpResp.body != nil {
