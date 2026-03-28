@@ -349,7 +349,7 @@ var (
 // GetErrorLevel 根据错误获取错误层级
 func GetErrorLevel(err error) ErrorLevel {
 	input := BuildClassifierInput(err)
-	decision := ClassifyError(input).Level
+	decision := DefaultClassifier().classifyLevel(input)
 
 	// 兼容历史行为：显式 server/upstream 来源始终按模型层级处理。
 	if input.ErrorFrom == ErrorFromServer || input.ErrorFrom == ErrorFromUpstream {

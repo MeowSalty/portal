@@ -6,8 +6,6 @@ type ClassificationStage string
 const (
 	// ClassificationStageSource 来源分类阶段。
 	ClassificationStageSource ClassificationStage = "source"
-	// ClassificationStageLevel 层级分类阶段。
-	ClassificationStageLevel ClassificationStage = "level"
 	// ClassificationStageResource 资源归属分类阶段。
 	ClassificationStageResource ClassificationStage = "resource"
 )
@@ -74,9 +72,7 @@ type ClassificationDecision[T any] struct {
 
 // ClassificationResult 定义分类结果。
 type ClassificationResult struct {
-	Source ClassificationDecision[ErrorFromValue]
-	Level  ClassificationDecision[ErrorLevel]
-
+	Source   ClassificationDecision[ErrorFromValue]
 	Resource ClassificationDecision[ErrorResourceType]
 
 	MatchedRules []string
@@ -126,7 +122,5 @@ type RuleConditions struct {
 // RuleDecision 定义规则决策结果。
 type RuleDecision struct {
 	Source   ErrorFromValue
-	Level    ErrorLevel
 	Resource ErrorResourceType
 }
-

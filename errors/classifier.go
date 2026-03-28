@@ -39,24 +39,19 @@ func ClassifyError(input ClassifierInput) ClassificationResult {
 // Classify 执行分类。
 func (c *Classifier) Classify(input ClassifierInput) ClassificationResult {
 	sourceDecision := c.classifySource(input)
-	levelDecision := c.classifyLevel(input)
 	resourceDecision := c.classifyResource(input)
 
-	matched := make([]string, 0, len(sourceDecision.MatchedRules)+len(levelDecision.MatchedRules)+len(resourceDecision.MatchedRules))
+	matched := make([]string, 0, len(sourceDecision.MatchedRules)+len(resourceDecision.MatchedRules))
 	matched = append(matched, sourceDecision.MatchedRules...)
-	matched = append(matched, levelDecision.MatchedRules...)
 	matched = append(matched, resourceDecision.MatchedRules...)
 
 	explain := strings.Join([]string{
 		fmt.Sprintf("source=%s(%s)", sourceDecision.Value, sourceDecision.Confidence),
-		fmt.Sprintf("level=%d(%s)", levelDecision.Value, levelDecision.Confidence),
 		fmt.Sprintf("resource=%s(%s)", resourceDecision.Value, resourceDecision.Confidence),
 	}, "; ")
 
 	return ClassificationResult{
-		Source: sourceDecision,
-		Level:  levelDecision,
-
+		Source:       sourceDecision,
 		Resource:     resourceDecision,
 		MatchedRules: matched,
 		Explain:      explain,
@@ -84,7 +79,7 @@ func (c *Classifier) classifySource(input ClassifierInput) ClassificationDecisio
 }
 
 func (c *Classifier) classifyLevel(input ClassifierInput) ClassificationDecision[ErrorLevel] {
-	matches := c.matchedRules(ClassificationStageLevel, input)
+	matches := c.matchedRules(ClassificationStage("level"), input)
 	if len(matches) == 0 {
 		return ClassificationDecision[ErrorLevel]{
 			Value:      ErrorLevelModel,
@@ -141,7 +136,7 @@ func resolveConservativeLevel(matches []ClassificationRule, input ClassifierInpu
 	hasPlatform := false
 	hasModel := false
 	for _, m := range matches {
-		switch m.Decision.Level {
+		switch levelFromLegacyRule(m) {
 		case ErrorLevelKey:
 			hasKey = true
 		case ErrorLevelPlatform:
@@ -161,7 +156,19 @@ func resolveConservativeLevel(matches []ClassificationRule, input ClassifierInpu
 		return ErrorLevelModel, ConfidenceLow, "密钥与模型规则冲突且认证证据不足，保守选择 model"
 	}
 
-	return best.Decision.Level, best.Confidence, best.Reason
+	return levelFromLegacyRule(best), best.Confidence, best.Reason
+}
+
+// levelFromLegacyRule 从 legacy level 规则推导层级结果。
+func levelFromLegacyRule(rule ClassificationRule) ErrorLevel {
+	switch rule.ID {
+	case "level-auth-status", "level-auth-code", "level-quota-with-key":
+		return ErrorLevelKey
+	case "level-platform-strong-keywords":
+		return ErrorLevelPlatform
+	default:
+		return ErrorLevelModel
+	}
 }
 
 func resolveConservativeResource(matches []ClassificationRule, input ClassifierInput) (ErrorResourceType, ClassificationConfidence, string) {
