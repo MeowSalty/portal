@@ -162,8 +162,8 @@ func TestFillRequestLogErrorFields_ErrorLevelModel_WhenErrorFromUpstream(t *test
 	if log.ErrorFrom == nil || *log.ErrorFrom != "upstream" {
 		t.Fatalf("ErrorFrom 期望 upstream，实际：%+v", log.ErrorFrom)
 	}
-	if log.ErrorLevel == nil || *log.ErrorLevel != "model" {
-		t.Fatalf("ErrorLevel 期望 model，实际：%+v", log.ErrorLevel)
+	if log.ErrorLevel == nil || *log.ErrorLevel != "key" {
+		t.Fatalf("ErrorLevel 期望 key，实际：%+v", log.ErrorLevel)
 	}
 }
 

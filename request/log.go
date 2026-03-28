@@ -171,19 +171,6 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 		log.HTTPStatus = &status
 	}
 
-	if level := errorLevelToString(portalErrors.GetErrorLevel(err)); level != "" {
-		log.ErrorLevel = &level
-	}
-
-	ctx := portalErr.Context
-	if len(ctx) == 0 {
-		return
-	}
-
-	if s, ok := contextValueToString(ctx["error_from"]); ok {
-		log.ErrorFrom = &s
-	}
-
 	classifierInput := portalErrors.ClassifierInput{
 		Code:    portalErr.Code,
 		Message: portalErr.Message,
@@ -203,6 +190,16 @@ func fillRequestLogErrorFields(log *RequestLog, err error) {
 
 	if log.CauseMessage != nil {
 		classifierInput.CauseMessage = *log.CauseMessage
+	}
+
+	ctx := portalErr.Context
+	if len(ctx) == 0 {
+		fillRequestLogClassificationSummary(log, classifierInput)
+		return
+	}
+
+	if s, ok := contextValueToString(ctx["error_from"]); ok {
+		log.ErrorFrom = &s
 	}
 
 	// response_body 之外的上下文字段可作为兜底来源。
@@ -256,6 +253,10 @@ func fillRequestLogClassificationSummary(log *RequestLog, input portalErrors.Cla
 	}
 
 	result := portalErrors.ClassifyError(input)
+	if level := errorResourceToLogString(result.Resource.Value); level != "" {
+		log.ErrorLevel = &level
+	}
+
 	if log.ErrorFrom == nil {
 		source := string(result.Source.Value)
 		if source != "" {
@@ -365,14 +366,14 @@ func parseAndFillResponseBody(log *RequestLog, responseBody string) requestLogUp
 	return upstreamFields
 }
 
-// errorLevelToString 将错误层级枚举转换为对前端稳定的字符串。
-func errorLevelToString(level portalErrors.ErrorLevel) string {
-	switch level {
-	case portalErrors.ErrorLevelPlatform:
+// errorResourceToLogString 将统一资源归属转换为对前端稳定的字符串。
+func errorResourceToLogString(resource portalErrors.ErrorResourceType) string {
+	switch resource {
+	case portalErrors.ErrorResourcePlatform:
 		return "platform"
-	case portalErrors.ErrorLevelKey:
+	case portalErrors.ErrorResourceAPIKey:
 		return "key"
-	case portalErrors.ErrorLevelModel:
+	case portalErrors.ErrorResourceModel:
 		return "model"
 	default:
 		return ""
