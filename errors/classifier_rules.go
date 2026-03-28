@@ -134,7 +134,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Priority: 100,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{401, 403},
-				AnyContains:  []string{"api key", "invalid key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥"},
+				AnyContains:  []string{"api key", "invalid key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥", "令牌"},
 			},
 			Decision: RuleDecision{
 				Level: ErrorLevelKey,
@@ -264,7 +264,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Priority: 100,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{401, 403},
-				AnyContains:  []string{"api key", "invalid key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥"},
+				AnyContains:  []string{"api key", "invalid key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥", "令牌"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourceAPIKey,
