@@ -349,15 +349,8 @@ var (
 // GetErrorLevel 根据错误获取错误层级
 func GetErrorLevel(err error) ErrorLevel {
 	input := BuildClassifierInput(err)
-	// 第 3 步期间仅做最小兼容：分类器已移除 level 分类流程，
-	// 暂不引入 resource -> level 映射，保留旧层级逻辑。
-	// 但为维持既有行为，若来源判定为 server/upstream，仍按模型层级处理。
-	if source := DefaultClassifier().classifySource(input); source.Value == ErrorFromServer || source.Value == ErrorFromUpstream {
-		return ErrorLevelModel
-	}
-
-	// 其他场景继续沿用旧层级判定，待后续步骤统一接管 resource -> level 映射。
-	return getLegacyErrorLevel(input)
+	result := ClassifyError(input)
+	return resourceToLegacyLevel(result.Resource.Value)
 }
 
 // BuildClassifierInput 从错误中提取统一分类信号。
@@ -407,15 +400,13 @@ func BuildClassifierInput(err error) ClassifierInput {
 	return input
 }
 
-func getLegacyErrorLevel(input ClassifierInput) ErrorLevel {
-	if input.ErrorFrom == ErrorFromServer || input.ErrorFrom == ErrorFromUpstream {
-		return ErrorLevelModel
-	}
-
-	switch input.Code {
-	case ErrCodeAuthenticationFailed, ErrCodePermissionDenied:
+func resourceToLegacyLevel(resource ErrorResourceType) ErrorLevel {
+	switch resource {
+	case ErrorResourcePlatform:
+		return ErrorLevelPlatform
+	case ErrorResourceAPIKey:
 		return ErrorLevelKey
-	case ErrCodeNotFound, ErrCodeDeadlineExceeded:
+	case ErrorResourceModel:
 		return ErrorLevelModel
 	default:
 		return ErrorLevelPlatform
