@@ -78,25 +78,6 @@ func (c *Classifier) classifySource(input ClassifierInput) ClassificationDecisio
 	}
 }
 
-func (c *Classifier) classifyLevel(input ClassifierInput) ClassificationDecision[ErrorLevel] {
-	matches := c.matchedRules(ClassificationStage("level"), input)
-	if len(matches) == 0 {
-		return ClassificationDecision[ErrorLevel]{
-			Value:      ErrorLevelModel,
-			Confidence: ConfidenceLow,
-			Explain:    "无层级命中规则，兜底 model",
-		}
-	}
-
-	value, confidence, reason := resolveConservativeLevel(matches, input)
-	return ClassificationDecision[ErrorLevel]{
-		Value:        value,
-		Confidence:   confidence,
-		MatchedRules: collectRuleIDs(matches),
-		Explain:      reason,
-	}
-}
-
 func (c *Classifier) classifyResource(input ClassifierInput) ClassificationDecision[ErrorResourceType] {
 	matches := c.matchedRules(ClassificationStageResource, input)
 	if len(matches) == 0 {
@@ -127,48 +108,6 @@ func (c *Classifier) matchedRules(stage ClassificationStage, input ClassifierInp
 		}
 	}
 	return matched
-}
-
-func resolveConservativeLevel(matches []ClassificationRule, input ClassifierInput) (ErrorLevel, ClassificationConfidence, string) {
-	best := matches[0]
-
-	hasKey := false
-	hasPlatform := false
-	hasModel := false
-	for _, m := range matches {
-		switch levelFromLegacyRule(m) {
-		case ErrorLevelKey:
-			hasKey = true
-		case ErrorLevelPlatform:
-			hasPlatform = true
-		case ErrorLevelModel:
-			hasModel = true
-		}
-	}
-
-	if hasKey && hasPlatform && !hasStrongAuthEvidence(input) {
-		return ErrorLevelModel, ConfidenceLow, "密钥与平台规则冲突且缺少强认证证据，保守降级 model"
-	}
-	if hasPlatform && hasModel && !hasStrongPlatformEvidence(input) {
-		return ErrorLevelModel, ConfidenceLow, "平台与模型规则冲突且平台证据不足，保守选择 model"
-	}
-	if hasKey && hasModel && !hasStrongAuthEvidence(input) {
-		return ErrorLevelModel, ConfidenceLow, "密钥与模型规则冲突且认证证据不足，保守选择 model"
-	}
-
-	return levelFromLegacyRule(best), best.Confidence, best.Reason
-}
-
-// levelFromLegacyRule 从 legacy level 规则推导层级结果。
-func levelFromLegacyRule(rule ClassificationRule) ErrorLevel {
-	switch rule.ID {
-	case "level-auth-status", "level-auth-code", "level-quota-with-key":
-		return ErrorLevelKey
-	case "level-platform-strong-keywords":
-		return ErrorLevelPlatform
-	default:
-		return ErrorLevelModel
-	}
 }
 
 func resolveConservativeResource(matches []ClassificationRule, input ClassifierInput) (ErrorResourceType, ClassificationConfidence, string) {

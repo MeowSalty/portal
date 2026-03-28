@@ -349,19 +349,15 @@ var (
 // GetErrorLevel 根据错误获取错误层级
 func GetErrorLevel(err error) ErrorLevel {
 	input := BuildClassifierInput(err)
-	decision := DefaultClassifier().classifyLevel(input)
-
-	// 兼容历史行为：显式 server/upstream 来源始终按模型层级处理。
-	if input.ErrorFrom == ErrorFromServer || input.ErrorFrom == ErrorFromUpstream {
+	// 第 3 步期间仅做最小兼容：分类器已移除 level 分类流程，
+	// 暂不引入 resource -> level 映射，保留旧层级逻辑。
+	// 但为维持既有行为，若来源判定为 server/upstream，仍按模型层级处理。
+	if source := DefaultClassifier().classifySource(input); source.Value == ErrorFromServer || source.Value == ErrorFromUpstream {
 		return ErrorLevelModel
 	}
 
-	// 兼容回退：仅当命中纯兜底规则时，才沿用旧层级判定。
-	if shouldUseLegacyLevelFallback(decision) {
-		return getLegacyErrorLevel(input)
-	}
-
-	return decision.Value
+	// 其他场景继续沿用旧层级判定，待后续步骤统一接管 resource -> level 映射。
+	return getLegacyErrorLevel(input)
 }
 
 // BuildClassifierInput 从错误中提取统一分类信号。
@@ -409,18 +405,6 @@ func BuildClassifierInput(err error) ClassifierInput {
 	}
 
 	return input
-}
-
-func shouldUseLegacyLevelFallback(decision ClassificationDecision[ErrorLevel]) bool {
-	if decision.Value != ErrorLevelModel || decision.Confidence != ConfidenceLow {
-		return false
-	}
-
-	if len(decision.MatchedRules) != 1 {
-		return false
-	}
-
-	return decision.MatchedRules[0] == "level-fallback-model"
 }
 
 func getLegacyErrorLevel(input ClassifierInput) ErrorLevel {
