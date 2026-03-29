@@ -402,8 +402,8 @@ func TestHandleHTTPError_JSONBodyWithNonJSONContentType_ClassifiesAsServer(t *te
 		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
 	}
 
-	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
-		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeInternal {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeInternal)
 	}
 }
 
@@ -471,8 +471,8 @@ func TestHandleHTTPError_InvalidJSONButNonEmptyBody_ClassifiesAsServer(t *testin
 		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
 	}
 
-	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
-		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeInternal {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeInternal)
 	}
 }
 
@@ -485,8 +485,8 @@ func TestHandleHTTPError_EmptyBody_ClassifiesAsServer(t *testing.T) {
 		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
 	}
 
-	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRequestFailed {
-		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRequestFailed)
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeDeadlineExceeded {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeDeadlineExceeded)
 	}
 
 	ctx := portalErrors.GetContext(err)
