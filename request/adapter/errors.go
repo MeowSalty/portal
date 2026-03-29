@@ -141,10 +141,13 @@ func (a *Adapter) createHTTPError(message string, statusCode int, bodyStr string
 
 	switch errorFrom {
 	case errors.ErrorFromGateway:
-		// B 产生的错误，根据 HTTP 状态码映射
+		// 网关产生的错误，视为该服务不可用
+		errCode = errors.ErrCodeUnavailable
+	case errors.ErrorFromServer:
+		// 供应商产生的错误，根据 HTTP 状态码映射
 		errCode = mapHTTPStatusToErrorCode(statusCode)
-	case errors.ErrorFromServer, errors.ErrorFromUpstream:
-		// C 产生的错误，经 B 转发，视为请求错误
+	case errors.ErrorFromUpstream:
+		// 供应商的上游产生的错误，经供应商转发，视为请求错误
 		errCode = errors.ErrCodeRequestFailed
 	default:
 		// 未知来源
