@@ -134,7 +134,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Priority: 100,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{401, 403},
-				AnyContains:  []string{"api key", "invalid key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥", "令牌"},
+				AnyContains:  []string{"key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥", "令牌"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourceAPIKey,
@@ -178,7 +178,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Stage:    ClassificationStageResource,
 			Priority: 85,
 			Conditions: RuleConditions{
-				AnyContains: []string{"渠道", "路由", "节点", "平台内部", "channel unavailable", "route", "proxy", "backend", "platform"},
+				AnyContains: []string{"平台", "backend", "platform", "service"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourcePlatform,
@@ -193,7 +193,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Priority: 80,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{400, 404},
-				AnyContains:  []string{"模型", "model", "model not found", "model unavailable", "unsupported model", "unknown model"},
+				AnyContains:  []string{"模型", "model"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourceModel,
@@ -207,7 +207,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Stage:    ClassificationStageResource,
 			Priority: 60,
 			Conditions: RuleConditions{
-				AnyContains: []string{"模型", "model", "unsupported model", "unknown model", "model unavailable"},
+				AnyContains: []string{"模型", "model"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourceModel,
@@ -238,10 +238,10 @@ func DefaultClassificationRules() []ClassificationRule {
 				AnyContains: []string{"gateway timeout", "timeout", "超时"},
 			},
 			Decision: RuleDecision{
-				Resource: ErrorResourceModel,
+				Resource: ErrorResourcePlatform,
 			},
 			Confidence: ConfidenceLow,
-			Reason:     "仅命中模糊超时文本，保守归类 model 资源",
+			Reason:     "仅命中模糊超时文本，保守归类 platform 资源",
 		},
 		{
 			ID:         "resource-fallback-model",
