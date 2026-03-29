@@ -178,6 +178,17 @@ func TestFillRequestLogErrorFields_ErrorLevelKey_WhenAuthenticationFailed(t *tes
 	}
 }
 
+func TestFillRequestLogErrorFields_ErrorLevelPlatform_WhenResourceIsPlatform(t *testing.T) {
+	log := &RequestLog{}
+	err := errors.New(errors.ErrCodeInternal, "route backend unavailable")
+
+	fillRequestLogErrorFields(log, err)
+
+	if log.ErrorLevel == nil || *log.ErrorLevel != "platform" {
+		t.Fatalf("ErrorLevel 期望 platform，实际：%+v", log.ErrorLevel)
+	}
+}
+
 func TestFillRequestLogErrorFields_ExtractRequestID(t *testing.T) {
 	log := &RequestLog{}
 	err := errors.NewWithHTTPStatus(errors.ErrCodeRequestFailed, "请求失败", 500).

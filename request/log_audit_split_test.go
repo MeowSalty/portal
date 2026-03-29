@@ -125,8 +125,8 @@ func TestRecordRequestLog_DebugSummaryContainsClassifierContext_WhenPresent(t *t
 
 	requestLog := &RequestLog{
 		Timestamp:                 time.Now().Add(-120 * time.Millisecond),
-		errorClassifyExplain:      "source=upstream(high); level=2(medium); resource=model(medium)",
-		errorClassifyMatchedRules: "source-explicit-upstream,level-upstream-default-model,resource-upstream-default-model",
+		errorClassifyExplain:      "source=upstream(high); resource=model(medium)",
+		errorClassifyMatchedRules: "source-explicit-upstream,resource-upstream-default-model",
 	}
 	req.recordRequestLog(requestLog, nil, false)
 

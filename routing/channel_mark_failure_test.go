@@ -98,3 +98,34 @@ func TestChannelMarkFailure_资源归属优先分类器_模型兜底覆盖旧平
 		t.Fatalf("模型错误计数不符合预期，actual=%d", status.ErrorCount)
 	}
 }
+
+func TestChannelMarkFailure_资源归属优先分类器_平台关键词归属平台(t *testing.T) {
+	storage := newTestChannelStorage()
+	svc, err := health.New(health.Config{Storage: storage})
+	if err != nil {
+		t.Fatalf("创建健康服务失败: %v", err)
+	}
+
+	ch := &Channel{
+		PlatformID:    7,
+		ModelID:       8,
+		APIKeyID:      9,
+		healthService: svc,
+	}
+
+	requestErr := errors.New(errors.ErrCodeInternal, "route backend unavailable")
+
+	ch.MarkFailure(context.TODO(), requestErr)
+
+	if len(storage.data) != 1 {
+		t.Fatalf("写入资源数不符合预期，actual=%d", len(storage.data))
+	}
+
+	status, err := svc.GetStatus(health.ResourceTypePlatform, ch.PlatformID)
+	if err != nil {
+		t.Fatalf("获取平台健康状态失败: %v", err)
+	}
+	if status.ErrorCount != 1 {
+		t.Fatalf("平台错误计数不符合预期，actual=%d", status.ErrorCount)
+	}
+}

@@ -93,6 +93,12 @@ func TestClassifyError_冲突_构造规则冲突时保守降级到模型(t *test
 	if result.Resource.Confidence != ConfidenceLow {
 		t.Fatalf("resource confidence = %q, want %q", result.Resource.Confidence, ConfidenceLow)
 	}
+	if len(result.MatchedRules) == 0 {
+		t.Fatalf("matched rules is empty")
+	}
+	if strings.TrimSpace(result.Explain) == "" {
+		t.Fatalf("explain should not be empty")
+	}
 }
 
 func TestClassifyError_兜底_无信号默认模型承接(t *testing.T) {
@@ -113,6 +119,9 @@ func TestClassifyError_兜底_无信号默认模型承接(t *testing.T) {
 	}
 	if result.Signals == nil {
 		t.Fatalf("signals should not be nil")
+	}
+	if len(result.MatchedRules) == 0 {
+		t.Fatalf("matched rules is empty")
 	}
 }
 

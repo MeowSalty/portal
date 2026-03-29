@@ -130,12 +130,12 @@ func TestIsFromUpstreamAndGetErrorLevel_Upstream(t *testing.T) {
 		t.Fatalf("IsUpstreamError() = false, want true")
 	}
 
-	if got := GetErrorLevel(err); got != ErrorLevelModel {
-		t.Fatalf("GetErrorLevel() = %q, want %q", got, ErrorLevelModel)
+	if got := GetErrorLevel(err); got != ErrorLevelKey {
+		t.Fatalf("GetErrorLevel() = %q, want %q", got, ErrorLevelKey)
 	}
 }
 
-func TestGetErrorLevel_兼容行为_按错误码回退(t *testing.T) {
+func TestGetErrorLevel_兼容行为_基于Resource映射(t *testing.T) {
 	tests := []struct {
 		name string
 		err  error
@@ -147,14 +147,19 @@ func TestGetErrorLevel_兼容行为_按错误码回退(t *testing.T) {
 			want: ErrorLevelKey,
 		},
 		{
-			name: "资源未找到仍为模型层级",
+			name: "资源未找到映射为模型层级",
 			err:  New(ErrCodeNotFound, "资源未找到"),
 			want: ErrorLevelModel,
 		},
 		{
-			name: "未知错误默认平台层级",
-			err:  New(ErrCodeInternal, "内部错误"),
+			name: "命中平台关键词映射为平台层级",
+			err:  New(ErrCodeInternal, "route backend unavailable"),
 			want: ErrorLevelPlatform,
+		},
+		{
+			name: "未知错误默认映射为模型层级",
+			err:  New(ErrCodeInternal, "内部错误"),
+			want: ErrorLevelModel,
 		},
 	}
 
@@ -165,22 +170,4 @@ func TestGetErrorLevel_兼容行为_按错误码回退(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestGetErrorLevel_仅纯兜底规则触发旧层级回退(t *testing.T) {
-	t.Run("仅命中 level-fallback-model 时回退旧逻辑", func(t *testing.T) {
-		err := New(ErrCodeInternal, "内部错误")
-
-		if got := GetErrorLevel(err); got != ErrorLevelPlatform {
-			t.Fatalf("GetErrorLevel() = %d, want %d", got, ErrorLevelPlatform)
-		}
-	})
-
-	t.Run("命中低置信度但非纯兜底规则时不回退", func(t *testing.T) {
-		err := NewWithHTTPStatus(ErrCodeInternal, "gateway timeout", 504)
-
-		if got := GetErrorLevel(err); got != ErrorLevelModel {
-			t.Fatalf("GetErrorLevel() = %d, want %d", got, ErrorLevelModel)
-		}
-	})
 }
