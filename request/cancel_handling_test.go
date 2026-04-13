@@ -31,12 +31,13 @@ func TestNormalizeCanceled_ContextCanceled(t *testing.T) {
 func TestNormalizeCanceled_ContextDeadlineExceeded(t *testing.T) {
 	err := errors.NormalizeCanceled(context.DeadlineExceeded)
 
-	if !errors.IsCode(err, errors.ErrCodeAborted) {
-		t.Fatalf("错误码期望 ABORTED，实际：%v", errors.GetCode(err))
+	// DeadlineExceeded 现在映射为 DEADLINE_EXCEEDED/504/gateway
+	if !errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		t.Fatalf("错误码期望 DEADLINE_EXCEEDED，实际：%v", errors.GetCode(err))
 	}
 
-	if got := errors.GetHTTPStatus(err); got != errors.HTTPStatusClientClosedRequest {
-		t.Fatalf("HTTP 状态码期望 499，实际：%d", got)
+	if got := errors.GetHTTPStatus(err); got != 504 {
+		t.Fatalf("HTTP 状态码期望 504，实际：%d", got)
 	}
 
 	ctx := errors.GetContext(err)
@@ -44,8 +45,8 @@ func TestNormalizeCanceled_ContextDeadlineExceeded(t *testing.T) {
 		t.Fatalf("错误上下文期望不为 nil")
 	}
 
-	if got, ok := ctx["error_from"]; !ok || got != "client" {
-		t.Fatalf("error_from 期望 client，实际：%v", got)
+	if got, ok := ctx["error_from"]; !ok || got != "gateway" {
+		t.Fatalf("error_from 期望 gateway，实际：%v", got)
 	}
 }
 

@@ -40,6 +40,8 @@ const (
 	ErrCodeFailedPrecondition ErrorCode = "FAILED_PRECONDITION"
 	// 操作中止
 	ErrCodeAborted ErrorCode = "ABORTED"
+	// 操作取消（服务端主动取消）
+	ErrCodeCanceled ErrorCode = "CANCELED"
 	// 超出范围
 	ErrCodeOutOfRange ErrorCode = "OUT_OF_RANGE"
 	// 未实现
