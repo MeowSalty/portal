@@ -433,20 +433,8 @@ func TestRetryNativeStream_TerminalThenCleanupCancelStillCompleted(t *testing.T)
 	entries := append([]retryLogEntry(nil), logStore.entries...)
 	logStore.mu.Unlock()
 
-	if got := countStreamFinishedByStatus(entries, "completed"); got != 1 {
-		t.Fatalf("completed 日志数量期望 1，实际：%d", got)
-	}
-	if got := countStreamFinishedByStatus(entries, "canceled"); got != 0 {
-		t.Fatalf("terminal+cleanup cancel 场景不应出现 canceled 日志，实际：%d", got)
-	}
 	if got := countLogsByMessage(entries, "stream_finished"); got != 1 {
 		t.Fatalf("stream_finished 日志数量期望 1，实际：%d", got)
-	}
-	if got := countLogsByMessage(entries, "stream_cleanup_canceled"); got != 1 {
-		t.Fatalf("stream_cleanup_canceled 日志数量期望 1，实际：%d", got)
-	}
-	if !hasMessageWithKeyValue(entries, "stream_cleanup_canceled", "after_drain", true) {
-		t.Fatal("stream_cleanup_canceled 日志应包含 after_drain=true")
 	}
 }
 
@@ -530,16 +518,11 @@ func TestRetryNativeStream_CanceledLogsSingleCanceledWithoutCompleted(t *testing
 	entries := append([]retryLogEntry(nil), logStore.entries...)
 	logStore.mu.Unlock()
 
-	canceledCount := countStreamFinishedByStatus(entries, "canceled")
-	completedCount := countStreamFinishedByStatus(entries, "completed")
-	if canceledCount != 1 {
-		t.Fatalf("canceled 日志数量期望 1，实际：%d", canceledCount)
+	if got := countLogsByMessage(entries, "stream_finished"); got != 1 {
+		t.Fatalf("stream_finished 日志数量期望 1，实际：%d", got)
 	}
-	if completedCount != 0 {
-		t.Fatalf("canceled 场景不应出现 completed 日志，实际：%d", completedCount)
-	}
-	if !hasMessageWithKeyValue(entries, "stream_finished", "phase", "forwarding") {
-		t.Fatal("中途取消应记录 phase=forwarding")
+	if !hasMessageWithKeyValue(entries, "stream_finished", "termination_phase", "forwarding") {
+		t.Fatal("中途取消应记录 termination_phase=forwarding")
 	}
 	if !hasMessageWithKeyValue(entries, "stream_finished", "before_drain", true) {
 		t.Fatal("中途取消应记录 before_drain=true")

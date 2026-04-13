@@ -26,6 +26,29 @@ type RequestLogHooks struct {
 	finalizeOnce sync.Once
 }
 
+// OnStreamFinished 在流结束语义确定后触发。
+func (h *RequestLogHooks) OnStreamFinished(info types.StreamFinishInfo) {
+	if h.log == nil {
+		return
+	}
+
+	if info.CancelSource != "" {
+		h.log.CancelSource = &info.CancelSource
+	}
+	if info.ConnectionStatus != "" {
+		h.log.ConnectionStatus = &info.ConnectionStatus
+	}
+	if info.CompletionState != "" {
+		h.log.CompletionState = &info.CompletionState
+	}
+	if info.FinishStatus != "" {
+		h.log.FinishStatus = &info.FinishStatus
+	}
+	if info.TerminationPhase != "" {
+		h.log.TerminationPhase = &info.TerminationPhase
+	}
+}
+
 // completeAt 执行成功收尾并返回本次是否实际完成收尾。
 //
 // 返回 true 表示本次调用完成了最终收尾；
@@ -39,7 +62,12 @@ func (h *RequestLogHooks) completeAt(end time.Time) bool {
 	h.finalizeOnce.Do(func() {
 		// 计算总耗时
 		h.log.Duration = end.Sub(h.log.Timestamp)
-		h.log.Success = true
+
+		if h.log.IsStream {
+			ensureStreamCompleteDefaults(h.log)
+		}
+
+		h.log.Success = resolveRequestLogSuccess(h.log, true)
 
 		// 同步记录请求日志，避免并发修改导致重复持久化
 		if h.request != nil {
@@ -104,7 +132,12 @@ func (h *RequestLogHooks) OnError(err error) {
 	h.finalizeOnce.Do(func() {
 		// 计算总耗时
 		h.log.Duration = time.Since(h.log.Timestamp)
-		h.log.Success = false
+
+		if h.log.IsStream {
+			ensureStreamErrorDefaults(h.log, err)
+		}
+
+		h.log.Success = resolveRequestLogSuccess(h.log, false)
 
 		// 记录错误信息
 		if err != nil {
@@ -116,6 +149,99 @@ func (h *RequestLogHooks) OnError(err error) {
 			h.request.recordRequestLog(h.log, nil, false)
 		}
 	})
+}
+
+func ensureStreamCompleteDefaults(log *RequestLog) {
+	if log == nil {
+		return
+	}
+
+	if log.CompletionState == nil {
+		state := "completed"
+		log.CompletionState = &state
+	}
+	if log.ConnectionStatus == nil {
+		status := "disconnected"
+		log.ConnectionStatus = &status
+	}
+	if log.FinishStatus == nil {
+		status := "completed"
+		log.FinishStatus = &status
+	}
+}
+
+func ensureStreamErrorDefaults(log *RequestLog, err error) {
+	if log == nil {
+		return
+	}
+
+	if log.CompletionState == nil {
+		if log.FirstByteTime != nil {
+			state := "partial"
+			log.CompletionState = &state
+		} else {
+			state := "not_completed"
+			log.CompletionState = &state
+		}
+	}
+
+	if log.ConnectionStatus == nil {
+		status := "disconnected"
+		log.ConnectionStatus = &status
+	}
+
+	finishStatus, cancelSource := streamTerminationFromError(err)
+	if log.CompletionState != nil && *log.CompletionState == "partial" {
+		finishStatus = "partial"
+	}
+	if log.FinishStatus == nil && finishStatus != "" {
+		log.FinishStatus = &finishStatus
+	}
+	if log.CancelSource == nil && cancelSource != "" {
+		log.CancelSource = &cancelSource
+	}
+}
+
+func streamTerminationFromError(err error) (finishStatus string, cancelSource string) {
+	if err == nil {
+		return "failed", ""
+	}
+
+	if !errors.IsCanceled(err) {
+		return "failed", ""
+	}
+
+	if errors.IsCode(err, errors.ErrCodeDeadlineExceeded) || errors.IsDeadlineExceeded(err) {
+		return "timed_out", "deadline"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) || errors.GetErrorFrom(err) == errors.ErrorFromServer {
+		return "canceled", "server"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) || errors.GetErrorFrom(err) == errors.ErrorFromClient {
+		return "canceled", "client"
+	}
+
+	return "canceled", "unknown"
+}
+
+func resolveRequestLogSuccess(log *RequestLog, defaultSuccess bool) bool {
+	if log == nil || !log.IsStream {
+		return defaultSuccess
+	}
+
+	if log.FinishStatus != nil && *log.FinishStatus == "completed_then_disconnected" {
+		return true
+	}
+	if log.CompletionState != nil && *log.CompletionState == "completed" {
+		return true
+	}
+	if log.FinishStatus != nil && *log.FinishStatus == "completed" {
+		return true
+	}
+
+	return false
 }
 
 // ChatCompletionStream 处理流式聊天完成请求

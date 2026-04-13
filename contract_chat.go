@@ -9,6 +9,22 @@ import (
 	"github.com/MeowSalty/portal/routing"
 )
 
+func classifyStreamCanceledStatus(err error) (status string, cancelSource string) {
+	if errors.IsDeadlineExceeded(err) || errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		return "timed_out", "deadline"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) || errors.GetErrorFrom(err) == errors.ErrorFromServer {
+		return "canceled", "server"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) || errors.GetErrorFrom(err) == errors.ErrorFromClient {
+		return "canceled", "client"
+	}
+
+	return "canceled", "unknown"
+}
+
 // ChatCompletion 处理聊天完成请求（非流式）
 func (p *Portal) ChatCompletion(ctx context.Context, request *types.RequestContract) (*types.ResponseContract, error) {
 	p.logger.DebugContext(ctx, "request_started", "model", request.Model)
@@ -50,7 +66,16 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 			channel, err := p.routing.GetChannel(ctx, request.Model)
 			if err != nil {
 				if errors.IsCode(err, errors.ErrCodeAborted) || errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
-					p.logger.InfoContext(ctx, "stream_finished", "model", request.Model, "status", "canceled", "error", errors.NormalizeCanceled(err))
+					cancelErr := normalizeStreamCanceledError(ctx, err)
+					status, cancelSource := classifyStreamCanceledStatus(cancelErr)
+					p.logger.InfoContext(ctx, "stream_finished",
+						"model", request.Model,
+						"status", status,
+						"completion_state", "not_completed",
+						"connection_status", "disconnected",
+						"cancel_source", cancelSource,
+						"error", cancelErr,
+					)
 				} else {
 					p.logger.ErrorContext(ctx, "request_failed", "model", request.Model, "error", err)
 				}
@@ -104,8 +129,15 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				}
 				// 特殊处理：主动取消/操作终止不视为失败噪音
 				if errors.IsCode(err, errors.ErrCodeAborted) || errors.IsCanceled(err) || errors.IsCanceled(ctx.Err()) {
-					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled")
-					channel.MarkSuccess(ctx)
+					cancelErr := normalizeStreamCanceledError(ctx, err)
+					status, cancelSource := classifyStreamCanceledStatus(cancelErr)
+					channelLogger.InfoContext(ctx, "stream_finished",
+						"status", status,
+						"completion_state", "not_completed",
+						"connection_status", "disconnected",
+						"cancel_source", cancelSource,
+						"error", cancelErr,
+					)
 					close(internalStream)
 					break
 				}
@@ -115,7 +147,12 @@ func (p *Portal) ChatCompletionStream(ctx context.Context, request *types.Reques
 				break
 			}
 			channel.MarkSuccess(ctx)
-			p.logger.InfoContext(ctx, "stream_finished", "model", request.Model, "status", "completed")
+			p.logger.InfoContext(ctx, "stream_finished",
+				"model", request.Model,
+				"status", "completed",
+				"completion_state", "completed",
+				"connection_status", "disconnected",
+			)
 			break
 		}
 	}()

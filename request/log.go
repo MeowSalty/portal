@@ -59,6 +59,13 @@ type RequestLog struct {
 	HTTPStatus *int    `json:"http_status,omitempty"`
 	ErrorFrom  *string `json:"error_from,omitempty"`
 
+	// 流式结束语义字段（第一阶段）。
+	CancelSource     *string `json:"cancel_source,omitempty"`
+	ConnectionStatus *string `json:"connection_status,omitempty"`
+	CompletionState  *string `json:"completion_state,omitempty"`
+	FinishStatus     *string `json:"finish_status,omitempty"`
+	TerminationPhase *string `json:"termination_phase,omitempty"`
+
 	// 上游错误字段（若能从 response_body 解析到）。
 	UpstreamErrorType    *string `json:"upstream_error_type,omitempty"`
 	UpstreamErrorCode    *string `json:"upstream_error_code,omitempty"`
@@ -126,6 +133,21 @@ func (p *Request) recordRequestLog(
 	}
 	if requestLog.errorClassifyMatchedRules != "" {
 		debugArgs = append(debugArgs, "error_classify_matched_rules", requestLog.errorClassifyMatchedRules)
+	}
+	if requestLog.CancelSource != nil {
+		debugArgs = append(debugArgs, "cancel_source", *requestLog.CancelSource)
+	}
+	if requestLog.ConnectionStatus != nil {
+		debugArgs = append(debugArgs, "connection_status", *requestLog.ConnectionStatus)
+	}
+	if requestLog.CompletionState != nil {
+		debugArgs = append(debugArgs, "completion_state", *requestLog.CompletionState)
+	}
+	if requestLog.FinishStatus != nil {
+		debugArgs = append(debugArgs, "finish_status", *requestLog.FinishStatus)
+	}
+	if requestLog.TerminationPhase != nil {
+		debugArgs = append(debugArgs, "termination_phase", *requestLog.TerminationPhase)
 	}
 	log.Debug("请求结束摘要", debugArgs...)
 

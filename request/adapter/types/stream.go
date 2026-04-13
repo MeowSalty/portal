@@ -214,6 +214,25 @@ type Usage struct {
 	TotalTokens int
 }
 
+// StreamFinishInfo 表示流式链路结束时的语义快照。
+//
+// 该结构用于在公共流式链路与上层日志之间传递统一结束语义，
+// 便于上层进行 success 判定与结构化日志落地。
+type StreamFinishInfo struct {
+	// HasValidOutput 表示是否已有有效输出。
+	HasValidOutput bool
+	// CompletionState 完成状态：completed / partial / not_completed。
+	CompletionState string
+	// ConnectionStatus 连接状态：disconnected / completed_then_disconnected。
+	ConnectionStatus string
+	// FinishStatus 结束状态：completed / completed_then_disconnected / partial / canceled / timed_out / failed。
+	FinishStatus string
+	// CancelSource 取消来源：client / server / deadline / unknown。
+	CancelSource string
+	// TerminationPhase 终止阶段（可选）。
+	TerminationPhase string
+}
+
 // StreamHooks 定义流式响应的生命周期钩子接口。
 // 实现该接口可以监听流式响应的关键事件，用于监控、日志记录、性能分析等场景。
 //
@@ -249,6 +268,11 @@ type StreamHooks interface {
 	//
 	// 参数 u 包含输入、输出和总 token 数量。
 	OnUsage(u Usage)
+
+	// OnStreamFinished 在流结束语义确定后触发。
+	//
+	// 该回调用于向上层传递流式结束语义快照，便于统一 success 判定与结构化日志字段。
+	OnStreamFinished(info StreamFinishInfo)
 
 	// OnComplete 在流正常结束时触发。
 	// 该方法用于记录流结束时间，可用于计算总耗时（Total Time）。

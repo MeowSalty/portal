@@ -152,14 +152,29 @@ func retryNativeStream[T any](
 			if err != nil {
 				closeDone()
 				if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
-					cancelErr := errors.NormalizeCanceled(err)
-					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", cancelErr)
+					cancelErr := normalizeStreamCanceledError(ctx, err)
+					status, cancelSource := streamCanceledStatus(cancelErr)
+					channelLogger.InfoContext(ctx, "stream_finished",
+						"status", status,
+						"completion_state", "not_completed",
+						"connection_status", "disconnected",
+						"cancel_source", cancelSource,
+						"error", cancelErr,
+					)
 					return
 				}
 
 				if errors.IsRetryable(err) {
 					if ctx.Err() != nil {
-						channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "error", errors.NormalizeCanceled(ctx.Err()))
+						cancelErr := normalizeStreamCanceledError(ctx, ctx.Err())
+						status, cancelSource := streamCanceledStatus(cancelErr)
+						channelLogger.InfoContext(ctx, "stream_finished",
+							"status", status,
+							"completion_state", "not_completed",
+							"connection_status", "disconnected",
+							"cancel_source", cancelSource,
+							"error", cancelErr,
+						)
 						return
 					}
 
@@ -169,9 +184,17 @@ func retryNativeStream[T any](
 				}
 
 				channel.MarkFailure(ctx, err)
+				channelLogger.WarnContext(ctx, "stream_finished",
+					"status", "failed",
+					"completion_state", "not_completed",
+					"connection_status", "disconnected",
+					"error", err,
+				)
 				return
 			}
+
 			streamDrained := false
+			hasForwardedOutput := false
 			for {
 				var (
 					event any
@@ -186,7 +209,39 @@ func retryNativeStream[T any](
 					case event, ok = <-nativeOutput:
 					case <-ctx.Done():
 						closeDone()
-						channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "phase", "forwarding", "before_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
+						cancelErr := normalizeStreamCanceledError(ctx, ctx.Err())
+						status, cancelSource := streamCanceledStatus(cancelErr)
+						completionState := "not_completed"
+						if hasForwardedOutput {
+							completionState = "partial"
+						}
+
+						select {
+						case _, drained := <-nativeOutput:
+							if !drained {
+								channel.MarkSuccess(ctx)
+								channelLogger.InfoContext(ctx, "stream_finished",
+									"status", "completed_then_disconnected",
+									"completion_state", "completed",
+									"connection_status", "completed_then_disconnected",
+									"cancel_source", cancelSource,
+									"termination_phase", "forwarding",
+									"before_drain", true,
+								)
+								return
+							}
+						default:
+						}
+
+						channelLogger.InfoContext(ctx, "stream_finished",
+							"status", status,
+							"completion_state", completionState,
+							"connection_status", "disconnected",
+							"cancel_source", cancelSource,
+							"termination_phase", "forwarding",
+							"before_drain", true,
+							"error", cancelErr,
+						)
 						return
 					}
 				}
@@ -204,9 +259,54 @@ func retryNativeStream[T any](
 				select {
 				case <-ctx.Done():
 					closeDone()
-					channelLogger.InfoContext(ctx, "stream_finished", "status", "canceled", "phase", "forwarding", "before_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
+					cancelErr := normalizeStreamCanceledError(ctx, ctx.Err())
+					status, cancelSource := streamCanceledStatus(cancelErr)
+					completionState := "not_completed"
+					if hasForwardedOutput {
+						completionState = "partial"
+					}
+
+					select {
+					case _, drained := <-nativeOutput:
+						if !drained {
+							channel.MarkSuccess(ctx)
+							channelLogger.InfoContext(ctx, "stream_finished",
+								"status", "completed_then_disconnected",
+								"completion_state", "completed",
+								"connection_status", "completed_then_disconnected",
+								"cancel_source", cancelSource,
+								"termination_phase", "forwarding",
+								"before_drain", true,
+							)
+							return
+						}
+					default:
+					}
+
+					if completionState == "completed" {
+						channel.MarkSuccess(ctx)
+						channelLogger.InfoContext(ctx, "stream_finished",
+							"status", "completed_then_disconnected",
+							"completion_state", completionState,
+							"connection_status", "completed_then_disconnected",
+							"cancel_source", cancelSource,
+							"termination_phase", "forwarding",
+							"before_drain", true,
+						)
+						return
+					}
+					channelLogger.InfoContext(ctx, "stream_finished",
+						"status", status,
+						"completion_state", completionState,
+						"connection_status", "disconnected",
+						"cancel_source", cancelSource,
+						"termination_phase", "forwarding",
+						"before_drain", true,
+						"error", cancelErr,
+					)
 					return
 				case out <- evt:
+					hasForwardedOutput = true
 				}
 			}
 
@@ -214,16 +314,81 @@ func retryNativeStream[T any](
 
 			cleanupCanceled := streamDrained && ctx.Err() != nil
 			if cleanupCanceled {
-				channelLogger.DebugContext(ctx, "stream_cleanup_canceled", "after_drain", true, "error", errors.NormalizeCanceled(ctx.Err()))
+				cancelErr := normalizeStreamCanceledError(ctx, ctx.Err())
+				status, cancelSource := streamCanceledStatus(cancelErr)
+				if hasForwardedOutput {
+					channelLogger.DebugContext(ctx, "stream_cleanup_canceled",
+						"status", status,
+						"after_drain", true,
+						"cancel_source", cancelSource,
+					)
+				} else {
+					channelLogger.InfoContext(ctx, "stream_finished",
+						"status", status,
+						"completion_state", "not_completed",
+						"connection_status", "disconnected",
+						"cancel_source", cancelSource,
+						"termination_phase", "drain",
+						"after_drain", true,
+						"error", cancelErr,
+					)
+					return
+				}
 			}
 
 			channel.MarkSuccess(ctx)
-			channelLogger.InfoContext(ctx, "stream_finished", "status", "completed")
+			channelLogger.InfoContext(ctx, "stream_finished",
+				"status", "completed",
+				"completion_state", "completed",
+				"connection_status", "disconnected",
+			)
 			return
 		}
 	}()
 
 	return out
+}
+
+func normalizeStreamCanceledError(ctx context.Context, err error) error {
+	if ctx != nil && ctx.Err() != nil {
+		source := errors.GetErrorFrom(err)
+		isClient := source != errors.ErrorFromServer
+		return errors.NormalizeCanceledWithSource(ctx.Err(), isClient)
+	}
+
+	if err == nil {
+		return errors.NormalizeCanceled(context.Canceled)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) {
+		return errors.NormalizeCanceledWithSource(err, true)
+	}
+
+	if errors.IsDeadlineExceeded(err) || errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	return errors.NormalizeCanceled(err)
+}
+
+func streamCanceledStatus(err error) (status string, cancelSource string) {
+	if errors.IsDeadlineExceeded(err) || errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		return "timed_out", "deadline"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) || errors.GetErrorFrom(err) == errors.ErrorFromServer {
+		return "canceled", "server"
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) || errors.GetErrorFrom(err) == errors.ErrorFromClient {
+		return "canceled", "client"
+	}
+
+	return "canceled", "unknown"
 }
 
 // compatFallback 构造非流式 compat 降级回调

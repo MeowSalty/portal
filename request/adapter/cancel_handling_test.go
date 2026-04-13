@@ -73,6 +73,8 @@ func (h *hookSpy) OnFirstChunk(t time.Time) {
 
 func (h *hookSpy) OnUsage(u types.Usage) {}
 
+func (h *hookSpy) OnStreamFinished(info types.StreamFinishInfo) {}
+
 func (h *hookSpy) OnComplete(end time.Time) {
 	h.completeCount.Add(1)
 }

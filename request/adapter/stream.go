@@ -351,30 +351,46 @@ func (a *Adapter) handleNativeStreaming(
 		defer func() {
 			// 标记断连状态
 			streamState.MarkDisconnected()
+			finishInfo := buildNativeStreamFinishInfo(streamState, streamErr)
 
 			if hooks != nil {
-				if streamErr != nil {
-					hooks.OnError(streamErr)
-				} else {
+				hooks.OnStreamFinished(finishInfo)
+				if isSuccessfulStreamFinish(finishInfo) {
 					hooks.OnComplete(time.Now())
+				} else {
+					if streamErr == nil {
+						streamErr = errors.New(errors.ErrCodeStreamError, "流式响应未完成").
+							WithContext("completion_state", finishInfo.CompletionState).
+							WithContext("connection_status", finishInfo.ConnectionStatus).
+							WithContext("finish_status", finishInfo.FinishStatus).
+							WithContext("error_from", string(errors.ErrorFromGateway))
+					}
+					hooks.OnError(streamErr)
 				}
 			}
 			// stream_finished 语义统一由上层重试/入口层记录，
 			// 适配层仅输出底层调试信息，避免 completed/canceled 重复记账。
-			if streamErr == nil {
+			if isSuccessfulStreamFinish(finishInfo) {
 				log.Debug("native_stream_worker_finished",
-					"status", "completed",
+					"status", finishInfo.FinishStatus,
+					"completion_state", finishInfo.CompletionState,
+					"connection_status", finishInfo.ConnectionStatus,
 					"stream_state", streamState,
 				)
 			} else if errors.IsCanceled(streamErr) {
 				log.Debug("native_stream_worker_finished",
-					"status", "canceled",
+					"status", finishInfo.FinishStatus,
+					"completion_state", finishInfo.CompletionState,
+					"connection_status", finishInfo.ConnectionStatus,
+					"cancel_source", finishInfo.CancelSource,
 					"error", streamErr,
 					"stream_state", streamState,
 				)
 			} else {
 				log.Warn("native_stream_worker_finished",
-					"status", "aborted",
+					"status", finishInfo.FinishStatus,
+					"completion_state", finishInfo.CompletionState,
+					"connection_status", finishInfo.ConnectionStatus,
 					"error", streamErr,
 					"stream_state", streamState,
 				)
@@ -496,6 +512,92 @@ func (a *Adapter) handleNativeStreaming(
 	}()
 
 	return nil
+}
+
+func buildNativeStreamFinishInfo(state *StreamState, err error) types.StreamFinishInfo {
+	info := types.StreamFinishInfo{
+		ConnectionStatus: "disconnected",
+	}
+
+	if state == nil {
+		info.CompletionState = "not_completed"
+		info.FinishStatus = "failed"
+		if err != nil {
+			info.FinishStatus, info.CancelSource = classifyStreamCancel(err)
+		}
+		return info
+	}
+
+	if state.HasCompletionSignal || state.ReceivedTerminalEvent {
+		info.CompletionState = "completed"
+	} else if state.HasValidOutput {
+		info.CompletionState = "partial"
+	} else {
+		info.CompletionState = "not_completed"
+	}
+
+	if state.DisconnectedAfterCompletion {
+		info.ConnectionStatus = "completed_then_disconnected"
+	}
+
+	if state.DisconnectionPhase != "" {
+		info.TerminationPhase = string(state.DisconnectionPhase)
+	}
+
+	switch info.CompletionState {
+	case "completed":
+		if info.ConnectionStatus == "completed_then_disconnected" {
+			info.FinishStatus = "completed_then_disconnected"
+		} else {
+			info.FinishStatus = "completed"
+		}
+	case "partial":
+		info.FinishStatus = "partial"
+	default:
+		info.FinishStatus = "failed"
+	}
+
+	if err != nil {
+		if finishStatus, cancelSource := classifyStreamCancel(err); finishStatus != "" {
+			if info.CompletionState == "completed" {
+				if info.ConnectionStatus == "completed_then_disconnected" {
+					info.FinishStatus = "completed_then_disconnected"
+				} else {
+					info.FinishStatus = "completed"
+				}
+			} else if info.CompletionState == "partial" {
+				info.FinishStatus = "partial"
+				info.CancelSource = cancelSource
+			} else {
+				info.FinishStatus = finishStatus
+				info.CancelSource = cancelSource
+			}
+		}
+	}
+
+	return info
+}
+
+func classifyStreamCancel(err error) (finishStatus string, cancelSource string) {
+	if err == nil || !errors.IsCanceled(err) {
+		return "", ""
+	}
+
+	if errors.IsCode(err, errors.ErrCodeDeadlineExceeded) || errors.IsDeadlineExceeded(err) {
+		return "timed_out", "deadline"
+	}
+	if errors.IsCode(err, errors.ErrCodeCanceled) || errors.GetErrorFrom(err) == errors.ErrorFromServer {
+		return "canceled", "server"
+	}
+	if errors.IsCode(err, errors.ErrCodeAborted) || errors.GetErrorFrom(err) == errors.ErrorFromClient {
+		return "canceled", "client"
+	}
+
+	return "canceled", "unknown"
+}
+
+func isSuccessfulStreamFinish(info types.StreamFinishInfo) bool {
+	return info.CompletionState == "completed"
 }
 
 // sendStreamError 向流发送错误信息
