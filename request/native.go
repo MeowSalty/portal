@@ -81,7 +81,7 @@ func (p *Request) Native(
 
 	if err != nil {
 		if errors.IsCanceled(err) {
-			err = errors.NormalizeCanceled(err)
+			err = normalizeNonStreamCanceledError(err)
 		}
 
 		// 记录失败统计

@@ -31,13 +31,17 @@ func retryNonStream[T any](
 	var result T
 	for {
 		if ctx.Err() != nil {
-			return result, errors.NormalizeCanceled(ctx.Err())
+			return result, normalizeNonStreamCanceledError(ctx, ctx.Err())
 		}
 
 		channel, err := getChannel(ctx)
 		if err != nil {
 			if ctx.Err() != nil || errors.IsCanceled(err) {
-				return result, errors.NormalizeCanceled(err)
+				cancelErr := err
+				if ctx.Err() != nil {
+					cancelErr = ctx.Err()
+				}
+				return result, normalizeNonStreamCanceledError(ctx, cancelErr)
 			}
 
 			if onChannelErr != nil {
@@ -64,14 +68,18 @@ func retryNonStream[T any](
 
 		if err != nil {
 			if ctx.Err() != nil || errors.IsCanceled(err) || errors.IsCode(err, errors.ErrCodeAborted) {
-				cancelErr := errors.NormalizeCanceled(err)
+				sourceErr := err
+				if ctx.Err() != nil {
+					sourceErr = ctx.Err()
+				}
+				cancelErr := normalizeNonStreamCanceledError(ctx, sourceErr)
 				channelLogger.InfoContext(ctx, "request_canceled", "error", cancelErr)
 				return result, cancelErr
 			}
 
 			if errors.IsRetryable(err) {
 				if ctx.Err() != nil {
-					cancelErr := errors.NormalizeCanceled(ctx.Err())
+					cancelErr := normalizeNonStreamCanceledError(ctx, ctx.Err())
 					channelLogger.InfoContext(ctx, "request_canceled", "error", cancelErr)
 					return result, cancelErr
 				}
@@ -88,6 +96,44 @@ func retryNonStream[T any](
 		channelLogger.InfoContext(ctx, "request_finished", "status", "completed")
 		return result, nil
 	}
+}
+
+// normalizeNonStreamCanceledError 归一化非流式取消类错误。
+//
+// 语义规则：
+//   - deadline 统一映射为 DEADLINE_EXCEEDED/504/gateway
+//   - 已带明确来源的取消错误保持原来源
+//   - 外层 ctx 已取消时默认视为客户端取消
+//   - 外层 ctx 未取消但出现取消错误时视为服务端取消
+func normalizeNonStreamCanceledError(ctx context.Context, err error) error {
+	if !errors.IsCanceled(err) {
+		return err
+	}
+
+	switch errors.GetErrorFrom(err) {
+	case errors.ErrorFromServer:
+		return errors.NormalizeCanceledWithSource(err, false)
+	case errors.ErrorFromClient:
+		return errors.NormalizeCanceledWithSource(err, true)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) {
+		return errors.NormalizeCanceledWithSource(err, true)
+	}
+
+	if errors.IsDeadlineExceeded(err) || errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	if ctx != nil && ctx.Err() != nil {
+		return errors.NormalizeCanceledWithSource(ctx.Err(), true)
+	}
+
+	return errors.NormalizeCanceledWithSource(err, false)
 }
 
 // retryNativeStream 原生流式重试通用函数

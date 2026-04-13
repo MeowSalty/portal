@@ -68,7 +68,7 @@ func (p *Request) ChatCompletion(
 
 	if err != nil {
 		if errors.IsCanceled(err) {
-			err = errors.NormalizeCanceled(err)
+			err = normalizeNonStreamCanceledError(err)
 		}
 
 		// 记录失败统计
@@ -99,4 +99,36 @@ func (p *Request) ChatCompletion(
 
 	log.InfoContext(ctx, "聊天完成请求成功完成")
 	return response, nil
+}
+
+// normalizeNonStreamCanceledError 归一化非流式取消类错误。
+//
+// 说明：
+//   - 优先复用错误中已有的来源语义（error_from）
+//   - 兼容保留历史默认行为：无法判定来源时按客户端取消处理
+func normalizeNonStreamCanceledError(err error) error {
+	if !errors.IsCanceled(err) {
+		return err
+	}
+
+	switch errors.GetErrorFrom(err) {
+	case errors.ErrorFromServer:
+		return errors.NormalizeCanceledWithSource(err, false)
+	case errors.ErrorFromClient:
+		return errors.NormalizeCanceledWithSource(err, true)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeCanceled) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	if errors.IsCode(err, errors.ErrCodeAborted) {
+		return errors.NormalizeCanceledWithSource(err, true)
+	}
+
+	if errors.IsDeadlineExceeded(err) || errors.IsCode(err, errors.ErrCodeDeadlineExceeded) {
+		return errors.NormalizeCanceledWithSource(err, false)
+	}
+
+	return errors.NormalizeCanceled(err)
 }
