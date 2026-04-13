@@ -1,6 +1,7 @@
 package adapter
 
 import (
+	"bytes"
 	"encoding/json"
 	"regexp"
 	"strings"
@@ -43,6 +44,37 @@ func (a *Adapter) handleHTTPError(message string, statusCode int, body []byte) e
 	errorFrom := classifyErrorFromInput(classifyInput)
 
 	return a.createHTTPError(message, statusCode, bodyStr, errorFrom)
+}
+
+// tryBuildStreamChunkError 尝试将流中错误块构造成统一错误。
+//
+// 说明：
+//   - 仅识别 JSON 顶层包含 error 字段的流块。
+//   - 错误来源分类复用 classifyErrorFromInput。
+//   - 流中错误块通常不携带 HTTP 状态码，因此不再伪造状态码。
+//   - portal 错误码由结构化字段 + 错误来源映射得出。
+func (a *Adapter) tryBuildStreamChunkError(message string, body []byte) (error, bool) {
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 {
+		return nil, false
+	}
+
+	var jsonData map[string]interface{}
+	if err := json.Unmarshal(trimmed, &jsonData); err != nil {
+		return nil, false
+	}
+
+	if _, ok := jsonData["error"]; !ok {
+		return nil, false
+	}
+
+	bodyStr, classifyInput := a.normalizeHTTPErrorBody(trimmed)
+	classifyInput.hasHTTPResponse = true
+	errorFrom := classifyErrorFromInput(classifyInput)
+
+	streamErr := a.createStreamChunkError(message, bodyStr, classifyInput, errorFrom)
+
+	return streamErr, true
 }
 
 // normalizeHTTPErrorBody 规范化 HTTP 错误体，并构造统一分类输入。
@@ -132,6 +164,58 @@ func classifyErrorFromInput(input errorClassifyInput) errors.ErrorFromValue {
 
 	result := errors.ClassifyError(classifierInput)
 	return result.Source.Value
+}
+
+// createStreamChunkError 根据流中错误块创建不携带 HTTP 状态码的错误。
+func (a *Adapter) createStreamChunkError(message string, bodyStr string, input errorClassifyInput, errorFrom errors.ErrorFromValue) error {
+	errCode := mapStreamChunkErrorCode(input, errorFrom)
+
+	return errors.New(errCode, message).
+		WithContext("response_body", bodyStr).
+		WithContext("http_response_received", true).
+		WithContext("http_status_available", false).
+		WithContext("stream_error_chunk", true).
+		WithContext("error_from", string(errorFrom))
+}
+
+// mapStreamChunkErrorCode 将流中结构化错误映射为统一错误码。
+func mapStreamChunkErrorCode(input errorClassifyInput, errorFrom errors.ErrorFromValue) errors.ErrorCode {
+	text := strings.ToLower(strings.Join([]string{input.errorType, input.errorCode, input.errorMessage, input.rawText}, " "))
+
+	if containsAny(text,
+		"rate_limit", "rate limit", "too many requests", "quota", "并发限制", "限流", "额度", "配额") {
+		return errors.ErrCodeRateLimitExceeded
+	}
+
+	if containsAny(text,
+		"invalid", "bad request", "invalid argument", "invalid_request", "参数错误", "无效参数") {
+		return errors.ErrCodeInvalidArgument
+	}
+
+	if containsAny(text,
+		"timeout", "timed out", "deadline exceeded", "超时") {
+		return errors.ErrCodeDeadlineExceeded
+	}
+
+	switch errorFrom {
+	case errors.ErrorFromGateway:
+		return errors.ErrCodeUnavailable
+	case errors.ErrorFromUpstream:
+		return errors.ErrCodeRequestFailed
+	case errors.ErrorFromServer:
+		return errors.ErrCodeRequestFailed
+	default:
+		return errors.ErrCodeUnknown
+	}
+}
+
+func containsAny(text string, keywords ...string) bool {
+	for _, kw := range keywords {
+		if strings.Contains(text, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 // createHTTPError 根据错误来源和状态码创建适当的错误

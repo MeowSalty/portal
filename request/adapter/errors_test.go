@@ -494,3 +494,54 @@ func TestHandleHTTPError_EmptyBody_ClassifiesAsServer(t *testing.T) {
 		t.Fatalf("http_response_received 上下文不符合预期：%+v", ctx["http_response_received"])
 	}
 }
+
+func TestTryBuildStreamChunkError_StructuredError_ReusesClassificationPath(t *testing.T) {
+	a := &Adapter{}
+
+	err, ok := a.tryBuildStreamChunkError(
+		"API 流中返回错误块",
+		[]byte(`{"error":{"type":"rate_limit_error","message":"Concurrency limit exceeded for user, please retry later"}}`),
+	)
+	if !ok {
+		t.Fatalf("tryBuildStreamChunkError() 期望识别为错误块")
+	}
+	if err == nil {
+		t.Fatalf("tryBuildStreamChunkError() 返回错误为空")
+	}
+
+	if from := portalErrors.GetErrorFrom(err); from != portalErrors.ErrorFromServer {
+		t.Fatalf("GetErrorFrom() = %q, want %q", from, portalErrors.ErrorFromServer)
+	}
+	if got := portalErrors.GetCode(err); got != portalErrors.ErrCodeRateLimitExceeded {
+		t.Fatalf("GetCode() = %s, want %s", got, portalErrors.ErrCodeRateLimitExceeded)
+	}
+	if portalErrors.HasHTTPStatus(err) {
+		t.Fatalf("流错误块不应携带 HTTP 状态码")
+	}
+
+	ctx := portalErrors.GetContext(err)
+	if got, ok := ctx["http_response_received"].(bool); !ok || !got {
+		t.Fatalf("http_response_received 上下文不符合预期：%+v", ctx["http_response_received"])
+	}
+	if got, ok := ctx["http_status_available"].(bool); !ok || got {
+		t.Fatalf("http_status_available 上下文不符合预期：%+v", ctx["http_status_available"])
+	}
+	if got, ok := ctx["stream_error_chunk"].(bool); !ok || !got {
+		t.Fatalf("stream_error_chunk 上下文不符合预期：%+v", ctx["stream_error_chunk"])
+	}
+	if got, ok := ctx["response_body"].(string); !ok || got == "" {
+		t.Fatalf("response_body 上下文不符合预期：%+v", ctx["response_body"])
+	}
+}
+
+func TestTryBuildStreamChunkError_NonErrorPayload_ReturnsFalse(t *testing.T) {
+	a := &Adapter{}
+
+	err, ok := a.tryBuildStreamChunkError("API 流中返回错误块", []byte(`{"type":"response.output_text.delta","delta":"hi"}`))
+	if ok {
+		t.Fatalf("tryBuildStreamChunkError() 对非错误块不应命中")
+	}
+	if err != nil {
+		t.Fatalf("tryBuildStreamChunkError() 非错误块应返回 nil，实际：%v", err)
+	}
+}

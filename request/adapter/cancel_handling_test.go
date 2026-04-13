@@ -57,12 +57,15 @@ func (p *cancelTestProvider) ExtractUsageFromNativeStreamEvent(variant string, e
 }
 
 type hookSpy struct {
-	completeCount atomic.Int32
-	errorCount    atomic.Int32
-	errorCh       chan error
+	firstChunkCount atomic.Int32
+	completeCount   atomic.Int32
+	errorCount      atomic.Int32
+	errorCh         chan error
 }
 
-func (h *hookSpy) OnFirstChunk(t time.Time) {}
+func (h *hookSpy) OnFirstChunk(t time.Time) {
+	h.firstChunkCount.Add(1)
+}
 
 func (h *hookSpy) OnUsage(u types.Usage) {}
 
@@ -156,5 +159,83 @@ func TestHandleNativeStreaming_CancelTriggersOnErrorOnly(t *testing.T) {
 
 	if hooks.completeCount.Load() != 0 {
 		t.Fatalf("取消场景不应触发 OnComplete，实际次数：%d", hooks.completeCount.Load())
+	}
+}
+
+type streamErrorChunkProvider struct {
+	cancelTestProvider
+	parseCalls atomic.Int32
+}
+
+func (p *streamErrorChunkProvider) ParseNativeStreamEvent(variant string, raw []byte) (any, error) {
+	p.parseCalls.Add(1)
+	return map[string]any{"raw": string(raw)}, nil
+}
+
+func TestHandleNativeStreaming_StreamErrorChunk_BypassNativeEventParser(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Fatalf("响应写入器不支持 Flusher")
+		}
+
+		_, _ = fmt.Fprintln(w, `data: {"error":{"type":"rate_limit_error","message":"Concurrency limit exceeded for user, please retry later"}}`)
+		flusher.Flush()
+	}))
+	defer server.Close()
+
+	provider := &streamErrorChunkProvider{}
+	a := NewAdapterFromProvider(provider)
+	channel := &routing.Channel{
+		Provider:   "cancel-test",
+		BaseURL:    server.URL,
+		ModelName:  "m",
+		APIKey:     "k",
+		APIVariant: "responses",
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	output := make(chan any, 8)
+	hooks := &hookSpy{errorCh: make(chan error, 1)}
+
+	if err := a.handleNativeStreaming(ctx, channel, nil, map[string]any{"x": 1}, output, hooks); err != nil {
+		t.Fatalf("handleNativeStreaming 启动失败：%v", err)
+	}
+
+	select {
+	case <-time.After(2 * time.Second):
+		t.Fatalf("流错误块场景未收到 OnError 回调")
+	case err := <-hooks.errorCh:
+		if from := errors.GetErrorFrom(err); from != errors.ErrorFromServer {
+			t.Fatalf("GetErrorFrom() = %q, want %q", from, errors.ErrorFromServer)
+		}
+		if got := errors.GetCode(err); got != errors.ErrCodeRateLimitExceeded {
+			t.Fatalf("GetCode() = %s, want %s", got, errors.ErrCodeRateLimitExceeded)
+		}
+		if errors.HasHTTPStatus(err) {
+			t.Fatalf("流错误块不应携带 HTTP 状态码")
+		}
+		ctxMap := errors.GetContext(err)
+		if got, ok := ctxMap["stream_error_chunk"].(bool); !ok || !got {
+			t.Fatalf("stream_error_chunk 上下文不符合预期：%+v", ctxMap["stream_error_chunk"])
+		}
+		if got, ok := ctxMap["http_status_available"].(bool); !ok || got {
+			t.Fatalf("http_status_available 上下文不符合预期：%+v", ctxMap["http_status_available"])
+		}
+	}
+
+	if got := provider.parseCalls.Load(); got != 0 {
+		t.Fatalf("ParseNativeStreamEvent 不应被调用，实际调用次数：%d", got)
+	}
+
+	if got := hooks.firstChunkCount.Load(); got != 0 {
+		t.Fatalf("错误块场景不应触发 OnFirstChunk，实际次数：%d", got)
+	}
+
+	if hooks.completeCount.Load() != 0 {
+		t.Fatalf("错误块场景不应触发 OnComplete，实际次数：%d", hooks.completeCount.Load())
 	}
 }

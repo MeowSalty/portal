@@ -239,6 +239,11 @@ func (a *Adapter) handleNativeStreaming(
 						return
 					}
 
+					if errChunk, ok := a.tryBuildStreamChunkError("API 流中返回错误块", data); ok {
+						streamErr = errChunk
+						return
+					}
+
 					// 使用 Provider 解析原生流事件，直接传 []byte
 					event, parseErr := a.provider.ParseNativeStreamEvent(channel.APIVariant, data)
 					if parseErr != nil {
