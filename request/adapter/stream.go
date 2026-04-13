@@ -88,6 +88,19 @@ func NewStreamState() *StreamState {
 
 // UpdateFromSignal 根据事件信号更新状态。
 func (s *StreamState) UpdateFromSignal(signal StreamEventSignal) {
+	// 收到首个有效事件
+	if signal.HasValidOutput || signal.IsTerminalEvent || signal.IsCompletionSignal {
+		if !s.ReceivedFirstEvent {
+			s.ReceivedFirstEvent = true
+			// 首包即完成信号时应保持 completed，避免被 receiving 覆盖。
+			if signal.IsCompletionSignal {
+				s.CurrentPhase = StreamPhaseCompleted
+			} else {
+				s.CurrentPhase = StreamPhaseReceiving
+			}
+		}
+	}
+
 	// 更新有效输出状态
 	if signal.HasValidOutput {
 		s.HasValidOutput = true
@@ -106,14 +119,6 @@ func (s *StreamState) UpdateFromSignal(signal StreamEventSignal) {
 		}
 		// 收到完成信号时，进入完成阶段
 		s.CurrentPhase = StreamPhaseCompleted
-	}
-
-	// 收到首个有效事件
-	if signal.HasValidOutput || signal.IsTerminalEvent || signal.IsCompletionSignal {
-		if !s.ReceivedFirstEvent {
-			s.ReceivedFirstEvent = true
-			s.CurrentPhase = StreamPhaseReceiving
-		}
 	}
 }
 

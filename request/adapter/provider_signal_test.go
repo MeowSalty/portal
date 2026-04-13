@@ -10,6 +10,61 @@ import (
 	openaiResponses "github.com/MeowSalty/portal/request/adapter/openai/types/responses"
 )
 
+func TestProviderSignals_CompletionShouldNotImplyValidOutput(t *testing.T) {
+	t.Run("openai_chat_finish_only", func(t *testing.T) {
+		provider := NewOpenAIProvider()
+		finishReason := openaiChat.FinishReasonStop
+		event := &openaiChat.StreamEvent{
+			Choices: []openaiChat.StreamChoice{{FinishReason: &finishReason}},
+		}
+		signal := provider.IdentifyStreamEventSignal("chat_completions", event)
+		if !signal.IsCompletionSignal {
+			t.Fatal("IsCompletionSignal should be true")
+		}
+		if signal.HasValidOutput {
+			t.Fatal("HasValidOutput should be false for finish-only event")
+		}
+	})
+
+	t.Run("openai_responses_completed_only", func(t *testing.T) {
+		provider := NewOpenAIProvider()
+		event := &openaiResponses.StreamEvent{Completed: &openaiResponses.ResponseCompletedEvent{}}
+		signal := provider.IdentifyStreamEventSignal("responses", event)
+		if !signal.IsCompletionSignal {
+			t.Fatal("IsCompletionSignal should be true")
+		}
+		if signal.HasValidOutput {
+			t.Fatal("HasValidOutput should be false for completed-only event")
+		}
+	})
+
+	t.Run("gemini_finish_only", func(t *testing.T) {
+		provider := NewGeminiProvider()
+		event := &geminiTypes.StreamEvent{
+			Candidates: []geminiTypes.Candidate{{FinishReason: geminiTypes.FinishReasonStop}},
+		}
+		signal := provider.IdentifyStreamEventSignal("", event)
+		if !signal.IsCompletionSignal {
+			t.Fatal("IsCompletionSignal should be true")
+		}
+		if signal.HasValidOutput {
+			t.Fatal("HasValidOutput should be false for finish-only event")
+		}
+	})
+
+	t.Run("anthropic_message_stop_only", func(t *testing.T) {
+		provider := NewAnthropicProvider()
+		event := &anthropicTypes.StreamEvent{MessageStop: &anthropicTypes.MessageStopEvent{}}
+		signal := provider.IdentifyStreamEventSignal("", event)
+		if !signal.IsCompletionSignal {
+			t.Fatal("IsCompletionSignal should be true")
+		}
+		if signal.HasValidOutput {
+			t.Fatal("HasValidOutput should be false for message_stop-only event")
+		}
+	})
+}
+
 // TestOpenAI_IdentifyStreamEventSignal_ChatCompletions 测试 OpenAI Chat Completions 信号识别
 func TestOpenAI_IdentifyStreamEventSignal_ChatCompletions(t *testing.T) {
 	provider := NewOpenAIProvider()

@@ -528,3 +528,67 @@ func TestRetryNativeStream_CanceledLogsSingleCanceledWithoutCompleted(t *testing
 		t.Fatal("中途取消应记录 before_drain=true")
 	}
 }
+
+func TestRetryNativeStream_StartupServerCanceledLogsServerSource(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	out := retryNativeStream[string](context.Background(), p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			return errors.NormalizeCanceledWithSource(context.Canceled, false)
+		},
+		nil,
+	)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	if !hasMessageWithKeyValue(entries, "stream_finished", "status", "canceled") {
+		t.Fatal("服务端取消应记录 status=canceled")
+	}
+	if !hasMessageWithKeyValue(entries, "stream_finished", "cancel_source", "server") {
+		t.Fatal("服务端取消应记录 cancel_source=server")
+	}
+}
+
+func TestRetryNativeStream_StartupDeadlineLogsTimedOut(t *testing.T) {
+	logStore := &retryLogStore{}
+	p := &Portal{
+		session: session.New(),
+		logger:  &retryCapturedLogger{store: logStore},
+	}
+
+	out := retryNativeStream[string](context.Background(), p,
+		func(ctx context.Context) (*routing.Channel, error) {
+			return &routing.Channel{}, nil
+		},
+		func(reqCtx context.Context, ch *routing.Channel, output chan<- any) error {
+			return errors.NormalizeCanceled(context.DeadlineExceeded)
+		},
+		nil,
+	)
+
+	for range out {
+	}
+
+	logStore.mu.Lock()
+	entries := append([]retryLogEntry(nil), logStore.entries...)
+	logStore.mu.Unlock()
+
+	if !hasMessageWithKeyValue(entries, "stream_finished", "status", "timed_out") {
+		t.Fatal("超时应记录 status=timed_out")
+	}
+	if !hasMessageWithKeyValue(entries, "stream_finished", "cancel_source", "deadline") {
+		t.Fatal("超时应记录 cancel_source=deadline")
+	}
+}

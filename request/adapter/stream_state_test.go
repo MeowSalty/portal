@@ -1,7 +1,10 @@
 package adapter
 
 import (
+	"context"
 	"testing"
+
+	"github.com/MeowSalty/portal/errors"
 )
 
 // TestStreamState_UpdateFromSignal 测试状态机从信号更新状态
@@ -15,6 +18,7 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 		wantTerminal   bool
 		wantCompletion bool
 		wantReason     string
+		wantPhase      StreamPhase
 	}{
 		{
 			name:           "空信号不改变状态",
@@ -24,6 +28,7 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			wantOutput:     false,
 			wantTerminal:   false,
 			wantCompletion: false,
+			wantPhase:      StreamPhaseConnecting,
 		},
 		{
 			name:         "有效输出信号更新状态",
@@ -35,6 +40,7 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			wantOutput:     true,
 			wantTerminal:   false,
 			wantCompletion: false,
+			wantPhase:      StreamPhaseReceiving,
 		},
 		{
 			name:         "终止事件信号更新状态",
@@ -47,6 +53,7 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			wantOutput:     false,
 			wantTerminal:   true,
 			wantCompletion: false,
+			wantPhase:      StreamPhaseReceiving,
 		},
 		{
 			name:         "完成信号更新状态",
@@ -61,6 +68,21 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			wantTerminal:   true,
 			wantCompletion: true,
 			wantReason:     "end_turn",
+			wantPhase:      StreamPhaseCompleted,
+		},
+		{
+			name:         "首包即完成信号保持 completed 阶段",
+			initialState: NewStreamState(),
+			signal: StreamEventSignal{
+				IsCompletionSignal: true,
+				FinishReason:       "completed",
+			},
+			wantFirstEvent: true,
+			wantOutput:     false,
+			wantTerminal:   false,
+			wantCompletion: true,
+			wantReason:     "completed",
+			wantPhase:      StreamPhaseCompleted,
 		},
 		{
 			name: "累积状态更新",
@@ -79,6 +101,7 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			wantTerminal:   true,
 			wantCompletion: true,
 			wantReason:     "stop",
+			wantPhase:      StreamPhaseCompleted,
 		},
 	}
 
@@ -99,6 +122,91 @@ func TestStreamState_UpdateFromSignal(t *testing.T) {
 			}
 			if tt.wantReason != "" && tt.initialState.CompletionReason != tt.wantReason {
 				t.Errorf("CompletionReason = %v, want %v", tt.initialState.CompletionReason, tt.wantReason)
+			}
+			if tt.initialState.CurrentPhase != tt.wantPhase {
+				t.Errorf("CurrentPhase = %v, want %v", tt.initialState.CurrentPhase, tt.wantPhase)
+			}
+		})
+	}
+}
+
+func TestBuildNativeStreamFinishInfo_CancelAndCompletionMatrix(t *testing.T) {
+	tests := []struct {
+		name                 string
+		state                *StreamState
+		err                  error
+		wantCompletionState  string
+		wantConnectionStatus string
+		wantFinishStatus     string
+		wantCancelSource     string
+	}{
+		{
+			name: "无内容且客户端取消",
+			state: &StreamState{
+				CurrentPhase:       StreamPhaseReceiving,
+				DisconnectionPhase: StreamPhaseReceiving,
+			},
+			err:                  errors.NormalizeCanceled(context.Canceled),
+			wantCompletionState:  "not_completed",
+			wantConnectionStatus: "disconnected",
+			wantFinishStatus:     "canceled",
+			wantCancelSource:     "client",
+		},
+		{
+			name: "无内容且超时",
+			state: &StreamState{
+				CurrentPhase:       StreamPhaseReceiving,
+				DisconnectionPhase: StreamPhaseReceiving,
+			},
+			err:                  errors.NormalizeCanceled(context.DeadlineExceeded),
+			wantCompletionState:  "not_completed",
+			wantConnectionStatus: "disconnected",
+			wantFinishStatus:     "timed_out",
+			wantCancelSource:     "deadline",
+		},
+		{
+			name: "部分输出中断保持 partial",
+			state: &StreamState{
+				HasValidOutput:     true,
+				CurrentPhase:       StreamPhaseReceiving,
+				DisconnectionPhase: StreamPhaseReceiving,
+			},
+			err:                  errors.NormalizeCanceledWithSource(context.Canceled, false),
+			wantCompletionState:  "partial",
+			wantConnectionStatus: "disconnected",
+			wantFinishStatus:     "partial",
+			wantCancelSource:     "server",
+		},
+		{
+			name: "明确完成后断连",
+			state: &StreamState{
+				HasCompletionSignal:         true,
+				DisconnectedAfterCompletion: true,
+				CurrentPhase:                StreamPhaseCompleted,
+				DisconnectionPhase:          StreamPhaseCompleted,
+			},
+			err:                  nil,
+			wantCompletionState:  "completed",
+			wantConnectionStatus: "completed_then_disconnected",
+			wantFinishStatus:     "completed_then_disconnected",
+			wantCancelSource:     "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := buildNativeStreamFinishInfo(tt.state, tt.err)
+			if info.CompletionState != tt.wantCompletionState {
+				t.Errorf("CompletionState = %v, want %v", info.CompletionState, tt.wantCompletionState)
+			}
+			if info.ConnectionStatus != tt.wantConnectionStatus {
+				t.Errorf("ConnectionStatus = %v, want %v", info.ConnectionStatus, tt.wantConnectionStatus)
+			}
+			if info.FinishStatus != tt.wantFinishStatus {
+				t.Errorf("FinishStatus = %v, want %v", info.FinishStatus, tt.wantFinishStatus)
+			}
+			if info.CancelSource != tt.wantCancelSource {
+				t.Errorf("CancelSource = %v, want %v", info.CancelSource, tt.wantCancelSource)
 			}
 		})
 	}
@@ -164,7 +272,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: false,
 		},
 		{
-			name: "stop正常完成",
+			name: "stop 正常完成",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "stop",
@@ -172,7 +280,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "end_turn正常完成",
+			name: "end_turn 正常完成",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "end_turn",
@@ -180,7 +288,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "tool_use正常完成",
+			name: "tool_use 正常完成",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "tool_use",
@@ -188,7 +296,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "STOP正常完成(Gemini)",
+			name: "STOP 正常完成 (Gemini)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "STOP",
@@ -196,7 +304,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "length异常终止",
+			name: "length 异常终止",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "length",
@@ -204,7 +312,7 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: false,
 		},
 		{
-			name: "max_tokens异常终止",
+			name: "max_tokens 异常终止",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "max_tokens",
@@ -235,7 +343,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: false,
 		},
 		{
-			name: "stop正常完成",
+			name: "stop 正常完成",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "stop",
@@ -243,7 +351,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: false,
 		},
 		{
-			name: "length异常终止",
+			name: "length 异常终止",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "length",
@@ -251,7 +359,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: true,
 		},
 		{
-			name: "max_tokens异常终止",
+			name: "max_tokens 异常终止",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "max_tokens",
@@ -259,7 +367,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: true,
 		},
 		{
-			name: "SAFETY异常终止(Gemini)",
+			name: "SAFETY 异常终止 (Gemini)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "SAFETY",
@@ -267,7 +375,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: true,
 		},
 		{
-			name: "content_filter异常终止",
+			name: "content_filter 异常终止",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "content_filter",

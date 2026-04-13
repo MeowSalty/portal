@@ -9,6 +9,7 @@ import (
 
 	portalErrors "github.com/MeowSalty/portal/errors"
 	"github.com/MeowSalty/portal/logger"
+	adapterTypes "github.com/MeowSalty/portal/request/adapter/types"
 )
 
 type countingRequestLogRepo struct {
@@ -61,5 +62,57 @@ func TestRequestLogHooks_FirstChunkOnlyOnce(t *testing.T) {
 	hooks.OnFirstChunk(time.Now().Add(100 * time.Millisecond))
 	if hooks.log.FirstByteTime == nil || *hooks.log.FirstByteTime != first {
 		t.Fatalf("FirstByteTime 不应被重复覆盖")
+	}
+}
+
+func TestRequestLogHooks_OnStreamFinishedAndOnComplete_CompletedThenDisconnectedSuccess(t *testing.T) {
+	repo := &countingRequestLogRepo{}
+	req := New(repo, logger.NewNopLogger())
+	requestLog := &RequestLog{Timestamp: time.Now().Add(-80 * time.Millisecond), IsStream: true}
+	hooks := &RequestLogHooks{log: requestLog, request: req}
+
+	hooks.OnStreamFinished(adapterTypes.StreamFinishInfo{
+		CompletionState:  "completed",
+		ConnectionStatus: "completed_then_disconnected",
+		FinishStatus:     "completed_then_disconnected",
+	})
+	hooks.OnComplete(time.Now())
+
+	if !hooks.log.Success {
+		t.Fatal("completed_then_disconnected 场景 Success 期望为 true")
+	}
+	if hooks.log.ConnectionStatus == nil || *hooks.log.ConnectionStatus != "completed_then_disconnected" {
+		t.Fatalf("ConnectionStatus 期望 completed_then_disconnected，实际：%+v", hooks.log.ConnectionStatus)
+	}
+	if hooks.log.FinishStatus == nil || *hooks.log.FinishStatus != "completed_then_disconnected" {
+		t.Fatalf("FinishStatus 期望 completed_then_disconnected，实际：%+v", hooks.log.FinishStatus)
+	}
+	if got := atomic.LoadInt32(&repo.count); got != 1 {
+		t.Fatalf("请求日志持久化次数期望 1，实际：%d", got)
+	}
+}
+
+func TestRequestLogHooks_OnError_DeadlineWithoutOutput(t *testing.T) {
+	repo := &countingRequestLogRepo{}
+	req := New(repo, logger.NewNopLogger())
+	requestLog := &RequestLog{Timestamp: time.Now().Add(-120 * time.Millisecond), IsStream: true}
+	hooks := &RequestLogHooks{log: requestLog, request: req}
+
+	hooks.OnError(portalErrors.NormalizeCanceled(context.DeadlineExceeded))
+
+	if hooks.log.Success {
+		t.Fatal("超时场景 Success 期望为 false")
+	}
+	if hooks.log.CompletionState == nil || *hooks.log.CompletionState != "not_completed" {
+		t.Fatalf("CompletionState 期望 not_completed，实际：%+v", hooks.log.CompletionState)
+	}
+	if hooks.log.FinishStatus == nil || *hooks.log.FinishStatus != "timed_out" {
+		t.Fatalf("FinishStatus 期望 timed_out，实际：%+v", hooks.log.FinishStatus)
+	}
+	if hooks.log.CancelSource == nil || *hooks.log.CancelSource != "deadline" {
+		t.Fatalf("CancelSource 期望 deadline，实际：%+v", hooks.log.CancelSource)
+	}
+	if got := atomic.LoadInt32(&repo.count); got != 1 {
+		t.Fatalf("请求日志持久化次数期望 1，实际：%d", got)
 	}
 }
