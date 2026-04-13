@@ -56,6 +56,10 @@ func (p *cancelTestProvider) ExtractUsageFromNativeStreamEvent(variant string, e
 	return nil
 }
 
+func (p *cancelTestProvider) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
+	return StreamEventSignal{}
+}
+
 type hookSpy struct {
 	firstChunkCount atomic.Int32
 	completeCount   atomic.Int32

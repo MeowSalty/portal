@@ -5,6 +5,28 @@ import (
 	"github.com/MeowSalty/portal/routing"
 )
 
+// StreamEventSignal 表示原生流事件的信号识别结果。
+//
+// 该结构用于公共流式链路判断事件类型，以支持更精确的完成状态判定，
+// 避免仅依赖 [DONE] 标记或 EOF 进行猜测。
+type StreamEventSignal struct {
+	// IsCompletionSignal 表示该事件是否为明确的完成信号。
+	// 例如：OpenAI 的 finish_reason、Anthropic 的 message_stop、Gemini 的 finishReason。
+	IsCompletionSignal bool
+
+	// IsTerminalEvent 表示该事件是否为终止事件（流即将结束）。
+	// 终止事件通常是完成信号的前置事件，如 Anthropic 的 message_delta（包含 stop_reason）。
+	IsTerminalEvent bool
+
+	// HasValidOutput 表示该事件是否包含有效输出内容。
+	// 例如：文本增量、工具调用增量、音频增量等。
+	HasValidOutput bool
+
+	// FinishReason 表示完成原因（可选）。
+	// 用于区分正常完成（stop/end_turn）与异常终止（length/max_tokens/safety）。
+	FinishReason string
+}
+
 // Provider 定义 AI 提供商的接口
 //
 // Provider 接口是适配器模式中的"目标接口"，定义了统一的 AI 服务提供商操作规范。
@@ -68,4 +90,17 @@ type Provider interface {
 
 	// ExtractUsageFromNativeStreamEvent 从原生流事件中提取使用统计信息
 	ExtractUsageFromNativeStreamEvent(variant string, event any) *types.ResponseUsage
+
+	// IdentifyStreamEventSignal 识别原生流事件的信号类型。
+	//
+	// 该方法用于公共流式链路判断事件是否为完成信号、终止事件或包含有效输出，
+	// 以支持更精确的流状态跟踪，避免仅依赖 [DONE] 标记或 EOF 进行猜测。
+	//
+	// 参数：
+	//   - variant: API 变体
+	//   - event: 原生流事件（由 ParseNativeStreamEvent 返回）
+	//
+	// 返回：
+	//   - StreamEventSignal: 信号识别结果
+	IdentifyStreamEventSignal(variant string, event any) StreamEventSignal
 }

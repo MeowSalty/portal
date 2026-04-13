@@ -165,3 +165,70 @@ func (p *Anthropic) ExtractUsageFromNativeStreamEvent(variant string, event any)
 		TotalTokens:  &totalTokens,
 	}
 }
+
+// IdentifyStreamEventSignal 识别 Anthropic 原生流事件的信号类型。
+//
+// Anthropic 的完成信号识别规则：
+//   - message_stop 事件为明确的完成信号
+//   - message_delta 包含 stop_reason 时为终止事件
+//   - stop_reason 为 "end_turn" 或 "tool_use" 时为正常完成
+//   - stop_reason 为 "max_tokens" 或 "stop_sequence" 时为异常终止
+//   - content_block_delta 包含文本或工具调用增量时为有效输出
+func (p *Anthropic) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
+	signal := StreamEventSignal{}
+
+	streamEvent, ok := event.(*anthropicTypes.StreamEvent)
+	if !ok {
+		return signal
+	}
+
+	// 检查 message_stop 事件（明确的完成信号）
+	if streamEvent.MessageStop != nil {
+		signal.IsCompletionSignal = true
+		signal.IsTerminalEvent = true
+		signal.FinishReason = "stop"
+	}
+
+	// 检查 message_delta 事件（包含 stop_reason）
+	if streamEvent.MessageDelta != nil {
+		if streamEvent.MessageDelta.Delta.StopReason != nil {
+			signal.IsTerminalEvent = true
+			signal.FinishReason = string(*streamEvent.MessageDelta.Delta.StopReason)
+			// message_delta 包含 stop_reason 时也标记为完成信号
+			signal.IsCompletionSignal = true
+		}
+	}
+
+	// 检查 content_block_delta 事件（有效输出）
+	if streamEvent.ContentBlockDelta != nil {
+		delta := streamEvent.ContentBlockDelta.Delta
+		// 文本增量
+		if delta.Text != nil && delta.Text.Text != "" {
+			signal.HasValidOutput = true
+		}
+		// 思考增量
+		if delta.Thinking != nil && delta.Thinking.Thinking != "" {
+			signal.HasValidOutput = true
+		}
+		// 工具调用 JSON 增量
+		if delta.InputJSON != nil && delta.InputJSON.PartialJSON != "" {
+			signal.HasValidOutput = true
+		}
+	}
+
+	// 检查 content_block_start 事件（工具调用开始）
+	if streamEvent.ContentBlockStart != nil {
+		if streamEvent.ContentBlockStart.ContentBlock.ToolUse != nil {
+			signal.HasValidOutput = true
+		}
+	}
+
+	// 检查错误事件
+	if streamEvent.Error != nil {
+		signal.IsCompletionSignal = true
+		signal.IsTerminalEvent = true
+		signal.FinishReason = "error"
+	}
+
+	return signal
+}

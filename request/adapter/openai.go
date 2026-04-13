@@ -243,6 +243,101 @@ func (p *OpenAI) ExtractUsageFromNativeStreamEvent(variant string, event any) *a
 	}
 }
 
+// IdentifyStreamEventSignal 识别 OpenAI 原生流事件的信号类型。
+//
+// OpenAI Chat Completions 的完成信号识别规则：
+//   - finish_reason 非空时为完成信号
+//   - finish_reason 为 "stop" 或 "tool_calls" 时为正常完成
+//   - finish_reason 为 "length" 或 "content_filter" 时为异常终止
+//   - delta.content 非空或 delta.tool_calls 非空时为有效输出
+//
+// OpenAI Responses API 的完成信号识别规则：
+//   - event.type 为 "response.completed" 时为完成信号
+//   - event.type 为 "response.failed" 或 "response.incomplete" 时为异常终止
+//   - output_text_delta 等事件包含有效输出
+func (p *OpenAI) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
+	signal := StreamEventSignal{}
+
+	switch variant {
+	case "chat_completions":
+		chatEvent, ok := event.(*openaiChat.StreamEvent)
+		if !ok {
+			return signal
+		}
+
+		// 检查是否有有效输出
+		for _, choice := range chatEvent.Choices {
+			// 检查文本内容
+			if choice.Delta.Content != nil && *choice.Delta.Content != "" {
+				signal.HasValidOutput = true
+			}
+			// 检查工具调用
+			if len(choice.Delta.ToolCalls) > 0 {
+				signal.HasValidOutput = true
+			}
+			// 检查拒绝消息
+			if choice.Delta.Refusal != nil && *choice.Delta.Refusal != "" {
+				signal.HasValidOutput = true
+			}
+
+			// 检查完成信号
+			if choice.FinishReason != nil && *choice.FinishReason != "" {
+				signal.IsCompletionSignal = true
+				signal.IsTerminalEvent = true
+				signal.FinishReason = string(*choice.FinishReason)
+			}
+		}
+
+	case "responses":
+		responsesEvent, ok := event.(*openaiResponses.StreamEvent)
+		if !ok {
+			return signal
+		}
+
+		// 检查响应生命周期事件（完成信号）
+		if responsesEvent.Completed != nil {
+			signal.IsCompletionSignal = true
+			signal.IsTerminalEvent = true
+			signal.FinishReason = "completed"
+		}
+		if responsesEvent.Failed != nil {
+			signal.IsCompletionSignal = true
+			signal.IsTerminalEvent = true
+			signal.FinishReason = "failed"
+		}
+		if responsesEvent.Incomplete != nil {
+			signal.IsCompletionSignal = true
+			signal.IsTerminalEvent = true
+			signal.FinishReason = "incomplete"
+		}
+
+		// 检查是否有有效输出
+		if responsesEvent.OutputTextDelta != nil && responsesEvent.OutputTextDelta.Delta != "" {
+			signal.HasValidOutput = true
+		}
+		if responsesEvent.RefusalDelta != nil && responsesEvent.RefusalDelta.Delta != "" {
+			signal.HasValidOutput = true
+		}
+		if responsesEvent.ReasoningTextDelta != nil && responsesEvent.ReasoningTextDelta.Delta != "" {
+			signal.HasValidOutput = true
+		}
+		if responsesEvent.ReasoningSummaryTextDelta != nil && responsesEvent.ReasoningSummaryTextDelta.Delta != "" {
+			signal.HasValidOutput = true
+		}
+		if responsesEvent.FunctionCallArgumentsDelta != nil && responsesEvent.FunctionCallArgumentsDelta.Delta != "" {
+			signal.HasValidOutput = true
+		}
+		if responsesEvent.AudioDelta != nil {
+			signal.HasValidOutput = true
+		}
+
+	default:
+		// 未知变体，返回空信号
+	}
+
+	return signal
+}
+
 // resolveAPIVariant 从 channel 解析 API 变体，返回标准化的变体字符串。
 // 这是一个纯函数，不修改任何状态。
 func resolveAPIVariant(channel *routing.Channel) string {

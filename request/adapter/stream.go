@@ -21,6 +21,155 @@ var (
 	sseDoneMarker = []byte("[DONE]")
 )
 
+// StreamPhase 表示流式处理的阶段。
+// 用于断连发生时的状态记录。
+type StreamPhase string
+
+const (
+	// StreamPhaseConnecting 连接建立阶段
+	StreamPhaseConnecting StreamPhase = "connecting"
+	// StreamPhaseReceiving 接收数据阶段
+	StreamPhaseReceiving StreamPhase = "receiving"
+	// StreamPhaseCompleted 完成阶段（收到明确完成信号）
+	StreamPhaseCompleted StreamPhase = "completed"
+	// StreamPhaseClosed 关闭阶段
+	StreamPhaseClosed StreamPhase = "closed"
+)
+
+// StreamState 表示原生流式链路的内部状态。
+//
+// 该状态机用于跟踪流式处理的关键状态点，以支持：
+//   - 区分"是否有输出""是否明确完成""是否完成后断连"
+//   - 为重试语义提供精确的终止分类依据
+//   - 避免仅依赖 [DONE] 标记或 EOF 进行猜测
+//
+// 状态机设计原则：
+//   - 高内聚：状态仅在流式处理内部传递，不泄漏到无关层
+//   - 最小化：仅记录必要状态，避免过度复杂化
+type StreamState struct {
+	// ReceivedFirstEvent 是否已收到首个有效事件。
+	// 首个有效事件指成功解析的非空事件。
+	ReceivedFirstEvent bool
+
+	// HasValidOutput 是否已有有效输出内容。
+	// 有效输出指文本增量、工具调用增量、音频增量等。
+	HasValidOutput bool
+
+	// ReceivedTerminalEvent 是否已收到明确终止/完成事件。
+	// 终止事件指 provider 识别的 IsTerminalEvent。
+	ReceivedTerminalEvent bool
+
+	// HasCompletionSignal 是否已有协议级完成信号。
+	// 完成信号指 provider 识别的 IsCompletionSignal。
+	HasCompletionSignal bool
+
+	// CompletionReason 完成原因（可选）。
+	// 来自 provider 识别的 FinishReason。
+	CompletionReason string
+
+	// DisconnectedAfterCompletion 是否在完成后发生断连。
+	// 用于区分"正常完成后的连接关闭"与"异常断连"。
+	DisconnectedAfterCompletion bool
+
+	// CurrentPhase 当前流处理阶段。
+	CurrentPhase StreamPhase
+
+	// DisconnectionPhase 断连发生时的阶段（可选）。
+	// 仅在发生断连时记录。
+	DisconnectionPhase StreamPhase
+}
+
+// NewStreamState 创建新的流状态实例。
+func NewStreamState() *StreamState {
+	return &StreamState{
+		CurrentPhase: StreamPhaseConnecting,
+	}
+}
+
+// UpdateFromSignal 根据事件信号更新状态。
+func (s *StreamState) UpdateFromSignal(signal StreamEventSignal) {
+	// 更新有效输出状态
+	if signal.HasValidOutput {
+		s.HasValidOutput = true
+	}
+
+	// 更新终止事件状态
+	if signal.IsTerminalEvent {
+		s.ReceivedTerminalEvent = true
+	}
+
+	// 更新完成信号状态
+	if signal.IsCompletionSignal {
+		s.HasCompletionSignal = true
+		if signal.FinishReason != "" {
+			s.CompletionReason = signal.FinishReason
+		}
+		// 收到完成信号时，进入完成阶段
+		s.CurrentPhase = StreamPhaseCompleted
+	}
+
+	// 收到首个有效事件
+	if signal.HasValidOutput || signal.IsTerminalEvent || signal.IsCompletionSignal {
+		if !s.ReceivedFirstEvent {
+			s.ReceivedFirstEvent = true
+			s.CurrentPhase = StreamPhaseReceiving
+		}
+	}
+}
+
+// MarkDisconnected 标记断连状态。
+func (s *StreamState) MarkDisconnected() {
+	s.DisconnectionPhase = s.CurrentPhase
+	// 如果在完成后断连，标记为完成后断连
+	if s.HasCompletionSignal || s.ReceivedTerminalEvent {
+		s.DisconnectedAfterCompletion = true
+	}
+}
+
+// IsNormalCompletion 判断是否为正常完成。
+// 正常完成指：收到完成信号且完成原因为正常类型。
+func (s *StreamState) IsNormalCompletion() bool {
+	if !s.HasCompletionSignal {
+		return false
+	}
+	// 根据完成原因判断是否为正常完成
+	// 正常完成原因：stop, end_turn, tool_use, completed
+	normalReasons := map[string]bool{
+		"stop":      true,
+		"end_turn":  true,
+		"tool_use":  true,
+		"completed": true,
+		"STOP":      true, // Gemini
+	}
+	return normalReasons[s.CompletionReason]
+}
+
+// IsAbnormalTermination 判断是否为异常终止。
+// 异常终止指：收到完成信号但完成原因为异常类型。
+func (s *StreamState) IsAbnormalTermination() bool {
+	if !s.HasCompletionSignal {
+		return false
+	}
+	// 异常完成原因：length, max_tokens, safety, content_filter, failed, incomplete
+	abnormalReasons := map[string]bool{
+		"length":         true,
+		"max_tokens":     true,
+		"safety":         true,
+		"content_filter": true,
+		"failed":         true,
+		"incomplete":     true,
+		"MAX_TOKENS":     true, // Gemini
+		"SAFETY":         true, // Gemini
+	}
+	return abnormalReasons[s.CompletionReason]
+}
+
+// HasOutputWithoutCompletion 判断是否有输出但未完成。
+// 这种情况可能需要重试。
+func (s *StreamState) HasOutputWithoutCompletion() bool {
+	return s.HasValidOutput && !s.HasCompletionSignal && !s.ReceivedTerminalEvent
+}
+
 // handleStreaming 处理流式请求
 func (a *Adapter) handleStreaming(
 	ctx context.Context,
@@ -193,10 +342,16 @@ func (a *Adapter) handleNativeStreaming(
 	// 首字节标记
 	firstChunkReceived := false
 
+	// 创建流状态跟踪器
+	streamState := NewStreamState()
+
 	// 处理流式响应
 	go func() {
 		var streamErr error
 		defer func() {
+			// 标记断连状态
+			streamState.MarkDisconnected()
+
 			if hooks != nil {
 				if streamErr != nil {
 					hooks.OnError(streamErr)
@@ -207,11 +362,22 @@ func (a *Adapter) handleNativeStreaming(
 			// stream_finished 语义统一由上层重试/入口层记录，
 			// 适配层仅输出底层调试信息，避免 completed/canceled 重复记账。
 			if streamErr == nil {
-				log.Debug("native_stream_worker_finished", "status", "completed")
+				log.Debug("native_stream_worker_finished",
+					"status", "completed",
+					"stream_state", streamState,
+				)
 			} else if errors.IsCanceled(streamErr) {
-				log.Debug("native_stream_worker_finished", "status", "canceled", "error", streamErr)
+				log.Debug("native_stream_worker_finished",
+					"status", "canceled",
+					"error", streamErr,
+					"stream_state", streamState,
+				)
 			} else {
-				log.Warn("native_stream_worker_finished", "status", "aborted", "error", streamErr)
+				log.Warn("native_stream_worker_finished",
+					"status", "aborted",
+					"error", streamErr,
+					"stream_state", streamState,
+				)
 			}
 			close(output)
 			if httpResp.body != nil {
@@ -235,7 +401,13 @@ func (a *Adapter) handleNativeStreaming(
 				if len(lineBytes) > 0 && bytes.HasPrefix(lineBytes, sseDataPrefix) {
 					data := bytes.TrimSpace(lineBytes[5:])
 					if bytes.Equal(data, sseDoneMarker) {
-						// 流式传输正常完成
+						// 流式传输正常完成（[DONE] 标记）
+						// 如果状态机未收到完成信号，这里作为兼容性兜底
+						if !streamState.HasCompletionSignal {
+							streamState.HasCompletionSignal = true
+							streamState.CompletionReason = "done_marker"
+							streamState.CurrentPhase = StreamPhaseCompleted
+						}
 						return
 					}
 
@@ -253,10 +425,16 @@ func (a *Adapter) handleNativeStreaming(
 						return
 					}
 
+					// 识别事件信号并更新状态
+					signal := a.provider.IdentifyStreamEventSignal(channel.APIVariant, event)
+					streamState.UpdateFromSignal(signal)
+
 					// 触发 OnFirstChunk Hook（首次收到有效事件）
-					if !firstChunkReceived && hooks != nil {
-						hooks.OnFirstChunk(time.Now())
-						log.Debug("first_chunk_received")
+					if !firstChunkReceived && (signal.HasValidOutput || signal.IsTerminalEvent || signal.IsCompletionSignal) {
+						if hooks != nil {
+							hooks.OnFirstChunk(time.Now())
+							log.Debug("first_chunk_received")
+						}
 						firstChunkReceived = true
 					}
 
@@ -289,7 +467,14 @@ func (a *Adapter) handleNativeStreaming(
 				// 检查错误
 				if err != nil {
 					if err == io.EOF {
-						// 流已结束
+						// 流已结束（EOF）
+						// 如果状态机未收到完成信号，记录断连阶段
+						if !streamState.HasCompletionSignal {
+							streamState.MarkDisconnected()
+							log.Debug("stream_ended_without_completion",
+								"stream_state", streamState,
+							)
+						}
 						return
 					}
 

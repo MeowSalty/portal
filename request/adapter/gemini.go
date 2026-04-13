@@ -174,3 +174,52 @@ func (p *Gemini) ExtractUsageFromNativeStreamEvent(variant string, event any) *a
 		TotalTokens:  &totalTokens,
 	}
 }
+
+// IdentifyStreamEventSignal 识别 Gemini 原生流事件的信号类型。
+//
+// Gemini 的完成信号识别规则：
+//   - Candidate.FinishReason 非空时为完成信号
+//   - FinishReason 为 "STOP" 时为正常完成
+//   - FinishReason 为 "MAX_TOKENS"、"SAFETY" 等时为异常终止
+//   - Candidate.Content.Parts 非空时为有效输出
+func (p *Gemini) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
+	signal := StreamEventSignal{}
+
+	streamEvent, ok := event.(*geminiTypes.StreamEvent)
+	if !ok {
+		return signal
+	}
+
+	// 检查是否有有效输出
+	for _, candidate := range streamEvent.Candidates {
+		// 检查内容部分
+		if len(candidate.Content.Parts) > 0 {
+			for _, part := range candidate.Content.Parts {
+				// 文本内容
+				if part.Text != nil && *part.Text != "" {
+					signal.HasValidOutput = true
+				}
+				// 函数调用
+				if part.FunctionCall != nil {
+					signal.HasValidOutput = true
+				}
+			}
+		}
+
+		// 检查完成信号
+		if candidate.FinishReason != "" && candidate.FinishReason != geminiTypes.FinishReasonUnspecified {
+			signal.IsCompletionSignal = true
+			signal.IsTerminalEvent = true
+			signal.FinishReason = candidate.FinishReason
+		}
+	}
+
+	// 检查提示反馈（阻止情况）
+	if streamEvent.PromptFeedback != nil && streamEvent.PromptFeedback.BlockReason != "" {
+		signal.IsCompletionSignal = true
+		signal.IsTerminalEvent = true
+		signal.FinishReason = streamEvent.PromptFeedback.BlockReason
+	}
+
+	return signal
+}
