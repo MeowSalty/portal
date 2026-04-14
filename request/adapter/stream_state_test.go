@@ -271,8 +271,9 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			state:      &StreamState{HasCompletionSignal: false},
 			wantNormal: false,
 		},
+		// OpenAI Chat Completions
 		{
-			name: "stop 正常完成",
+			name: "stop 正常完成 (OpenAI Chat)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "stop",
@@ -280,7 +281,25 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "end_turn 正常完成",
+			name: "tool_calls 正常完成 (OpenAI Chat)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "tool_calls",
+			},
+			wantNormal: true,
+		},
+		// OpenAI Responses
+		{
+			name: "completed 正常完成 (OpenAI Responses)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "completed",
+			},
+			wantNormal: true,
+		},
+		// Anthropic
+		{
+			name: "end_turn 正常完成 (Anthropic)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "end_turn",
@@ -288,13 +307,30 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: true,
 		},
 		{
-			name: "tool_use 正常完成",
+			name: "tool_use 正常完成 (Anthropic)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "tool_use",
 			},
 			wantNormal: true,
 		},
+		{
+			name: "stop_sequence 正常完成 (Anthropic)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "stop_sequence",
+			},
+			wantNormal: true,
+		},
+		{
+			name: "pause_turn 正常完成 (Anthropic)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "pause_turn",
+			},
+			wantNormal: true,
+		},
+		// Gemini
 		{
 			name: "STOP 正常完成 (Gemini)",
 			state: &StreamState{
@@ -303,8 +339,9 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			},
 			wantNormal: true,
 		},
+		// 异常终止
 		{
-			name: "length 异常终止",
+			name: "length 异常终止 (OpenAI Chat)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "length",
@@ -312,10 +349,42 @@ func TestStreamState_IsNormalCompletion(t *testing.T) {
 			wantNormal: false,
 		},
 		{
-			name: "max_tokens 异常终止",
+			name: "max_tokens 异常终止 (Anthropic)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "max_tokens",
+			},
+			wantNormal: false,
+		},
+		{
+			name: "content_filter 异常终止 (OpenAI)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "content_filter",
+			},
+			wantNormal: false,
+		},
+		{
+			name: "failed 异常终止 (OpenAI Responses)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "failed",
+			},
+			wantNormal: false,
+		},
+		{
+			name: "SAFETY 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "SAFETY",
+			},
+			wantNormal: false,
+		},
+		{
+			name: "MAX_TOKENS 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "MAX_TOKENS",
 			},
 			wantNormal: false,
 		},
@@ -342,6 +411,7 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			state:        &StreamState{HasCompletionSignal: false},
 			wantAbnormal: false,
 		},
+		// 正常完成不应被判为异常
 		{
 			name: "stop 正常完成",
 			state: &StreamState{
@@ -351,7 +421,40 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: false,
 		},
 		{
-			name: "length 异常终止",
+			name: "completed 正常完成 (OpenAI Responses)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "completed",
+			},
+			wantAbnormal: false,
+		},
+		{
+			name: "STOP 正常完成 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "STOP",
+			},
+			wantAbnormal: false,
+		},
+		{
+			name: "tool_calls 正常完成 (OpenAI Chat)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "tool_calls",
+			},
+			wantAbnormal: false,
+		},
+		{
+			name: "end_turn 正常完成 (Anthropic)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "end_turn",
+			},
+			wantAbnormal: false,
+		},
+		// OpenAI Chat 异常终止
+		{
+			name: "length 异常终止 (OpenAI Chat)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "length",
@@ -359,13 +462,64 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: true,
 		},
 		{
-			name: "max_tokens 异常终止",
+			name: "content_filter 异常终止 (OpenAI Chat)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "content_filter",
+			},
+			wantAbnormal: true,
+		},
+		// OpenAI Responses 异常终止
+		{
+			name: "failed 异常终止 (OpenAI Responses)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "failed",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "incomplete 异常终止 (OpenAI Responses)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "incomplete",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "max_output_tokens 异常终止 (OpenAI Responses IncompleteDetails)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "max_output_tokens",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "error 异常终止 (OpenAI Responses 流级错误)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "error",
+			},
+			wantAbnormal: true,
+		},
+		// Anthropic 异常终止
+		{
+			name: "max_tokens 异常终止 (Anthropic)",
 			state: &StreamState{
 				HasCompletionSignal: true,
 				CompletionReason:    "max_tokens",
 			},
 			wantAbnormal: true,
 		},
+		{
+			name: "refusal 异常终止 (Anthropic)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "refusal",
+			},
+			wantAbnormal: true,
+		},
+		// Gemini 异常终止
 		{
 			name: "SAFETY 异常终止 (Gemini)",
 			state: &StreamState{
@@ -375,10 +529,66 @@ func TestStreamState_IsAbnormalTermination(t *testing.T) {
 			wantAbnormal: true,
 		},
 		{
-			name: "content_filter 异常终止",
+			name: "MAX_TOKENS 异常终止 (Gemini)",
 			state: &StreamState{
 				HasCompletionSignal: true,
-				CompletionReason:    "content_filter",
+				CompletionReason:    "MAX_TOKENS",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "RECITATION 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "RECITATION",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "BLOCKLIST 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "BLOCKLIST",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "PROHIBITED_CONTENT 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "PROHIBITED_CONTENT",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "MALFORMED_FUNCTION_CALL 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "MALFORMED_FUNCTION_CALL",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "SPII 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "SPII",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "LANGUAGE 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "LANGUAGE",
+			},
+			wantAbnormal: true,
+		},
+		{
+			name: "OTHER 异常终止 (Gemini)",
+			state: &StreamState{
+				HasCompletionSignal: true,
+				CompletionReason:    "OTHER",
 			},
 			wantAbnormal: true,
 		},

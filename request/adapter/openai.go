@@ -246,14 +246,19 @@ func (p *OpenAI) ExtractUsageFromNativeStreamEvent(variant string, event any) *a
 // IdentifyStreamEventSignal 识别 OpenAI 原生流事件的信号类型。
 //
 // OpenAI Chat Completions 的完成信号识别规则：
-//   - finish_reason 非空时为完成信号
+//   - finish_reason 非空时为完成信号（IsCompletionSignal + IsTerminalEvent）
 //   - finish_reason 为 "stop" 或 "tool_calls" 时为正常完成
 //   - finish_reason 为 "length" 或 "content_filter" 时为异常终止
 //   - delta.content 非空或 delta.tool_calls 非空时为有效输出
+//   - usage 块出现在最终 chunk 中，与 finish_reason 联合确认完成
+//   - [DONE] 标记由公共流式链路作为兜底处理
 //
 // OpenAI Responses API 的完成信号识别规则：
-//   - event.type 为 "response.completed" 时为完成信号
-//   - event.type 为 "response.failed" 或 "response.incomplete" 时为异常终止
+//   - response.completed 为正常完成信号（IsCompletionSignal + IsTerminalEvent）
+//   - response.failed 为异常终止信号，FinishReason 为 "failed"
+//   - response.incomplete 为异常终止信号，优先从 IncompleteDetails.Reason 提取具体原因
+//     （如 "max_output_tokens"、"content_filter"），否则使用 "incomplete"
+//   - error 事件为流级错误信号，FinishReason 为 "error"
 //   - output_text_delta 等事件包含有效输出
 func (p *OpenAI) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
 	signal := StreamEventSignal{}
@@ -281,6 +286,8 @@ func (p *OpenAI) IdentifyStreamEventSignal(variant string, event any) StreamEven
 			}
 
 			// 检查完成信号
+			// finish_reason 非空表示该 choice 已终止，是明确的完成信号。
+			// 具体完成原因（stop/tool_calls/length/content_filter）由 StreamState 分类处理。
 			if choice.FinishReason != nil && *choice.FinishReason != "" {
 				signal.IsCompletionSignal = true
 				signal.IsTerminalEvent = true
@@ -295,20 +302,39 @@ func (p *OpenAI) IdentifyStreamEventSignal(variant string, event any) StreamEven
 		}
 
 		// 检查响应生命周期事件（完成信号）
+		// response.completed 是正常完成信号
 		if responsesEvent.Completed != nil {
 			signal.IsCompletionSignal = true
 			signal.IsTerminalEvent = true
 			signal.FinishReason = "completed"
 		}
+		// response.failed 是异常终止信号
 		if responsesEvent.Failed != nil {
 			signal.IsCompletionSignal = true
 			signal.IsTerminalEvent = true
 			signal.FinishReason = "failed"
 		}
+		// response.incomplete 是异常终止信号
+		// 优先从 IncompleteDetails.Reason 提取更具体的完成原因，
+		// 如 "max_output_tokens"（输出达到最大长度）或 "content_filter"（内容过滤）。
+		// 若无 IncompleteDetails 则回退到 "incomplete"。
 		if responsesEvent.Incomplete != nil {
 			signal.IsCompletionSignal = true
 			signal.IsTerminalEvent = true
-			signal.FinishReason = "incomplete"
+			if responsesEvent.Incomplete.Response.IncompleteDetails != nil &&
+				responsesEvent.Incomplete.Response.IncompleteDetails.Reason != nil {
+				signal.FinishReason = *responsesEvent.Incomplete.Response.IncompleteDetails.Reason
+			} else {
+				signal.FinishReason = "incomplete"
+			}
+		}
+
+		// 检查流级错误事件
+		// error 事件表示流本身发生错误，是异常终止信号
+		if responsesEvent.Error != nil {
+			signal.IsCompletionSignal = true
+			signal.IsTerminalEvent = true
+			signal.FinishReason = "error"
 		}
 
 		// 检查是否有有效输出

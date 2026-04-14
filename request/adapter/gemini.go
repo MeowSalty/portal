@@ -178,10 +178,18 @@ func (p *Gemini) ExtractUsageFromNativeStreamEvent(variant string, event any) *a
 // IdentifyStreamEventSignal 识别 Gemini 原生流事件的信号类型。
 //
 // Gemini 的完成信号识别规则：
-//   - Candidate.FinishReason 非空时为完成信号
+//   - Candidate.FinishReason 非空且非 FINISH_REASON_UNSPECIFIED 时为完成信号
 //   - FinishReason 为 "STOP" 时为正常完成
-//   - FinishReason 为 "MAX_TOKENS"、"SAFETY" 等时为异常终止
+//   - FinishReason 为 "MAX_TOKENS" 时为输出截断（异常终止）
+//   - FinishReason 为 "SAFETY"、"RECITATION"、"BLOCKLIST"、"PROHIBITED_CONTENT"、
+//     "SPII"、"IMAGE_SAFETY"、"IMAGE_PROHIBITED_CONTENT"、"IMAGE_OTHER"、
+//     "IMAGE_RECITATION"、"NO_IMAGE" 时为安全拦截（异常终止）
+//   - FinishReason 为 "OTHER"、"LANGUAGE"、"MALFORMED_FUNCTION_CALL"、
+//     "UNEXPECTED_TOOL_CALL"、"TOO_MANY_TOOL_CALLS"、"MISSING_THOUGHT_SIGNATURE" 时为其他异常终止
+//   - PromptFeedback.BlockReason 非空时为提示级安全拦截（异常终止），
+//     表示请求在生成前即被阻止
 //   - Candidate.Content.Parts 非空时为有效输出
+//   - UsageMetadata 与 FinishReason 同时出现时确认流完成，但 FinishReason 单独即可判定
 func (p *Gemini) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
 	signal := StreamEventSignal{}
 
@@ -207,6 +215,8 @@ func (p *Gemini) IdentifyStreamEventSignal(variant string, event any) StreamEven
 		}
 
 		// 检查完成信号
+		// FINISH_REASON_UNSPECIFIED 是默认/未知值，不视为有效完成信号。
+		// 只有明确的完成原因才标记为 IsCompletionSignal。
 		if candidate.FinishReason != "" && candidate.FinishReason != geminiTypes.FinishReasonUnspecified {
 			signal.IsCompletionSignal = true
 			signal.IsTerminalEvent = true
@@ -214,8 +224,12 @@ func (p *Gemini) IdentifyStreamEventSignal(variant string, event any) StreamEven
 		}
 	}
 
-	// 检查提示反馈（阻止情况）
-	if streamEvent.PromptFeedback != nil && streamEvent.PromptFeedback.BlockReason != "" {
+	// 检查提示反馈（安全拦截情况）
+	// PromptFeedback.BlockReason 非空表示请求在生成候选之前即被阻止，
+	// 这是提示级安全拦截，属于异常终止。
+	// 常见值：SAFETY、BLOCKLIST、PROHIBITED_CONTENT、IMAGE_SAFETY 等。
+	if streamEvent.PromptFeedback != nil && streamEvent.PromptFeedback.BlockReason != "" &&
+		streamEvent.PromptFeedback.BlockReason != geminiTypes.BlockReasonUnspecified {
 		signal.IsCompletionSignal = true
 		signal.IsTerminalEvent = true
 		signal.FinishReason = streamEvent.PromptFeedback.BlockReason

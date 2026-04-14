@@ -112,9 +112,12 @@ func (s *StreamState) UpdateFromSignal(signal StreamEventSignal) {
 	}
 
 	// 更新完成信号状态
+	// CompletionReason 采用"先到优先"策略：一旦设置，后续信号不再覆盖。
+	// 这是因为更早到达的完成原因通常更具体（如 Anthropic 的 message_delta.stop_reason），
+	// 而后续信号可能是通用确认（如 Anthropic 的 message_stop，FinishReason 固定为 "stop"）。
 	if signal.IsCompletionSignal {
 		s.HasCompletionSignal = true
-		if signal.FinishReason != "" {
+		if signal.FinishReason != "" && s.CompletionReason == "" {
 			s.CompletionReason = signal.FinishReason
 		}
 		// 收到完成信号时，进入完成阶段
@@ -133,38 +136,79 @@ func (s *StreamState) MarkDisconnected() {
 
 // IsNormalCompletion 判断是否为正常完成。
 // 正常完成指：收到完成信号且完成原因为正常类型。
+//
+// 各 provider 正常完成原因：
+//   - OpenAI Chat: stop, tool_calls
+//   - OpenAI Responses: completed
+//   - Anthropic: end_turn, tool_use, stop_sequence, pause_turn
+//   - Gemini: STOP
 func (s *StreamState) IsNormalCompletion() bool {
 	if !s.HasCompletionSignal {
 		return false
 	}
-	// 根据完成原因判断是否为正常完成
-	// 正常完成原因：stop, end_turn, tool_use, completed
 	normalReasons := map[string]bool{
-		"stop":      true,
-		"end_turn":  true,
-		"tool_use":  true,
+		// OpenAI Chat Completions
+		"stop":       true,
+		"tool_calls": true,
+		// OpenAI Responses
 		"completed": true,
-		"STOP":      true, // Gemini
+		// Anthropic
+		"end_turn":      true,
+		"tool_use":      true,
+		"stop_sequence": true,
+		"pause_turn":    true,
+		// Gemini
+		"STOP": true,
 	}
 	return normalReasons[s.CompletionReason]
 }
 
 // IsAbnormalTermination 判断是否为异常终止。
 // 异常终止指：收到完成信号但完成原因为异常类型。
+//
+// 各 provider 异常终止原因：
+//   - OpenAI Chat: length, content_filter
+//   - OpenAI Responses: failed, incomplete, max_output_tokens, error
+//   - Anthropic: max_tokens, refusal, error
+//   - Gemini: MAX_TOKENS, SAFETY, RECITATION, LANGUAGE, OTHER, BLOCKLIST,
+//     PROHIBITED_CONTENT, SPII, MALFORMED_FUNCTION_CALL, IMAGE_SAFETY,
+//     IMAGE_PROHIBITED_CONTENT, IMAGE_OTHER, NO_IMAGE, IMAGE_RECITATION,
+//     UNEXPECTED_TOOL_CALL, TOO_MANY_TOOL_CALLS, MISSING_THOUGHT_SIGNATURE
+//   - Gemini BlockReason: SAFETY, OTHER, BLOCKLIST, PROHIBITED_CONTENT, IMAGE_SAFETY
 func (s *StreamState) IsAbnormalTermination() bool {
 	if !s.HasCompletionSignal {
 		return false
 	}
-	// 异常完成原因：length, max_tokens, safety, content_filter, failed, incomplete
 	abnormalReasons := map[string]bool{
+		// OpenAI Chat Completions
 		"length":         true,
-		"max_tokens":     true,
-		"safety":         true,
 		"content_filter": true,
-		"failed":         true,
-		"incomplete":     true,
-		"MAX_TOKENS":     true, // Gemini
-		"SAFETY":         true, // Gemini
+		// OpenAI Responses
+		"failed":            true,
+		"incomplete":        true,
+		"max_output_tokens": true,
+		"error":             true,
+		// Anthropic
+		"max_tokens": true,
+		"refusal":    true,
+		// Gemini FinishReason
+		"MAX_TOKENS":                true,
+		"SAFETY":                    true,
+		"RECITATION":                true,
+		"LANGUAGE":                  true,
+		"OTHER":                     true,
+		"BLOCKLIST":                 true,
+		"PROHIBITED_CONTENT":        true,
+		"SPII":                      true,
+		"MALFORMED_FUNCTION_CALL":   true,
+		"IMAGE_SAFETY":              true,
+		"IMAGE_PROHIBITED_CONTENT":  true,
+		"IMAGE_OTHER":               true,
+		"NO_IMAGE":                  true,
+		"IMAGE_RECITATION":          true,
+		"UNEXPECTED_TOOL_CALL":      true,
+		"TOO_MANY_TOOL_CALLS":       true,
+		"MISSING_THOUGHT_SIGNATURE": true,
 	}
 	return abnormalReasons[s.CompletionReason]
 }

@@ -169,11 +169,14 @@ func (p *Anthropic) ExtractUsageFromNativeStreamEvent(variant string, event any)
 // IdentifyStreamEventSignal 识别 Anthropic 原生流事件的信号类型。
 //
 // Anthropic 的完成信号识别规则：
-//   - message_stop 事件为明确的完成信号
-//   - message_delta 包含 stop_reason 时为终止事件
-//   - stop_reason 为 "end_turn" 或 "tool_use" 时为正常完成
-//   - stop_reason 为 "max_tokens" 或 "stop_sequence" 时为异常终止
+//   - message_stop 事件为消息级完成信号（IsCompletionSignal + IsTerminalEvent）
+//     表示整个消息生成结束，可视为 completed
+//   - message_delta 包含 stop_reason 时为终止事件（IsCompletionSignal + IsTerminalEvent）
+//     stop_reason 提供具体完成原因（end_turn/tool_use/max_tokens/stop_sequence/pause_turn/refusal）
+//   - content_block_stop 事件仅为单个内容块结束，不能误判为整体完成
+//     它既不是 IsCompletionSignal 也不是 IsTerminalEvent
 //   - content_block_delta 包含文本或工具调用增量时为有效输出
+//   - error 事件为流级错误信号
 func (p *Anthropic) IdentifyStreamEventSignal(variant string, event any) StreamEventSignal {
 	signal := StreamEventSignal{}
 
@@ -182,22 +185,35 @@ func (p *Anthropic) IdentifyStreamEventSignal(variant string, event any) StreamE
 		return signal
 	}
 
-	// 检查 message_stop 事件（明确的完成信号）
+	// 检查 message_stop 事件（消息级完成信号）
+	// message_stop 表示整个消息生成结束，是明确的完成信号。
+	// 注意：message_stop 通常在 message_delta（含 stop_reason）之后到达，
+	// 两者都会设置 IsCompletionSignal，但 FinishReason 以先到达的 message_delta 为准。
 	if streamEvent.MessageStop != nil {
 		signal.IsCompletionSignal = true
 		signal.IsTerminalEvent = true
-		signal.FinishReason = "stop"
+		// 仅在未已有 FinishReason 时设置默认值，
+		// 避免覆盖 message_delta 中更具体的 stop_reason
+		if signal.FinishReason == "" {
+			signal.FinishReason = "stop"
+		}
 	}
 
 	// 检查 message_delta 事件（包含 stop_reason）
+	// message_delta 中的 stop_reason 是 Anthropic 协议的完成原因载体，
+	// 比 message_stop 更早到达且包含更具体的完成原因。
 	if streamEvent.MessageDelta != nil {
 		if streamEvent.MessageDelta.Delta.StopReason != nil {
+			signal.IsCompletionSignal = true
 			signal.IsTerminalEvent = true
 			signal.FinishReason = string(*streamEvent.MessageDelta.Delta.StopReason)
-			// message_delta 包含 stop_reason 时也标记为完成信号
-			signal.IsCompletionSignal = true
 		}
 	}
+
+	// 注意：content_block_stop 不设置 IsCompletionSignal 或 IsTerminalEvent
+	// content_block_stop 仅表示单个内容块（如文本块、工具调用块）结束，
+	// 并不代表整个消息生成完成。在多内容块场景中，一个块结束后还有后续块。
+	// 此处仅标记 HasValidOutput，不误判为整体完成。
 
 	// 检查 content_block_delta 事件（有效输出）
 	if streamEvent.ContentBlockDelta != nil {
