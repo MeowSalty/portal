@@ -53,13 +53,20 @@ type RequestLog struct {
 	// CauseMessage 为底层原因文本，用于排障与审计；非稳定展示字段。
 	CauseMessage *string `json:"cause_message,omitempty"`
 
-	// 结构化错误字段（建议前端优先消费）。
+	// 结构化错误字段（历史兼容保留，建议前端优先消费）。
+	//
+	// 旧报表可继续基于 error_from/error_code/http_status 查询，
+	// 新报表建议迁移至 cancel_source/connection_status/completion_state/finish_status。
 	ErrorCode  *string `json:"error_code,omitempty"`
 	ErrorLevel *string `json:"error_level,omitempty"`
 	HTTPStatus *int    `json:"http_status,omitempty"`
 	ErrorFrom  *string `json:"error_from,omitempty"`
 
-	// 流式结束语义字段（第一阶段）。
+	// 结束语义字段（并行输出阶段）。
+	//
+	// 旧字段（error_from/error_code/http_status）继续保留，新字段并行输出一段时间。
+	// 报表迁移期间，旧报表基于 success=false 统计失败率，
+	// 新报表可基于 IsConnectionAnomaly() 统计连接异常率。
 	CancelSource     *string `json:"cancel_source,omitempty"`
 	ConnectionStatus *string `json:"connection_status,omitempty"`
 	CompletionState  *string `json:"completion_state,omitempty"`
@@ -460,4 +467,127 @@ func extractUpstreamRequestID(message string) string {
 	}
 
 	return strings.TrimSpace(matches[1])
+}
+
+// IsConnectionAnomaly 判断该请求是否存在连接异常。
+//
+// 用于报表迁移：新"连接异常率"报表可基于此方法统计，
+// 代替旧报表仅基于 success=false 的失败率统计。
+//
+// 连接异常定义：connection_status 存在且不等于 "completed"。
+// 当 connection_status 未设置时（旧数据兼容），退化为 success=false 判定。
+func (l *RequestLog) IsConnectionAnomaly() bool {
+	if l.ConnectionStatus != nil {
+		return *l.ConnectionStatus != "completed"
+	}
+	// 旧数据兼容：connection_status 未设置时退化为 success 判定
+	return !l.Success
+}
+
+// IsBusinessSuccess 返回业务是否成功。
+//
+// 与 Success 字段等价，但语义更明确，便于报表层调用。
+func (l *RequestLog) IsBusinessSuccess() bool {
+	return l.Success
+}
+
+// ensureNonStreamDefaults 为非流式请求填充结束语义字段的默认值。
+//
+// 非流式请求不经过流式状态机，因此需要在此处补齐
+// connection_status / completion_state / finish_status 的默认值，
+// 以保证新旧字段并行输出。
+func ensureNonStreamDefaults(log *RequestLog, success bool) {
+	if log == nil {
+		return
+	}
+
+	if success {
+		if log.CompletionState == nil {
+			state := "completed"
+			log.CompletionState = &state
+		}
+		if log.ConnectionStatus == nil {
+			status := "completed"
+			log.ConnectionStatus = &status
+		}
+		if log.FinishStatus == nil {
+			status := "completed"
+			log.FinishStatus = &status
+		}
+		return
+	}
+
+	// 失败路径
+	if log.CompletionState == nil {
+		state := "not_completed"
+		log.CompletionState = &state
+	}
+
+	// 有 HTTP 响应但业务失败：连接本身正常完成
+	if log.ConnectionStatus == nil {
+		if log.HTTPStatus != nil {
+			status := "completed"
+			log.ConnectionStatus = &status
+		} else {
+			status := "disconnected"
+			log.ConnectionStatus = &status
+		}
+	}
+
+	if log.FinishStatus == nil {
+		status := "failed"
+		log.FinishStatus = &status
+	}
+}
+
+// fillRequestLogCancelSource 从错误中推导取消来源并填充到 RequestLog。
+//
+// 仅在错误为取消类错误时设置 cancel_source 并覆盖 finish_status。
+// 非取消类错误不受影响。
+func fillRequestLogCancelSource(log *RequestLog, err error) {
+	if log == nil || err == nil {
+		return
+	}
+
+	if !portalErrors.IsCanceled(err) {
+		return
+	}
+
+	// 超时类取消
+	if portalErrors.IsDeadlineExceeded(err) || portalErrors.IsCode(err, portalErrors.ErrCodeDeadlineExceeded) {
+		if log.CancelSource == nil {
+			source := "deadline"
+			log.CancelSource = &source
+		}
+		if log.FinishStatus == nil || *log.FinishStatus == "failed" {
+			status := "timed_out"
+			log.FinishStatus = &status
+		}
+		return
+	}
+
+	// 根据错误来源判定取消来源
+	errorFrom := portalErrors.GetErrorFrom(err)
+	switch errorFrom {
+	case portalErrors.ErrorFromClient:
+		if log.CancelSource == nil {
+			source := "client"
+			log.CancelSource = &source
+		}
+	case portalErrors.ErrorFromServer:
+		if log.CancelSource == nil {
+			source := "server"
+			log.CancelSource = &source
+		}
+	default:
+		if log.CancelSource == nil {
+			source := "unknown"
+			log.CancelSource = &source
+		}
+	}
+
+	if log.FinishStatus == nil || *log.FinishStatus == "failed" {
+		status := "canceled"
+		log.FinishStatus = &status
+	}
 }

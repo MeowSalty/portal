@@ -74,6 +74,8 @@ func (p *Request) ChatCompletion(
 		// 记录失败统计
 		requestLog.Success = false
 		fillRequestLogErrorFields(requestLog, err)
+		fillRequestLogCancelSource(requestLog, err)
+		ensureNonStreamDefaults(requestLog, false)
 		p.recordRequestLog(requestLog, nil, false)
 
 		log.ErrorContext(ctx, "聊天完成请求失败", "error", err)
@@ -95,6 +97,7 @@ func (p *Request) ChatCompletion(
 
 	// 记录成功统计
 	requestLog.Success = true
+	ensureNonStreamDefaults(requestLog, true)
 	p.recordRequestLog(requestLog, nil, true)
 
 	log.InfoContext(ctx, "聊天完成请求成功完成")
