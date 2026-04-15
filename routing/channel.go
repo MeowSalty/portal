@@ -63,13 +63,27 @@ func (c *Channel) MarkSuccess(ctx context.Context) {
 	)
 }
 
-// MarkFailure 标记通道调用失败
+// MarkFailure 标记通道调用失败。
+//
+// 根据错误分类决定健康影响程度：
+//   - client_cancel（ABORTED + client）：不降低健康，请求方主动取消不影响通道
+//   - deadline（DEADLINE_EXCEEDED + gateway）：可恢复失败，超时通常为瞬时问题
+//   - server_cancel（CANCELED + server）：可恢复失败，服务端取消需记录但不完全降级
+//   - 其他错误：完全降级，计入错误计数并应用退避策略
 func (c *Channel) MarkFailure(ctx context.Context, err error) {
 	if c.healthService == nil {
 		return
 	}
 
+	impact := classifyHealthImpact(err)
+
+	// 无健康影响的失败不更新健康状态
+	if impact == health.HealthImpactNone {
+		return
+	}
+
 	snapshot := buildHealthErrorSnapshot(err)
+	snapshot.Impact = impact
 	resourceType, resourceID := c.resolveFailureResource(err)
 
 	// 更新健康状态
@@ -94,6 +108,42 @@ func (c *Channel) resolveFailureResource(err error) (health.ResourceType, uint) 
 	default:
 		return health.ResourceTypeModel, c.ModelID
 	}
+}
+
+// classifyHealthImpact 根据错误分类判定该失败对通道健康的影响程度。
+//
+// 规则：
+//   - client_cancel（ABORTED + error_from=client）：无健康影响。
+//     客户端主动取消（含 completed_then_disconnected）不应降低通道健康。
+//   - deadline（DEADLINE_EXCEEDED + error_from=gateway）：可恢复失败。
+//     网关超时通常为瞬时负载问题，不应完全降级通道。
+//   - server_cancel（CANCELED + error_from=server）：可恢复失败。
+//     服务端主动取消需记录但不完全降级，可能是负载均衡等正常行为。
+//   - 其他错误：完全降级，计入错误计数并应用退避策略。
+func classifyHealthImpact(err error) health.HealthImpact {
+	if err == nil {
+		return health.HealthImpactFull
+	}
+
+	code := errors.GetCode(err)
+	errorFrom := errors.GetErrorFrom(err)
+
+	// client_cancel：ABORTED + client 来源
+	if code == errors.ErrCodeAborted && errorFrom == errors.ErrorFromClient {
+		return health.HealthImpactNone
+	}
+
+	// deadline：DEADLINE_EXCEEDED + gateway 来源
+	if code == errors.ErrCodeDeadlineExceeded && errorFrom == errors.ErrorFromGateway {
+		return health.HealthImpactRecoverable
+	}
+
+	// server_cancel：CANCELED + server 来源
+	if code == errors.ErrCodeCanceled && errorFrom == errors.ErrorFromServer {
+		return health.HealthImpactRecoverable
+	}
+
+	return health.HealthImpactFull
 }
 
 // buildHealthErrorSnapshot 提取健康状态需要的轻量错误摘要。

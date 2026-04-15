@@ -21,6 +21,18 @@ const (
 	ResourceTypeModel                            // 模型级
 )
 
+// HealthImpact 定义失败对健康状态的影响程度。
+type HealthImpact int8
+
+const (
+	// HealthImpactFull 完全降级：计入错误计数并应用退避策略（默认行为）。
+	HealthImpactFull HealthImpact = iota
+	// HealthImpactRecoverable 可恢复失败：记录错误信息但不增加错误计数，仅标记为警告。
+	HealthImpactRecoverable
+	// HealthImpactNone 无健康影响：不更新健康状态。
+	HealthImpactNone
+)
+
 // Health 健康状态表 (health_status)
 type Health struct {
 	ResourceType ResourceType // 资源类型
@@ -58,9 +70,10 @@ type Health struct {
 
 // ErrorSnapshot 表示健康状态写入所需的轻量错误摘要。
 type ErrorSnapshot struct {
-	Message      string // 展示消息
-	Code         string // 稳定错误码
-	HTTPStatus   *int   // HTTP 状态码
-	ErrorFrom    string // 错误来源
-	CauseMessage string // 根因文本
+	Message      string       // 展示消息
+	Code         string       // 稳定错误码
+	HTTPStatus   *int         // HTTP 状态码
+	ErrorFrom    string       // 错误来源
+	CauseMessage string       // 根因文本
+	Impact       HealthImpact // 健康影响程度
 }

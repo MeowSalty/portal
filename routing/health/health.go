@@ -110,6 +110,11 @@ func (m *Service) UpdateStatus(
 	success bool,
 	snapshot ErrorSnapshot,
 ) error {
+	// 无健康影响的失败不更新健康状态
+	if !success && snapshot.Impact == HealthImpactNone {
+		return nil
+	}
+
 	// 获取或创建健康状态
 	status, err := m.GetStatus(resourceType, resourceID)
 	if err != nil {
@@ -136,8 +141,28 @@ func (m *Service) UpdateStatus(
 
 		// 使用退避策略重置状态
 		m.backoff.Reset(status)
+	} else if snapshot.Impact == HealthImpactRecoverable {
+		// 可恢复失败：记录错误信息但不增加错误计数，仅标记为警告
+		status.LastErrorMessage = snapshot.Message
+		status.LastStructuredErrorCode = snapshot.Code
+		status.LastHTTPStatus = snapshot.HTTPStatus
+		status.LastErrorFrom = snapshot.ErrorFrom
+		status.LastCauseMessage = snapshot.CauseMessage
+
+		// 历史字段兼容写入
+		status.LastError = status.LastErrorMessage
+		if status.LastHTTPStatus != nil {
+			status.LastErrorCode = *status.LastHTTPStatus
+		} else {
+			status.LastErrorCode = 0
+		}
+
+		// 可恢复失败仅标记为警告，不增加错误计数，不应用退避
+		if status.Status != HealthStatusUnavailable {
+			status.Status = HealthStatusWarning
+		}
 	} else {
-		// 失败情况：应用退避策略
+		// 完全降级失败：计入错误计数并应用退避策略
 		status.ErrorCount++
 		status.LastErrorMessage = snapshot.Message
 		status.LastStructuredErrorCode = snapshot.Code
