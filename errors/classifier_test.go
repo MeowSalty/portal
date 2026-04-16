@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestClassifyError_保守判定_GatewayTimeout不升级平台或密钥(t *testing.T) {
+func TestClassifyError_上游服务端错误_504归类Platform(t *testing.T) {
 	result := ClassifyError(ClassifierInput{
 		Message:              "Gateway Timeout while waiting response",
 		HTTPStatus:           504,
@@ -15,14 +15,71 @@ func TestClassifyError_保守判定_GatewayTimeout不升级平台或密钥(t *te
 	if result.Source.Value != ErrorFromServer {
 		t.Fatalf("source = %q, want %q", result.Source.Value, ErrorFromServer)
 	}
-	if result.Resource.Value != ErrorResourceModel {
-		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourceModel)
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
 	}
-	if result.Resource.Confidence != ConfidenceLow {
-		t.Fatalf("resource confidence = %q, want %q", result.Resource.Confidence, ConfidenceLow)
+	if !containsString(result.Resource.MatchedRules, "resource-upstream-server-platform") {
+		t.Fatalf("resource matched rules %v should contain resource-upstream-server-platform", result.Resource.MatchedRules)
 	}
-	if len(result.MatchedRules) == 0 {
-		t.Fatalf("matched rules is empty")
+}
+
+func TestClassifyError_上游服务端错误_502归类Platform(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Message:              "error code: 502",
+		HTTPStatus:           502,
+		HTTPResponseReceived: true,
+	})
+
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
+	}
+	if !containsString(result.Resource.MatchedRules, "resource-upstream-server-platform") {
+		t.Fatalf("resource matched rules %v should contain resource-upstream-server-platform", result.Resource.MatchedRules)
+	}
+}
+
+func TestClassifyError_上游服务端错误_503归类Platform(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Message:              "system disk overloaded",
+		HTTPStatus:           503,
+		HTTPResponseReceived: true,
+	})
+
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
+	}
+	if !containsString(result.Resource.MatchedRules, "resource-upstream-server-platform") {
+		t.Fatalf("resource matched rules %v should contain resource-upstream-server-platform", result.Resource.MatchedRules)
+	}
+}
+
+func TestClassifyError_上游服务端错误_522归类Platform(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Message:              "error code: 522",
+		HTTPStatus:           522,
+		HTTPResponseReceived: true,
+	})
+
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
+	}
+	if !containsString(result.Resource.MatchedRules, "resource-upstream-server-platform") {
+		t.Fatalf("resource matched rules %v should contain resource-upstream-server-platform", result.Resource.MatchedRules)
+	}
+}
+
+func TestClassifyError_平台关键词_system归类Platform(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Message:              "system error occurred",
+		HTTPStatus:           500,
+		HTTPResponseReceived: true,
+	})
+
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
+	}
+	if !containsString(result.Resource.MatchedRules, "resource-platform-strong-keywords") {
+		t.Fatalf("resource matched rules %v should contain resource-platform-strong-keywords", result.Resource.MatchedRules)
 	}
 }
 

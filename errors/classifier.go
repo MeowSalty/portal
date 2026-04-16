@@ -198,7 +198,16 @@ func hasStrongAuthEvidence(input ClassifierInput) bool {
 }
 
 func hasStrongPlatformEvidence(input ClassifierInput) bool {
-	return containsAnyFold(combinedText(input), []string{"渠道", "路由", "节点", "平台内部", "channel unavailable", "route", "proxy", "backend", "platform"})
+	// 上游服务端状态码属于强平台证据
+	switch input.HTTPStatus {
+	case 502, 503, 504, 521, 522, 524:
+		return true
+	}
+	return containsAnyFold(combinedText(input), []string{
+		"渠道", "路由", "节点", "平台内部",
+		"channel unavailable", "route", "proxy", "backend", "platform",
+		"system", "service", "gateway", "overloaded", "unavailable",
+	})
 }
 
 func combinedText(input ClassifierInput) string {

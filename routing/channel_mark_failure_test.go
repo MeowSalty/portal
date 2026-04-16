@@ -253,9 +253,10 @@ func TestChannelMarkFailure_Deadline_可恢复失败(t *testing.T) {
 	ch.MarkFailure(context.TODO(), requestErr)
 
 	// 应写入健康状态，但 ErrorCount 不增加
-	status, err := svc.GetStatus(health.ResourceTypeModel, ch.ModelID)
+	// 504 状态码现在归类为 Platform 资源
+	status, err := svc.GetStatus(health.ResourceTypePlatform, ch.PlatformID)
 	if err != nil {
-		t.Fatalf("获取模型健康状态失败: %v", err)
+		t.Fatalf("获取平台健康状态失败: %v", err)
 	}
 	if status.ErrorCount != 0 {
 		t.Fatalf("deadline 可恢复失败 ErrorCount 期望 0，actual=%d", status.ErrorCount)

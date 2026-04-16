@@ -178,13 +178,42 @@ func DefaultClassificationRules() []ClassificationRule {
 			Stage:    ClassificationStageResource,
 			Priority: 85,
 			Conditions: RuleConditions{
-				AnyContains: []string{"平台", "backend", "platform", "service"},
+				AnyContains: []string{"平台", "backend", "platform", "service", "system", "gateway"},
 			},
 			Decision: RuleDecision{
 				Resource: ErrorResourcePlatform,
 			},
 			Confidence: ConfidenceHigh,
 			Reason:     "命中平台级高置信度关键词",
+		},
+		{
+			ID:       "resource-model-no-available-channel",
+			Enabled:  true,
+			Stage:    ClassificationStageResource,
+			Priority: 78,
+			Conditions: RuleConditions{
+				HTTPStatuses: []int{503},
+				AnyContains:  []string{"无可用渠道", "no available channel"},
+			},
+			Decision: RuleDecision{
+				Resource: ErrorResourceModel,
+			},
+			Confidence: ConfidenceHigh,
+			Reason:     "模型无可用渠道/分发器，归类 model 资源",
+		},
+		{
+			ID:       "resource-upstream-server-platform",
+			Enabled:  true,
+			Stage:    ClassificationStageResource,
+			Priority: 75,
+			Conditions: RuleConditions{
+				HTTPStatuses: []int{502, 503, 504, 521, 522, 524},
+			},
+			Decision: RuleDecision{
+				Resource: ErrorResourcePlatform,
+			},
+			Confidence: ConfidenceHigh,
+			Reason:     "上游服务端状态码命中，归类 platform 资源",
 		},
 		{
 			ID:       "resource-model-not-found",
