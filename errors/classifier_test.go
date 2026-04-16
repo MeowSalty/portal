@@ -182,6 +182,40 @@ func TestClassifyError_兜底_无信号默认模型承接(t *testing.T) {
 	}
 }
 
+func TestClassifyError_Gateway网络不可用_归类Platform(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Code:      ErrCodeUnavailable,
+		Message:   "lookup codex.sakurapy.de on 10.89.13.1:53: no such host",
+		ErrorFrom: ErrorFromGateway,
+	})
+
+	if result.Source.Value != ErrorFromGateway {
+		t.Fatalf("source = %q, want %q", result.Source.Value, ErrorFromGateway)
+	}
+	if result.Resource.Value != ErrorResourcePlatform {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourcePlatform)
+	}
+	if !containsString(result.Resource.MatchedRules, "resource-gateway-network-platform") {
+		t.Fatalf("resource matched rules %v should contain resource-gateway-network-platform", result.Resource.MatchedRules)
+	}
+}
+
+func TestClassifyError_Gateway网络不可用_非Gateway来源不命中(t *testing.T) {
+	result := ClassifyError(ClassifierInput{
+		Code:      ErrCodeUnavailable,
+		Message:   "lookup codex.sakurapy.de on 10.89.13.1:53: no such host",
+		ErrorFrom: ErrorFromUpstream,
+	})
+
+	// upstream + UNAVAILABLE 应走 resource-upstream-default-model 而非新规则
+	if result.Resource.Value != ErrorResourceModel {
+		t.Fatalf("resource = %q, want %q", result.Resource.Value, ErrorResourceModel)
+	}
+	if containsString(result.Resource.MatchedRules, "resource-gateway-network-platform") {
+		t.Fatalf("resource matched rules should NOT contain resource-gateway-network-platform for upstream source")
+	}
+}
+
 func containsString(values []string, target string) bool {
 	for _, v := range values {
 		if v == target {

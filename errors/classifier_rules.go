@@ -273,6 +273,21 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "仅命中模糊超时文本，保守归类 platform 资源",
 		},
 		{
+			ID:       "resource-gateway-network-platform",
+			Enabled:  true,
+			Stage:    ClassificationStageResource,
+			Priority: 15,
+			Conditions: RuleConditions{
+				ErrorFrom: []ErrorFromValue{ErrorFromGateway},
+				Codes:     []ErrorCode{ErrCodeUnavailable},
+			},
+			Decision: RuleDecision{
+				Resource: ErrorResourcePlatform,
+			},
+			Confidence: ConfidenceMedium,
+			Reason:     "gateway 网络不可用故障，归类 platform 资源",
+		},
+		{
 			ID:         "resource-fallback-model",
 			Enabled:    true,
 			Stage:      ClassificationStageResource,
