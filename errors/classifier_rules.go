@@ -128,10 +128,11 @@ func DefaultClassificationRules() []ClassificationRule {
 
 		// resource 规则
 		{
-			ID:       "resource-auth-status",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 100,
+			ID:             "resource-auth-status",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       100,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{401, 403},
 				AnyContains:  []string{"key", "unauthorized", "authentication", "permission", "token", "鉴权", "认证", "权限", "密钥", "令牌"},
@@ -143,10 +144,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "认证/权限状态码与密钥信号联合命中",
 		},
 		{
-			ID:       "resource-auth-code",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 95,
+			ID:             "resource-auth-code",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       95,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				Codes: []ErrorCode{ErrCodeAuthenticationFailed, ErrCodePermissionDenied},
 			},
@@ -157,10 +159,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "显式认证类错误码命中",
 		},
 		{
-			ID:       "resource-quota-with-key",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 88,
+			ID:             "resource-quota-with-key",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       88,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{429},
 				AnyContains:  []string{"quota", "配额", "额度", "欠费", "billing"},
@@ -173,10 +176,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "额度类错误且包含 key 信号",
 		},
 		{
-			ID:       "resource-platform-strong-keywords",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 85,
+			ID:             "resource-platform-strong-keywords",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       85,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				AnyContains: []string{"平台", "backend", "platform", "service", "system", "gateway"},
 			},
@@ -202,10 +206,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "模型无可用渠道/分发器，归类 model 资源",
 		},
 		{
-			ID:       "resource-upstream-server-platform",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 75,
+			ID:             "resource-upstream-server-platform",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       75,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				HTTPStatuses: []int{502, 503, 504, 521, 522, 524},
 			},
@@ -273,10 +278,11 @@ func DefaultClassificationRules() []ClassificationRule {
 			Reason:     "仅命中模糊超时文本，保守归类 platform 资源",
 		},
 		{
-			ID:       "resource-gateway-network-platform",
-			Enabled:  true,
-			Stage:    ClassificationStageResource,
-			Priority: 15,
+			ID:             "resource-gateway-network-platform",
+			Enabled:        true,
+			Stage:          ClassificationStageResource,
+			Priority:       15,
+			StrongEvidence: true,
 			Conditions: RuleConditions{
 				ErrorFrom: []ErrorFromValue{ErrorFromGateway},
 				Codes:     []ErrorCode{ErrCodeUnavailable},
@@ -292,6 +298,7 @@ func DefaultClassificationRules() []ClassificationRule {
 			Enabled:    true,
 			Stage:      ClassificationStageResource,
 			Priority:   0,
+			Fallback:   true,
 			Conditions: RuleConditions{},
 			Decision: RuleDecision{
 				Resource: ErrorResourceModel,

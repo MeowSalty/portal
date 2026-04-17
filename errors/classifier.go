@@ -88,7 +88,7 @@ func (c *Classifier) classifyResource(input ClassifierInput) ClassificationDecis
 		}
 	}
 
-	value, confidence, reason := resolveConservativeResource(matches, input)
+	value, confidence, reason := resolveResourceByScore(matches)
 	return ClassificationDecision[ErrorResourceType]{
 		Value:        value,
 		Confidence:   confidence,
@@ -110,34 +110,109 @@ func (c *Classifier) matchedRules(stage ClassificationStage, input ClassifierInp
 	return matched
 }
 
-func resolveConservativeResource(matches []ClassificationRule, input ClassifierInput) (ErrorResourceType, ClassificationConfidence, string) {
-	best := matches[0]
-
-	hasKey := false
-	hasPlatform := false
-	hasModel := false
+// resolveResourceByScore 基于规则评分的资源冲突裁决。
+//
+// 评分模型：
+//   - 每条规则得分 = Priority*10 + confidenceWeight(Confidence)
+//   - StrongEvidence 规则额外 +10000
+//   - Fallback 规则不参与竞争，仅在没有其他规则命中时生效
+//
+// 裁决策略：
+//  1. 分离兜底规则与非兜底规则
+//  2. 若无非兜底规则命中，使用兜底规则
+//  3. 若仅一种资源类型有非兜底规则，直接返回
+//  4. 若多种资源类型冲突：
+//     a. 仅一种有强证据 → 强证据胜出
+//     b. 多种有强证据 → 最高分胜出
+//     c. 均无强证据 → 保守降级到 model
+func resolveResourceByScore(matches []ClassificationRule) (ErrorResourceType, ClassificationConfidence, string) {
+	// 分离兜底规则与非兜底规则
+	var nonFallback, fallbackRules []ClassificationRule
 	for _, m := range matches {
-		switch m.Decision.Resource {
-		case ErrorResourceAPIKey:
-			hasKey = true
-		case ErrorResourcePlatform:
-			hasPlatform = true
-		case ErrorResourceModel:
-			hasModel = true
+		if m.Fallback {
+			fallbackRules = append(fallbackRules, m)
+		} else {
+			nonFallback = append(nonFallback, m)
 		}
 	}
 
-	if hasKey && hasPlatform && !hasStrongAuthEvidence(input) {
-		return ErrorResourceModel, ConfidenceLow, "密钥与平台资源规则冲突且缺少强认证证据，保守降级 model"
-	}
-	if hasPlatform && hasModel && !hasStrongPlatformEvidence(input) {
-		return ErrorResourceModel, ConfidenceLow, "平台与模型资源规则冲突且平台证据不足，保守选择 model"
-	}
-	if hasKey && hasModel && !hasStrongAuthEvidence(input) {
-		return ErrorResourceModel, ConfidenceLow, "密钥与模型资源规则冲突且认证证据不足，保守选择 model"
+	// 没有非兜底规则命中，使用兜底规则
+	if len(nonFallback) == 0 {
+		if len(fallbackRules) > 0 {
+			return fallbackRules[0].Decision.Resource, fallbackRules[0].Confidence, fallbackRules[0].Reason
+		}
+		return ErrorResourceModel, ConfidenceLow, "无资源命中规则，兜底 model"
 	}
 
-	return best.Decision.Resource, best.Confidence, best.Reason
+	// 按资源类型分组，计算每组的强证据标记与最高分
+	type resourceGroup struct {
+		resource  ErrorResourceType
+		hasStrong bool
+		bestRule  ClassificationRule
+		bestScore int
+	}
+
+	groups := make(map[ErrorResourceType]*resourceGroup)
+	var resourceOrder []ErrorResourceType
+
+	for _, m := range nonFallback {
+		r := m.Decision.Resource
+		if _, exists := groups[r]; !exists {
+			groups[r] = &resourceGroup{resource: r}
+			resourceOrder = append(resourceOrder, r)
+		}
+		score := ruleScore(m)
+		if m.StrongEvidence {
+			groups[r].hasStrong = true
+		}
+		if score > groups[r].bestScore {
+			groups[r].bestScore = score
+			groups[r].bestRule = m
+		}
+	}
+
+	// 只有一种资源类型，直接返回
+	if len(groups) == 1 {
+		g := groups[resourceOrder[0]]
+		return g.bestRule.Decision.Resource, g.bestRule.Confidence, g.bestRule.Reason
+	}
+
+	// 多种资源类型冲突，检查强证据
+	var strongGroups []ErrorResourceType
+	for _, r := range resourceOrder {
+		if groups[r].hasStrong {
+			strongGroups = append(strongGroups, r)
+		}
+	}
+
+	// 仅一种资源类型有强证据，强证据胜出
+	if len(strongGroups) == 1 {
+		g := groups[strongGroups[0]]
+		return g.bestRule.Decision.Resource, g.bestRule.Confidence, g.bestRule.Reason
+	}
+
+	// 多种资源类型都有强证据，按分数选最高
+	if len(strongGroups) > 1 {
+		best := groups[strongGroups[0]]
+		for _, r := range strongGroups[1:] {
+			if groups[r].bestScore > best.bestScore {
+				best = groups[r]
+			}
+		}
+		return best.bestRule.Decision.Resource, best.bestRule.Confidence, best.bestRule.Reason
+	}
+
+	// 均无强证据规则，多种资源类型冲突，保守降级到 model
+	return ErrorResourceModel, ConfidenceLow, "多种资源类型冲突且缺少强证据规则，保守降级 model"
+}
+
+// ruleScore 计算单条规则的评分。
+func ruleScore(m ClassificationRule) int {
+	score := m.Priority*10 + confidenceWeight(m.Confidence)
+	if m.StrongEvidence {
+		score += 10000
+	}
+	return score
 }
 
 func matchRuleConditions(cond RuleConditions, input ClassifierInput) bool {
@@ -185,29 +260,6 @@ func matchRuleConditions(cond RuleConditions, input ClassifierInput) bool {
 	}
 
 	return true
-}
-
-func hasStrongAuthEvidence(input ClassifierInput) bool {
-	if input.HTTPStatus == 401 || input.HTTPStatus == 403 {
-		return true
-	}
-	if input.Code == ErrCodeAuthenticationFailed || input.Code == ErrCodePermissionDenied {
-		return true
-	}
-	return containsAnyFold(combinedText(input), []string{"api key", "invalid key", "authentication", "permission", "unauthorized", "token", "鉴权", "认证", "权限", "密钥"})
-}
-
-func hasStrongPlatformEvidence(input ClassifierInput) bool {
-	// 上游服务端状态码属于强平台证据
-	switch input.HTTPStatus {
-	case 502, 503, 504, 521, 522, 524:
-		return true
-	}
-	return containsAnyFold(combinedText(input), []string{
-		"渠道", "路由", "节点", "平台内部",
-		"channel unavailable", "route", "proxy", "backend", "platform",
-		"system", "service", "gateway", "overloaded", "unavailable",
-	})
 }
 
 func combinedText(input ClassifierInput) string {

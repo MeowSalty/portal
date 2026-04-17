@@ -90,6 +90,14 @@ type ClassificationRule struct {
 	Decision   RuleDecision
 	Confidence ClassificationConfidence
 	Reason     string
+
+	// StrongEvidence 标记该规则为强证据规则。
+	// 在资源冲突裁决中，强证据规则可以压过非强证据规则和兜底规则。
+	StrongEvidence bool
+
+	// Fallback 标记该规则为兜底规则。
+	// 兜底规则在资源冲突裁决中不参与竞争，仅在没有其他规则命中时生效。
+	Fallback bool
 }
 
 // RuleConditions 定义规则匹配条件。
